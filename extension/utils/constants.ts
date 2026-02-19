@@ -1,9 +1,14 @@
-export const API_URL = 'https://api.myscrollr.relentnet.dev';
+// FORK: Original production values (revert to these when switching back):
+//   API_URL = 'https://api.myscrollr.relentnet.dev'
+//   FRONTEND_URL = 'https://myscrollr.relentnet.dev'
+//   LOGTO_ENDPOINT = 'https://auth.myscrollr.relentnet.dev'
+//   LOGTO_APP_ID = 'kq298uwwusrvw8m6yn6b4'
+export const API_URL = 'https://api.myscrollr.enanimate.dev';
 export const SSE_URL = `${API_URL}/events`;
-export const FRONTEND_URL = 'https://myscrollr.relentnet.dev';
+export const FRONTEND_URL = 'https://myscrollr.enanimate.dev';
 
-export const LOGTO_ENDPOINT = 'https://auth.myscrollr.relentnet.dev';
-export const LOGTO_APP_ID = 'kq298uwwusrvw8m6yn6b4';
+export const LOGTO_ENDPOINT = 'https://auth.myscrollr.enanimate.dev';
+export const LOGTO_APP_ID = 'roazl2zldtcfscslysiuf';
 
 /** Maximum number of items kept in memory per category. */
 export const MAX_ITEMS = 50;

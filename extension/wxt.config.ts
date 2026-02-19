@@ -52,9 +52,10 @@ export default defineConfig({
     name: "Scrollr",
     description: "Real-time financial and sports data feed for your browser",
     permissions: ["storage", "identity", "alarms"],
+    // FORK: Original values: api.myscrollr.relentnet.dev, auth.myscrollr.relentnet.dev
     host_permissions: [
-      "https://api.myscrollr.relentnet.dev/*",
-      "https://auth.myscrollr.relentnet.dev/*",
+      "https://api.myscrollr.enanimate.dev/*",
+      "https://auth.myscrollr.enanimate.dev/*",
     ],
     browser_specific_settings: {
       gecko: {
