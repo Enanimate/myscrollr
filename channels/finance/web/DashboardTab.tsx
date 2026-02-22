@@ -165,7 +165,7 @@ function FinanceDashboardTab({
         channel={channel}
         icon={<TrendingUp size={16} className="text-base-content/80" />}
         title="Finance Channel"
-        subtitle="Real-time market data via Finnhub WebSocket"
+        subtitle="Real-time market data via TwelveData WebSocket"
         connected={connected}
         subscriptionTier={subscriptionTier}
         hex={hex}
@@ -533,7 +533,7 @@ export const financeChannel: ChannelManifest = {
   id: "finance",
   name: "Finance",
   tabLabel: "Finance",
-  description: "Real-time market data via Finnhub",
+  description: "Real-time market data via TwelveData",
   hex: HEX,
   icon: TrendingUp,
   DashboardTab: FinanceDashboardTab,

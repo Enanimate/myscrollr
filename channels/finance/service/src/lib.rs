@@ -76,18 +76,25 @@ pub async fn update_all_previous_closes(state: FinanceState) {
                 match quote_response {
                     Ok(quote) => {
                         let pc = quote.previous_close_f64();
-                        let _ = update_previous_close(pool.clone(), symbol.to_string(), pc).await;
-                        let change = quote.change_f64();
-                        if change != 0.0 {
+                        if pc > 0.0 {
+                            let _ = update_previous_close(pool.clone(), symbol.to_string(), pc).await;
+                        }
+
+                        let close = quote.close_f64();
+                        if close > 0.0 {
+                            let change = quote.change_f64();
+                            let pct = quote.percent_change_f64();
                             let direction = if change >= 0.0 { "up" } else { "down" };
                             let _ = update_trade(
                                 pool.clone(),
                                 symbol.to_string(),
-                                quote.close_f64(),
+                                close,
                                 change,
-                                quote.percent_change_f64(),
+                                pct,
                                 direction,
                             ).await;
+                        } else {
+                            warn!("[ TwelveData ] Skipping price update for {}: close is 0", symbol);
                         }
                     }
                     Err(e) => warn!("[ TwelveData ] Quote Error for {}: {e}", symbol),
@@ -106,5 +113,10 @@ pub(crate) async fn get_quote(symbol: String, client: Arc<Client>, api_key: &str
     );
     let response = client.get(&url).send().await?.text().await?;
     let data: QuoteResponse = serde_json::from_str(&response)?;
+    if data.is_error() {
+        let msg = data.message.as_deref().unwrap_or("unknown error");
+        let code = data.code.unwrap_or(0);
+        anyhow::bail!("TwelveData API error {code}: {msg}");
+    }
     Ok(data)
 }

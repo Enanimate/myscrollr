@@ -113,7 +113,7 @@ export default function TradeItem({ trade, mode }: TradeItemProps) {
         <span className="font-mono font-bold text-sm text-fg tracking-wide">
           {trade.symbol}
         </span>
-        {trade.previous_close != null && (
+        {trade.previous_close != null && Number(trade.previous_close) > 0 && (
           <span className="text-[10px] font-mono text-fg-3 tabular-nums">
             prev {formatPrice(trade.previous_close)}
           </span>

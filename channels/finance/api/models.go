@@ -2,7 +2,7 @@ package main
 
 import "time"
 
-// Trade represents a financial trade from the Finnhub ingestion service.
+// Trade represents a financial trade from the TwelveData ingestion service.
 type Trade struct {
 	Symbol           string    `json:"symbol"`
 	Price            float64   `json:"price"`

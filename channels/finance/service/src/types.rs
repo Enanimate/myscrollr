@@ -48,8 +48,14 @@ pub(crate) struct BatchStats {
 
 /// TwelveData REST quote response.
 ///
+/// Success example:
 /// ```json
 /// {"symbol":"AAPL","close":"150.75","previous_close":"149.50","change":"1.25","percent_change":"0.84",...}
+/// ```
+///
+/// Error example (rate limit, bad symbol, etc.):
+/// ```json
+/// {"code":429,"message":"Too many requests","status":"error"}
 /// ```
 #[derive(Debug, Deserialize)]
 pub(crate) struct QuoteResponse {
@@ -57,9 +63,18 @@ pub(crate) struct QuoteResponse {
     pub previous_close: Option<String>,
     pub change: Option<String>,
     pub percent_change: Option<String>,
+    /// Present on error responses (e.g. 400, 401, 429).
+    pub code: Option<u16>,
+    pub message: Option<String>,
+    pub status: Option<String>,
 }
 
 impl QuoteResponse {
+    /// Returns true when TwelveData returned an error instead of quote data.
+    pub fn is_error(&self) -> bool {
+        self.code.is_some() || self.status.as_deref() == Some("error")
+    }
+
     pub fn close_f64(&self) -> f64 {
         self.close.as_deref().and_then(|s| s.parse().ok()).unwrap_or(0.0)
     }
