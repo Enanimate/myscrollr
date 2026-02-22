@@ -76,21 +76,6 @@ pub async fn create_tables(pool: Arc<PgPool>) -> Result<()> {
         );
     ";
 
-    // Backfill any NULL values from before defaults were added, and set column defaults
-    // for the existing table (CREATE TABLE IF NOT EXISTS won't alter existing columns).
-    let fix_trades_nulls = "
-        UPDATE trades SET price = 0 WHERE price IS NULL;
-        UPDATE trades SET previous_close = 0 WHERE previous_close IS NULL;
-        UPDATE trades SET price_change = 0 WHERE price_change IS NULL;
-        UPDATE trades SET percentage_change = 0 WHERE percentage_change IS NULL;
-        UPDATE trades SET direction = 'flat' WHERE direction IS NULL;
-        ALTER TABLE trades ALTER COLUMN price SET DEFAULT 0, ALTER COLUMN price SET NOT NULL;
-        ALTER TABLE trades ALTER COLUMN previous_close SET DEFAULT 0, ALTER COLUMN previous_close SET NOT NULL;
-        ALTER TABLE trades ALTER COLUMN price_change SET DEFAULT 0, ALTER COLUMN price_change SET NOT NULL;
-        ALTER TABLE trades ALTER COLUMN percentage_change SET DEFAULT 0, ALTER COLUMN percentage_change SET NOT NULL;
-        ALTER TABLE trades ALTER COLUMN direction SET DEFAULT 'flat', ALTER COLUMN direction SET NOT NULL;
-    ";
-
     // Idempotent column additions for name and category
     let add_name_col = "ALTER TABLE tracked_symbols ADD COLUMN IF NOT EXISTS name VARCHAR(100);";
     let add_category_col = "ALTER TABLE tracked_symbols ADD COLUMN IF NOT EXISTS category VARCHAR(50);";
@@ -98,7 +83,23 @@ pub async fn create_tables(pool: Arc<PgPool>) -> Result<()> {
     let mut connection = pool.acquire().await?;
     query(trades_statement).execute(&mut *connection).await?;
     query(config_statement).execute(&mut *connection).await?;
-    query(fix_trades_nulls).execute(&mut *connection).await?;
+
+    // Backfill any NULL values from before defaults were added.
+    // SQLx requires one statement per execute call.
+    query("UPDATE trades SET price = 0 WHERE price IS NULL").execute(&mut *connection).await?;
+    query("UPDATE trades SET previous_close = 0 WHERE previous_close IS NULL").execute(&mut *connection).await?;
+    query("UPDATE trades SET price_change = 0 WHERE price_change IS NULL").execute(&mut *connection).await?;
+    query("UPDATE trades SET percentage_change = 0 WHERE percentage_change IS NULL").execute(&mut *connection).await?;
+    query("UPDATE trades SET direction = 'flat' WHERE direction IS NULL").execute(&mut *connection).await?;
+
+    // Set column defaults and NOT NULL constraints for the existing table
+    // (CREATE TABLE IF NOT EXISTS won't alter existing columns).
+    query("ALTER TABLE trades ALTER COLUMN price SET DEFAULT 0, ALTER COLUMN price SET NOT NULL").execute(&mut *connection).await?;
+    query("ALTER TABLE trades ALTER COLUMN previous_close SET DEFAULT 0, ALTER COLUMN previous_close SET NOT NULL").execute(&mut *connection).await?;
+    query("ALTER TABLE trades ALTER COLUMN price_change SET DEFAULT 0, ALTER COLUMN price_change SET NOT NULL").execute(&mut *connection).await?;
+    query("ALTER TABLE trades ALTER COLUMN percentage_change SET DEFAULT 0, ALTER COLUMN percentage_change SET NOT NULL").execute(&mut *connection).await?;
+    query("ALTER TABLE trades ALTER COLUMN direction SET DEFAULT 'flat', ALTER COLUMN direction SET NOT NULL").execute(&mut *connection).await?;
+
     query(add_name_col).execute(&mut *connection).await?;
     query(add_category_col).execute(&mut *connection).await?;
     Ok(())
