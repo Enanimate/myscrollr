@@ -4,17 +4,19 @@ Operational guide for AI coding agents working in this repository.
 
 ## Project Overview
 
-MyScrollr is a platform aggregating financial market data (Finnhub), sports scores (ESPN), RSS feeds, and Yahoo Fantasy Sports. It consists of a React frontend, browser extension, a core Go gateway API, and fully independent channel services. Infrastructure: PostgreSQL, Redis, Logto (auth), Sequin (CDC). Deployed on a self-hosted Coolify instance.
+MyScrollr — platform aggregating financial market data, sports scores, RSS feeds, and Yahoo Fantasy Sports. React frontend, browser extension, Go gateway API, and independent channel services. Infrastructure: PostgreSQL, Redis, Logto (auth), Sequin (CDC). Deployed on Coolify.
 
 ## Repository Layout
 
-Monorepo with independently deployable components. Each top-level folder is its own build target:
+Monorepo with independently deployable components:
 
 - `api/` — Core gateway API (Go 1.21, Fiber v2)
 - `myscrollr.com/` — Frontend (React 19, Vite 7, TanStack Router, Tailwind v4)
 - `extension/` — Browser extension (WXT v0.20, React 19, Tailwind v4)
-- `channels/{finance,sports,rss,fantasy}/api/` — Channel Go APIs (each independent go module)
-- `channels/{finance,sports,rss,fantasy}/service/` — Rust ingestion services (each independent cargo crate)
+- `channels/{finance,sports,rss}/api/` — Channel Go APIs (independent Go modules)
+- `channels/{finance,sports,rss}/service/` — Rust ingestion services (independent crates, edition 2024)
+- `channels/fantasy/api/` — Fantasy Go API
+- `channels/fantasy/service/` — Fantasy ingestion service (**Python** — FastAPI + uvicorn + asyncpg)
 - `channels/*/web/` — Frontend dashboard tab components
 - `channels/*/extension/` — Extension feed tab components
 
@@ -24,11 +26,11 @@ Monorepo with independently deployable components. Each top-level folder is its 
 
 ```sh
 npm install
-npm run dev          # Dev server on port 3000
+npm run dev          # Vite dev server on port 3000
 npm run build        # vite build && tsc
 npm run lint         # eslint
 npm run format       # prettier
-npm run check        # prettier --write . && eslint --fix
+npm run check        # prettier --write . && eslint --fix (use this before committing)
 ```
 
 ### Extension (`extension/`)
@@ -43,216 +45,102 @@ npm run compile      # tsc --noEmit (type-check only)
 npm run zip          # Package for store submission
 ```
 
-### Core Go API (`api/`)
+### Go APIs (`api/` and `channels/{name}/api/`)
 
 ```sh
-go build -o scrollr_api && ./scrollr_api    # Port 8080
+go build -o scrollr_api && ./scrollr_api        # Core: port 8080
+go build -o {name}_api && ./{name}_api           # finance=8081, sports=8082, rss=8083, fantasy=8084
 ```
 
-### Channel Go APIs (`channels/{name}/api/`)
+### Rust Services (`channels/{finance,sports,rss}/service/`)
 
 ```sh
-go build -o {name}_api && ./{name}_api      # Ports: finance=8081, sports=8082, rss=8083, fantasy=8084
+cargo build --release && cargo run    # finance=3001, sports=3002, rss=3004
 ```
 
-### Rust Services (`channels/{name}/service/`)
+### Fantasy Python Service (`channels/fantasy/service/`)
 
 ```sh
-cargo build --release
-cargo run              # Ports: finance=3001, sports=3002, fantasy=3003, rss=3004
+python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
+uvicorn main:app --port 3003
 ```
 
 ### Tests
 
-No test infrastructure exists (no test files, no test configs, no test dependencies). If adding tests:
+No test infrastructure exists yet. When adding tests:
 
-- Frontend/Extension: use Vitest (`npx vitest run path/to/file.test.ts` for single file)
-- Go: standard `go test ./...` (single: `go test -run TestName ./path/to/pkg`)
-- Rust: `cargo test` (single: `cargo test test_name`)
+- **Frontend/Extension**: Vitest. Single file: `npx vitest run path/to/file.test.ts`. Single test: `npx vitest run -t "test name"`
+- **Go**: `go test ./...`. Single test: `go test -run TestName ./path/to/pkg`
+- **Rust**: `cargo test`. Single test: `cargo test test_name`
+- **Python**: pytest. Single test: `pytest path/to/test.py -k "test_name"`
 
 ## Code Style — TypeScript (Frontend: `myscrollr.com/`)
 
-**Formatting** (Prettier): No semicolons, single quotes, trailing commas.
+**Formatting** (Prettier via `prettier.config.js`): No semicolons, single quotes, trailing commas.
 
-```ts
-import { useState } from 'react'
-import type { ChannelConfig } from '@/api/client'
-```
+**Linting**: `@tanstack/eslint-config` flat config. Run `npm run check` to auto-fix both formatting and lint.
 
-**Linting**: `@tanstack/eslint-config` (flat config in `eslint.config.js`). Run `npm run check` to auto-fix.
+**TypeScript**: Strict mode, target ES2022, `verbatimModuleSyntax: true` — always use `import type` for type-only imports. `noUnusedLocals`, `noUnusedParameters`, `noFallthroughCasesInSwitch`, `noUncheckedSideEffectImports` all enabled.
 
-**TypeScript**: Strict mode, target ES2022. `verbatimModuleSyntax: true` — always use `import type` for type-only imports. `noUnusedLocals` and `noUnusedParameters` enabled. `noFallthroughCasesInSwitch` enabled.
+**Path aliases**: `@/` -> `./src/`, `@scrollr/` -> `../channels/`. Configured in both `tsconfig.json` and `vite.config.ts`.
 
-**Path aliases**: `@/` resolves to `./src/`, `@scrollr/` resolves to `../channels/`. Configured in both `tsconfig.json` and `vite.config.ts`.
+**Imports**: Named exports only. No barrel files. Use `import type { ... }` for types. Channel discovery uses `import.meta.glob` — never manually register channels.
 
-**Imports**: Named exports preferred everywhere. No barrel exports (`index.ts` re-exports). Use `import type { ... }` for types. Channel discovery uses `import.meta.glob` — don't manually register channels.
+**Components**: Function components with named exports. Routes use TanStack Router file-based convention (`export const Route = createFileRoute(...)`). Hooks are named exports (`export function useRealtime(...)`). Never edit `src/routeTree.gen.ts` — it is auto-generated.
 
-**Components**: Function components with named exports. Routes use TanStack Router file-based convention (`export const Route = createFileRoute(...)`). Hooks are named exports (`export function useRealtime(...)`). Do not edit `src/routeTree.gen.ts` — it is auto-generated by the TanStack Router plugin.
-
-**External channels**: A custom Vite plugin (`resolveExternalChannels` in `vite.config.ts`) resolves bare imports from `channels/*/web/` to `myscrollr.com/node_modules`. Don't manually duplicate dependencies in channel web dirs.
+**External channels**: Custom Vite plugin `resolveExternalChannels` resolves bare imports from `channels/*/web/` to `myscrollr.com/node_modules`. Never duplicate dependencies in channel web dirs.
 
 ## Code Style — TypeScript (Extension: `extension/`)
 
-**Formatting**: Uses semicolons (no Prettier config — default TS style). Single quotes.
+**Formatting**: Uses semicolons (no Prettier configured). Single quotes.
 
-**Path aliases**: `~/` resolves to srcDir (WXT default), `@scrollr/` resolves to `../channels/`.
+**Path aliases**: `~/` -> srcDir (WXT default), `@scrollr/` -> `../channels/`.
 
-**WXT conventions**: Entrypoints in `entrypoints/` with `defineBackground()`, `defineContentScript()`, etc. Runtime code must be inside the main function or define callback — not at module top level. Content script UI uses Shadow Root (`createShadowRootUi`). PostCSS converts `rem` to `px` via `postcss-rem-to-responsive-pixel`.
+**WXT conventions**: Entrypoints in `entrypoints/` with `defineBackground()`, `defineContentScript()`, etc. Runtime code inside the main function or define callback — never at module top level. Content script UI uses Shadow Root (`createShadowRootUi`). PostCSS converts `rem` to `px` via `postcss-rem-to-responsive-pixel`.
 
-**Messaging**: Typed message protocol in `utils/messaging.ts`. Background is a CDC pass-through router; FeedTabs manage own state via `useScrollrCDC`. Types: `SUBSCRIBE_CDC`, `UNSUBSCRIBE_CDC`, `CDC_BATCH`, `INITIAL_DATA`, `STATE_SNAPSHOT`, `CONNECTION_STATUS`, `AUTH_STATUS`.
-
-**Storage**: All items use `storage.defineItem` from `utils/storage.ts` with `local:` prefix, versioned (v1). Add watchers for cross-tab reactivity. Key items: `feedPosition`, `feedHeight`, `feedMode`, `feedCollapsed`, `feedBehavior`, `feedEnabled`, `enabledSites`, `disabledSites`, `activeFeedTabs`, `userSub`, `authToken`, `authTokenExpiry`, `authRefreshToken`.
-
-**Auto-imports**: WXT auto-imports from `utils/`, `hooks/`, `components/` plus WXT APIs. Files in `channels/` are NOT auto-imported — use explicit imports.
-
-**Content script UI**: Shadow Root mount with `position: 'overlay'`. Tailwind CSS compiled with rem-to-px PostCSS. Site filtering checks `feedEnabled` then `disabledSites` (block) then `enabledSites` (allow, empty = all). Push mode adjusts `document.body.style.marginTop/Bottom`. Drag-to-resize with min 100px / max 600px.
+**Auto-imports**: WXT auto-imports from `utils/`, `hooks/`, `components/`. Files in `channels/` are NOT auto-imported — use explicit imports.
 
 ## Code Style — Go
 
-**Formatting**: Standard `gofmt`. No custom linter config.
+**Formatting**: `gofmt`. No custom linter config.
 
-**Module isolation**: Each Go API is a fully independent module. No shared Go packages between channels or between channels and core. Code duplication is intentional.
+**Module isolation**: Each Go API is fully independent. No shared packages between channels or core. Code duplication is intentional — do not extract shared libraries.
 
-**Naming**: PascalCase exports (`Server`, `App`), camelCase unexported (`registrationPayload`), short receiver names (`s *Server`, `a *App`), snake_case JSON tags (`json:"channel_type"`), constants grouped with section comment banners (`// ===...===`).
+**Naming**: PascalCase exports, camelCase unexported, short receiver names (`s *Server`, `a *App`), snake_case JSON tags (`json:"channel_type"`), constants grouped with section comment banners.
 
-**Error handling**: Standard `if err != nil` returns. `log.Printf` for non-fatal, `log.Fatalf` for startup failures. Wrap with `fmt.Errorf("context: %w", err)`. HTTP errors return `ErrorResponse` struct via Fiber.
+**Error handling**: `if err != nil` returns. `log.Printf` for non-fatal, `log.Fatalf` for startup failures. Wrap with `fmt.Errorf("context: %w", err)`. HTTP errors return `ErrorResponse` struct.
 
 **Logging**: Bracketed category prefixes: `log.Printf("[Auth] message: %v", err)`.
 
-**Patterns**: `App` struct holds shared deps (`db *pgxpool.Pool`, `rdb *redis.Client`). Graceful shutdown via `os.Signal` channels. Channel self-registration in Redis with 30s TTL, 20s heartbeat.
+**Structure**: `App` struct holds shared deps (`db *pgxpool.Pool`, `rdb *redis.Client`). Graceful shutdown via `os.Signal` channels. Channel self-registration in Redis with 30s TTL, 20s heartbeat.
 
 ## Code Style — Rust
 
-**Edition**: 2024 for all crates. No `rustfmt.toml` — default formatting.
+**Edition**: 2024. Default `rustfmt` formatting.
 
 **Error handling**: `anyhow` exclusively (`anyhow::{Context, Result}`). No custom error types. Use `.context("message")?`. Avoid `unwrap()` and `panic!` except for truly unrecoverable init failures.
 
-**Async runtime**: Tokio with full features. HTTP via Axum. Database via SQLx (Postgres). Each feed/poll task spawned via `tokio::task::spawn` for isolation.
+**Async**: Tokio (full features), HTTP via Axum, database via SQLx (Postgres). Each feed/poll task spawned with `tokio::task::spawn`.
 
 **Logging**: `log` crate macros (`info!`, `error!`, `warn!`). Each service has a custom async file logger (`log.rs`) writing to `./logs/`.
 
-**Duplicated code**: `database.rs` and `log.rs` are copy-pasted across all 4 services (known tech debt). Don't try to extract a shared crate.
+**Known duplication**: `database.rs` and `log.rs` are copy-pasted across all 3 Rust services. Do not extract a shared crate.
 
 ## Architecture Rules
 
-1. **Core API has zero channel-specific code.** It discovers channels via Redis and proxies routes dynamically.
-2. **Channel isolation is absolute.** Each channel owns its Go API, Rust service, frontend/extension components, configs, Docker Compose, and manifest.json.
-3. **HTTP-only contract between core and channels.** No shared Go interfaces or types. Core calls `POST /internal/cdc`, channel returns `{ "users": [...] }`.
+1. **Core API has zero channel-specific code.** Discovers channels via Redis, proxies routes dynamically.
+2. **Channel isolation is absolute.** Each channel owns its Go API, ingestion service, frontend/extension components, configs, and Docker Compose.
+3. **HTTP-only contract.** No shared Go interfaces or types. Core calls `POST /internal/cdc`, channel returns `{ "users": [...] }`.
 4. **Route proxying**: Core proxies `/{name}/*` to channel APIs with `X-User-Sub` header. Channels never validate JWTs.
 5. **Convention-based UI discovery**: Frontend and extension use `import.meta.glob` to discover channel components at build time.
-6. **Database tables are created programmatically** via `CREATE TABLE IF NOT EXISTS` on service startup. No migration framework.
+6. **No migration framework.** Tables created programmatically via `CREATE TABLE IF NOT EXISTS` on service startup.
 
 ## Git Workflow
 
-All feature work must happen on a branch with a PR back into `staging`. Commit quick one-off fixes (typos, config tweaks) directly to `staging`.
-
-1. Branch off `staging`: `git checkout -b <prefix>/short-description`
-2. Commit work on the branch.
-3. Push and open a PR into `staging`.
-4. Squash merge to keep history clean.
+Branch off `staging`: `git checkout -b <prefix>/short-description`. Open PR back into `staging`. Squash merge. Commit trivial one-off fixes directly to `staging`.
 
 **Branch prefixes**: `feature/`, `fix/`, `refactor/`, `chore/`.
 
-## Real-Time Data Pipeline
-
-Rust services write to PostgreSQL. Sequin CDC detects changes and sends webhooks to `POST /webhooks/sequin` on the core API. Core forwards the CDC record to the relevant channel's `POST /internal/cdc`. Channel returns a list of user subs to notify. Core publishes to per-user Redis channels (`events:user:{sub}`). SSE Hub dispatches to connected clients. Frontend `useRealtime` hook and extension background script consume CDC records.
-
-**CDC routing steps**: (1) Sequin webhook hits core, (2) core inspects `metadata.table_name` to find the owning channel, (3) core forwards via `POST {channel_url}/internal/cdc`, (4) channel returns `{ "users": ["sub1", "sub2"] }`, (5) core publishes to each user's Redis channel.
-
-**Core-owned tables** (routed directly, no channel): `user_preferences` and `user_channels` — routed to record owner by `logto_sub`.
-
-## Authentication
-
-- **Frontend**: `@logto/react` SDK with PKCE flow. App ID: `ogbulfshvf934eeli4t9u`
-- **Extension**: Separate Logto Native app. App ID: `kq298uwwusrvw8m6yn6b4`. PKCE via `browser.identity.launchWebAuthFlow`. Token exchange proxied through `POST /extension/token`.
-- **Core API**: `LogtoAuth` middleware validates JWT access tokens (Bearer header or cookie), JWKS with auto-refresh
-- **SSE**: Authenticated via `?token=` query param (EventSource doesn't support custom headers)
-- **Channel APIs**: Receive user identity via `X-User-Sub` header from core — no JWT validation
-- **Yahoo**: Separate OAuth2 flow at `/yahoo/start` with refresh tokens encrypted (AES-256-GCM) in PostgreSQL
-
-## Channel Details
-
-| Channel | Go API | Rust Service | CDC Tables |
-|---------|--------|-------------|------------|
-| Finance | 8081 | 3001 | `trades` |
-| Sports | 8082 | 3002 | `games` |
-| RSS | 8083 | 3004 | `rss_items` |
-| Fantasy | 8084 | 3003 | `yahoo_leagues`, `yahoo_standings`, `yahoo_matchups`, `yahoo_rosters` |
-
-**Channel self-registration**: Redis key `channel:{name}` with JSON value (`name`, `display_name`, `url`, `capabilities[]`, `tables[]`), 30s TTL, 20s heartbeat. Core scans `channel:*` every 10s.
-
-**Capabilities**: `cdc_handler`, `dashboard_provider`, `channel_lifecycle`, `health_checker`.
-
-**Internal endpoints** (called by core):
-
-| Endpoint | Purpose |
-|----------|---------|
-| `POST /internal/cdc` | Receive CDC record, return `{ "users": [...] }` |
-| `GET /internal/dashboard?sub={sub}` | Channel-specific dashboard data for user |
-| `GET /internal/health` | Channel health status |
-| `POST /internal/channel-lifecycle` | Handle channel create/update/delete (if `channel_lifecycle` capability) |
-
-## Core API Endpoints
-
-**Public**: `GET /health`, `GET /events?token=` (SSE, 15s heartbeat), `GET /events/count`, `GET /channels`, `POST /webhooks/sequin`, `POST /extension/token`, `POST /extension/token/refresh`, `GET /users/:username`.
-
-**Protected** (LogtoAuth): `GET /dashboard`, `GET /users/me/preferences`, `PUT /users/me/preferences`, `GET /users/me/channels`, `POST /users/me/channels`, `PUT /users/me/channels/:type`, `DELETE /users/me/channels/:type`.
-
-**Proxied**: `/{channel}/*` routes forwarded to channel APIs with `X-User-Sub` header.
-
-## Database Schema
-
-Tables created programmatically on startup. No migration framework.
-
-- **`trades`**: `symbol` (UNIQUE), `price`, `previous_close`, `price_change`, `percentage_change`, `direction`, `last_updated`
-- **`games`**: `league` + `external_game_id` (UNIQUE together), scores, teams, `start_time`, `state`
-- **`tracked_feeds`**: `url` (PK), `name`, `category`, `is_default`, `is_enabled`, `consecutive_failures`, `last_error`, `last_success_at`
-- **`rss_items`**: `feed_url` (FK), `guid`, `title`, `link`, `description`, `source_name`, `published_at`. UNIQUE on `(feed_url, guid)`
-- **`yahoo_users`**: `guid` (PK), `logto_sub` (UNIQUE), `refresh_token` (encrypted), `last_sync`
-- **`yahoo_leagues`**: `league_key` (PK), `guid` (FK), `name`, `game_code`, `season`, `data` (JSONB)
-- **`yahoo_standings`**: `league_key` (PK, FK), `data` (JSONB)
-- **`yahoo_rosters`**: `team_key` (PK), `league_key` (FK), `data` (JSONB)
-- **`yahoo_matchups`**: `team_key` (PK), `data` (JSONB)
-- **`user_channels`**: `logto_sub`, `channel_type`, `enabled`, `visible`, `config` (JSONB). UNIQUE on `(logto_sub, channel_type)`
-- **`user_preferences`**: `logto_sub` (PK), `feed_mode`, `feed_position`, `feed_behavior`, `feed_enabled`, `enabled_sites` (JSONB), `disabled_sites` (JSONB)
-
-## Frontend Routes
-
-| Route | Path | Purpose |
-|-------|------|---------|
-| `__root.tsx` | Layout | Header, Footer, CommandBackground, global effects |
-| `index.tsx` | `/` | Landing page |
-| `dashboard.tsx` | `/dashboard` | Protected dashboard with registry-driven channel tabs |
-| `status.tsx` | `/status` | Public system status |
-| `callback.tsx` | `/callback` | Logto OAuth callback |
-| `account.tsx` | `/account` | Account settings |
-| `u.$username.tsx` | `/u/:username` | Public user profile |
-
-## Extension Architecture
-
-**Entrypoints**: `background/` (SSE, CDC routing, auth, keepalive), `scrollbar.content/` (Shadow Root feed bar on all URLs), `popup/` (quick controls).
-
-**Data flow**: SSE in background service worker receives CDC records. Framework tables (`user_preferences`, `user_channels`) are handled internally (stored/applied). Channel tables (`trades`, `games`, `rss_items`) are batched by table and forwarded as `CDC_BATCH` to content script tabs that sent `SUBSCRIBE_CDC`. Each FeedTab uses `useScrollrCDC` hook for upsert/remove by key, sort, validation, capped at `MAX_ITEMS` (50).
-
-**SSE reconnection**: Exponential backoff from 1s, doubling, capped at 30s. MV3 keepalive via `chrome.alarms` every 30s.
-
-**Browser targets**: Chrome MV3 (primary), Firefox MV2, Edge MV3, Safari MV2.
-
 ## Environment
 
-Copy `.env.example` to `.env` for local dev. Frontend env in `myscrollr.com/.env` (`VITE_API_URL`). Never commit `.env` files. Key secrets: `ENCRYPTION_KEY` (AES-256-GCM, base64 32 bytes), `SEQUIN_WEBHOOK_SECRET`, `FINNHUB_API_KEY`, `YAHOO_CLIENT_ID`/`SECRET`.
-
-## Docker
-
-- Go APIs: multi-stage `golang:1.21-alpine` builder, `alpine:latest` runtime
-- Rust services: `cargo-chef` pattern for dependency caching, `debian:trixie-slim` runtime
-- Frontend: `node:22-alpine` builder, `nginx:alpine` runtime with SPA fallback
-- Each channel has a `docker-compose.yml` bundling its Go API + Rust service
-
-## Known Issues / Tech Debt
-
-1. **Duplicated Rust code** — `database.rs` and `log.rs` are copy-pasted across all 4 Rust services.
-2. **No migration system** — Tables only created, never altered programmatically (except RSS which uses idempotent `ALTER TABLE`).
-3. **No workspace Cargo.toml** — Rust services are independent crates; `cargo build` must be run individually.
-4. **Duplicated Go utilities** — Each channel has its own `helpers.go` with copied DB/Redis code (by design).
-5. **Sequin webhook verification** — Basic Bearer token comparison only.
+Copy `.env.example` to `.env`. Frontend env in `myscrollr.com/.env` (`VITE_API_URL`). Never commit `.env` files.
