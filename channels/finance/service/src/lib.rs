@@ -56,39 +56,55 @@ async fn initialize_symbols(state: FinanceState) {
     for symbol in state.subscriptions {
         let _ = insert_symbol(state.pool.clone(), symbol).await;
     }
-    info!("[ Finnhub ] Symbol initialization complete")
+    info!("[ TwelveData ] Symbol initialization complete")
 }
 
 pub async fn update_all_previous_closes(state: FinanceState) {
     info!("Updating previous closes for {} symbols...", state.subscriptions.len());
-    let batch_size = 3;
+
+    // TwelveData free tier: 8 API credits/min, 800/day.
+    // Batch 2 at a time with 2s delay to stay well within limits.
+    let batch_size = 2;
     for batch in state.subscriptions.chunks(batch_size) {
-        time::sleep(Duration::from_millis(1_500)).await;
+        time::sleep(Duration::from_millis(2_000)).await;
         let futures: Vec<_> = batch.iter().map(|symbol| {
             let client = state.client.clone();
+            let api_key = state.api_key.clone();
             let pool = &state.pool;
             async move {
-                let quote_response = get_quote(symbol.to_string(), client).await;
+                let quote_response = get_quote(symbol.to_string(), client, &api_key).await;
                 match quote_response {
                     Ok(quote) => {
-                        let _ = update_previous_close(pool.clone(), symbol.to_string(), quote.previous_close).await;
-                        if quote.change != 0.0 {
-                            let direction = if quote.change >= 0.0 { "up" } else { "down" };
-                            let _ = update_trade(pool.clone(), symbol.to_string(), quote.current_price, quote.change, quote.percent_change, direction).await;
+                        let pc = quote.previous_close_f64();
+                        let _ = update_previous_close(pool.clone(), symbol.to_string(), pc).await;
+                        let change = quote.change_f64();
+                        if change != 0.0 {
+                            let direction = if change >= 0.0 { "up" } else { "down" };
+                            let _ = update_trade(
+                                pool.clone(),
+                                symbol.to_string(),
+                                quote.close_f64(),
+                                change,
+                                quote.percent_change_f64(),
+                                direction,
+                            ).await;
                         }
                     }
-                    Err(e) => warn!("[ Finnhub ] Quote Error for {}: {e}", symbol),
+                    Err(e) => warn!("[ TwelveData ] Quote Error for {}: {e}", symbol),
                 }
             }
         }).collect();
         join_all(futures).await;
     }
-    info!("[ Finnhub ] Previous closes update complete.");
+    info!("[ TwelveData ] Previous closes update complete.");
 }
 
-async fn get_quote(symbol: String, client: Arc<Client>) -> anyhow::Result<QuoteResponse> {
-    let request = client.get(format!("https://finnhub.io/api/v1/quote?symbol={}", symbol)).build()?;
-    let response = client.execute(request).await?.text().await?;
+pub(crate) async fn get_quote(symbol: String, client: Arc<Client>, api_key: &str) -> anyhow::Result<QuoteResponse> {
+    let url = format!(
+        "https://api.twelvedata.com/quote?symbol={}&apikey={}",
+        symbol, api_key
+    );
+    let response = client.get(&url).send().await?.text().await?;
     let data: QuoteResponse = serde_json::from_str(&response)?;
     Ok(data)
 }

@@ -3,10 +3,10 @@ use std::{collections::HashMap, future::pending, sync::{Arc, atomic::{AtomicU64,
 use reqwest::Client;
 use tokio::{net::TcpStream, sync::{Mutex, RwLock}, time};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async, tungstenite::protocol::Message};
-use futures_util::{SinkExt, StreamExt, stream::{self, SplitSink, SplitStream, iter}};
+use futures_util::{SinkExt, StreamExt, stream::{self, SplitSink, SplitStream}};
 use crate::{database::{PgPool, DatabaseTradeData, Utc, get_trades, insert_symbol, update_previous_close, update_trade}, log::{error, info, warn}};
 
-use crate::{get_quote, types::{FinanceHealth, TradeData, TradeUpdate, WebSocketState}};
+use crate::{get_quote, types::{FinanceHealth, PriceEvent, TradeData, WebSocketState}};
 
 const UPDATE_BATCH_SIZE: usize = 10;
 const UPDATE_BATCH_TIMEOUT: u64 = 1000;
@@ -14,18 +14,19 @@ const UPDATE_BATCH_SIZE_DELAY: u64 = 500;
 
 const LOG_THROTTLE_INTERVAL: Duration = Duration::from_secs(5);
 
+/// Interval between heartbeat messages sent to TwelveData (30 seconds).
+const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
+
 pub(crate) async fn connect(subscriptions: Vec<String>, api_key: String, client: Arc<Client>, pool: Arc<PgPool>, health_state: Arc<Mutex<FinanceHealth>>) -> Result<(), anyhow::Error> {
     let state = Arc::new(RwLock::new(WebSocketState::new()));
-    
-    // Security Note: Finnhub usually requires token as a query parameter for WebSockets.
-    // Redacting this parameter from logs for security.
-    let url = format!("wss://ws.finnhub.io/?token={}", api_key);
+
+    let url = format!("wss://ws.twelvedata.com/v1/quotes/price?apikey={}", api_key);
 
     let (ws_stream, _) = connect_async(url).await.map_err(|e| {
-        error!("Failed to connect to WebSocket (token redacted in logs): {}", e);
+        error!("Failed to connect to TwelveData WebSocket: {}", e);
         e
     })?;
-    info!("WebSocket client connected to Finnhub");
+    info!("WebSocket client connected to TwelveData");
 
     // Set connection status to connected
     {
@@ -39,33 +40,62 @@ pub(crate) async fn connect(subscriptions: Vec<String>, api_key: String, client:
     }
 
     let (writer, reader) = ws_stream.split();
+    let writer = Arc::new(Mutex::new(writer));
 
-    tokio::spawn(ws_send(writer, subscriptions));
-    ws_read(reader, Arc::clone(&state), client, pool, health_state.clone()).await;
+    // Subscribe to all symbols in one message
+    tokio::spawn(ws_send(Arc::clone(&writer), subscriptions));
+
+    // Spawn heartbeat task
+    tokio::spawn(ws_heartbeat(Arc::clone(&writer)));
+
+    ws_read(reader, Arc::clone(&state), client, api_key, pool, health_state.clone()).await;
 
     Ok(())
 }
 
-async fn ws_send(mut writer: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>, subscriptions: Vec<String>) {
-    let messages: Vec<Message> = subscriptions.iter().map(|s| {
-        let sub_msg = format!(r#"{{"type":"subscribe","symbol":"{}"}}"#, s);
+/// Send a single subscribe message for all symbols (TwelveData accepts comma-separated).
+async fn ws_send(writer: Arc<Mutex<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>, subscriptions: Vec<String>) {
+    let symbols_csv = subscriptions.join(",");
+    let sub_msg = format!(
+        r#"{{"action":"subscribe","params":{{"symbols":"{}"}}}}"#,
+        symbols_csv
+    );
 
-        Message::Text(sub_msg.into())
-    }).collect();
+    info!("Subscribing to {} symbols", subscriptions.len());
 
-    let mut stream = iter(messages).map(|m| Ok(m));
-    if let Err(e) = writer.send_all(&mut stream).await {
-        error!("Error sending subscription message to WebSocket: {e}");
+    let mut w = writer.lock().await;
+    if let Err(e) = w.send(Message::Text(sub_msg.into())).await {
+        error!("Error sending subscription message: {e}");
     }
 }
 
-async fn ws_read(mut reader: SplitStream<WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>>, state: Arc<RwLock<WebSocketState>>, client: Arc<Client>, pool: Arc<PgPool>, health_state: Arc<Mutex<FinanceHealth>>) {
-    println!("Now listening for messages...");
-    
+/// Send periodic heartbeats to keep the TwelveData connection alive.
+async fn ws_heartbeat(writer: Arc<Mutex<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>) {
+    let heartbeat_msg = r#"{"action":"heartbeat"}"#;
+    loop {
+        time::sleep(HEARTBEAT_INTERVAL).await;
+        let mut w = writer.lock().await;
+        if let Err(e) = w.send(Message::Text(heartbeat_msg.into())).await {
+            warn!("Heartbeat send failed (connection may be closing): {e}");
+            break;
+        }
+    }
+}
+
+async fn ws_read(
+    mut reader: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
+    state: Arc<RwLock<WebSocketState>>,
+    client: Arc<Client>,
+    api_key: String,
+    pool: Arc<PgPool>,
+    health_state: Arc<Mutex<FinanceHealth>>,
+) {
+    info!("Now listening for TwelveData price events...");
+
     loop {
         tokio::select! {
             biased;
-            _ = async { 
+            _ = async {
                 let timer_exists = state.read().await.batch_timer.is_some();
                 if timer_exists {
                     state.write().await.batch_timer.as_mut().unwrap().as_mut().await
@@ -75,13 +105,13 @@ async fn ws_read(mut reader: SplitStream<WebSocketStream<tokio_tungstenite::Mayb
                 // Timer fired
                 let mut state_w = state.write().await;
                 state_w.batch_timer = None;
-                
+
                 if !state_w.is_processing_batch {
                     info!("Timer fired, processing batch.");
                     let state_clone = Arc::clone(&state);
 
                     drop(state_w);
-                    tokio::spawn(process_batch(state_clone, client.clone(), pool.clone(), health_state.clone()));
+                    tokio::spawn(process_batch(state_clone, client.clone(), api_key.clone(), pool.clone(), health_state.clone()));
                 } else {
                     info!("Timer fired, but a batch is already in process. Waiting.")
                 }
@@ -91,24 +121,35 @@ async fn ws_read(mut reader: SplitStream<WebSocketStream<tokio_tungstenite::Mayb
                 match msg {
                     Ok(msg) => {
                         if msg.is_text() {
-                            let trades_update: Result<TradeUpdate, serde_json::Error> = serde_json::from_str(&msg.to_string());
-                            if let Ok(update) = trades_update {
-                                if update.message_type == "trade" {
-                                    handle_trade_update_batch(update.data, &state).await;
-                                } else if update.message_type == "error" {
-                                    let error_msg = msg.to_string();
-                                    error!("Error message from websocket: {}", error_msg);
-                                    state.write().await.last_error_message = Some(error_msg);
-                                } else {
-                                    warn!("Non-trade message: {:#?}", update)
+                            let text = msg.to_string();
+                            let event: Result<PriceEvent, serde_json::Error> = serde_json::from_str(&text);
+                            match event {
+                                Ok(ev) if ev.event == "price" => {
+                                    // Real-time price update
+                                    if let (Some(symbol), Some(price), Some(ts)) = (ev.symbol, ev.price, ev.timestamp) {
+                                        let trade = TradeData { symbol, price, timestamp: ts };
+                                        handle_trade_update(trade, &state).await;
+                                    }
                                 }
-                            } else {
-                                if msg.to_string().contains("error") {
-                                    let error_msg = msg.to_string();
-                                    error!("Error message from websocket: {}", error_msg);
-                                    state.write().await.last_error_message = Some(error_msg);
-                                } else {
-                                    warn!("Unexpected websocket message format: {}", msg.to_string());
+                                Ok(ev) if ev.event == "subscribe-status" => {
+                                    info!("Subscription status: {}", text);
+                                }
+                                Ok(ev) if ev.event == "heartbeat" => {
+                                    // Heartbeat acknowledged, nothing to do
+                                }
+                                Ok(ev) => {
+                                    // Unknown event type — log it
+                                    warn!("Unhandled event type '{}': {}", ev.event, text);
+                                }
+                                Err(_) => {
+                                    // Could be an error object or unexpected format
+                                    if text.contains("error") || text.contains("\"code\"") {
+                                        let error_msg = text.clone();
+                                        error!("Error message from TwelveData: {}", error_msg);
+                                        state.write().await.last_error_message = Some(error_msg);
+                                    } else {
+                                        warn!("Unexpected message format: {}", text);
+                                    }
                                 }
                             }
                         } else if msg.is_close() {
@@ -149,36 +190,30 @@ async fn ws_read(mut reader: SplitStream<WebSocketStream<tokio_tungstenite::Mayb
 
     if !state.read().await.update_queue.is_empty() {
         info!("Processing final batch before exit...");
-        process_batch(state, client, pool, health_state).await;
+        process_batch(state, client, api_key, pool, health_state).await;
     }
 }
 
-async fn handle_trade_update_batch(trades: Vec<TradeData>, state_arc: &Arc<RwLock<WebSocketState>>) {
+/// Queue a single trade update (TwelveData sends one price event per message).
+async fn handle_trade_update(trade: TradeData, state_arc: &Arc<RwLock<WebSocketState>>) {
     let mut state = state_arc.write().await;
-    let mut new_trades = 0;
 
-    for trade in trades.iter() {
-        // Validation: Ignore suspiciously long symbols
-        if trade.symbol.len() > 20 {
-            continue;
-        }
-
-        let ref_in_queue = state.update_queue.get(&trade.symbol);
-
-        if let Some(trade_in_queue) = ref_in_queue {
-            if trade_in_queue.timestamp >= trade.timestamp {
-                continue;
-            }
-        }
-
-        state.update_queue.insert(trade.symbol.clone(), trade.clone());
-        new_trades += 1;
+    // Validation: Ignore suspiciously long symbols
+    if trade.symbol.len() > 20 {
+        return;
     }
 
-    if new_trades > 0 {
-        drop(state);
-        schedule_batch_processing(state_arc).await;
+    let ref_in_queue = state.update_queue.get(&trade.symbol);
+
+    if let Some(trade_in_queue) = ref_in_queue {
+        if trade_in_queue.timestamp >= trade.timestamp {
+            return;
+        }
     }
+
+    state.update_queue.insert(trade.symbol.clone(), trade);
+    drop(state);
+    schedule_batch_processing(state_arc).await;
 }
 
 async fn schedule_batch_processing(state_arc: &Arc<RwLock<WebSocketState>>) {
@@ -189,7 +224,7 @@ async fn schedule_batch_processing(state_arc: &Arc<RwLock<WebSocketState>>) {
     } else {
         UPDATE_BATCH_TIMEOUT
     };
-    
+
     let new_delay = Duration::from_millis(delay_ms);
 
     if let Some(timer) = &mut state.batch_timer {
@@ -204,7 +239,7 @@ async fn schedule_batch_processing(state_arc: &Arc<RwLock<WebSocketState>>) {
     }
 }
 
-async fn process_batch(state_arc: Arc<RwLock<WebSocketState>>, client: Arc<Client>, pool: Arc<PgPool>, health_state: Arc<Mutex<FinanceHealth>>) {
+async fn process_batch(state_arc: Arc<RwLock<WebSocketState>>, client: Arc<Client>, api_key: String, pool: Arc<PgPool>, health_state: Arc<Mutex<FinanceHealth>>) {
     let (trades, batch_num) = {
         let mut state = state_arc.write().await;
 
@@ -242,10 +277,11 @@ async fn process_batch(state_arc: Arc<RwLock<WebSocketState>>, client: Arc<Clien
                 let proc_clone = Arc::clone(&processed_count);
                 let err_clone = Arc::clone(&error_count);
                 let client_clone = Arc::clone(&client);
+                let api_key_clone = api_key.clone();
                 let pool_clone = Arc::clone(&pool);
 
                 async move {
-                    match process_single_trade(trade, trades_map_clone, client_clone, pool_clone).await {
+                    match process_single_trade(trade, trades_map_clone, client_clone, &api_key_clone, pool_clone).await {
                         Ok(_) => {
                             proc_clone.fetch_add(1, Ordering::SeqCst);
                         }
@@ -314,7 +350,7 @@ async fn process_batch(state_arc: Arc<RwLock<WebSocketState>>, client: Arc<Clien
     }
 }
 
-async fn process_single_trade(trade: TradeData, trades_map: Arc<HashMap<String, DatabaseTradeData>>, client: Arc<Client>, pool: Arc<PgPool>) -> anyhow::Result<()> {
+async fn process_single_trade(trade: TradeData, trades_map: Arc<HashMap<String, DatabaseTradeData>>, client: Arc<Client>, api_key: &str, pool: Arc<PgPool>) -> anyhow::Result<()> {
     let (symbol, price) = (trade.symbol, trade.price);
 
     let existing_record = trades_map.get(&symbol).cloned();
@@ -324,7 +360,7 @@ async fn process_single_trade(trade: TradeData, trades_map: Arc<HashMap<String, 
         let pool_clone = Arc::clone(&pool);
         let symbol_clone = symbol.clone();
         tokio::spawn(async move {
-            insert_symbol(pool_clone, symbol_clone).await;
+            let _ = insert_symbol(pool_clone, symbol_clone).await;
         });
 
         DatabaseTradeData {
@@ -343,28 +379,30 @@ async fn process_single_trade(trade: TradeData, trades_map: Arc<HashMap<String, 
 
         let mut determined_previous_close: Option<f64> = None;
 
-        match get_quote(symbol.clone(), client).await {
+        match get_quote(symbol.clone(), client, api_key).await {
             Ok(quote) => {
-                if quote.previous_close > 0.0 {
-                    determined_previous_close = Some(quote.previous_close);
-                } else if quote.current_price > 0.0 {
-                    determined_previous_close = Some(quote.current_price);
+                let pc = quote.previous_close_f64();
+                let cp = quote.close_f64();
+                if pc > 0.0 {
+                    determined_previous_close = Some(pc);
+                } else if cp > 0.0 {
+                    determined_previous_close = Some(cp);
                 }
             }
 
             Err(e) => {
-                error!("Qutoe API error for {}: {}", symbol, e);
+                error!("Quote API error for {}: {}", symbol, e);
             }
         }
 
         if determined_previous_close.is_none() {
-            warn!("Qutoe unavailable for {}, using live price fallback", symbol);
+            warn!("Quote unavailable for {}, using live price fallback", symbol);
             determined_previous_close = Some(price);
         }
 
         if let Some(pc) = determined_previous_close {
             current_record.previous_close = pc;
-            update_previous_close(Arc::clone(&pool), symbol.clone(), pc).await;
+            let _ = update_previous_close(Arc::clone(&pool), symbol.clone(), pc).await;
         }
     }
 
@@ -390,12 +428,12 @@ async fn process_single_trade(trade: TradeData, trades_map: Arc<HashMap<String, 
 
     let direction = if price_change >= 0.0 { "up" } else { "down" };
 
-    update_trade(
-        Arc::clone(&pool), 
-        symbol.clone(), 
-        current_price, 
-        price_change, 
-        percentage_change, 
+    let _ = update_trade(
+        Arc::clone(&pool),
+        symbol.clone(),
+        current_price,
+        price_change,
+        percentage_change,
         direction
     ).await;
 
