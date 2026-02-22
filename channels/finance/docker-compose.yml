@@ -26,5 +26,5 @@ services:
       - "3001:3001"
     environment:
       - DATABASE_URL=${DATABASE_URL}
-      - FINNHUB_API_KEY=${FINNHUB_API_KEY}
+      - TWELVEDATA_API_KEY=${TWELVEDATA_API_KEY}
     restart: unless-stopped
