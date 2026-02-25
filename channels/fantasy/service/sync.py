@@ -23,6 +23,8 @@ from typing import Any
 
 import asyncpg
 
+from yahoofantasy.util.persistence import CURRENT_PERSISTENCE
+
 import database as db
 from serializers import (
     serialize_league,
@@ -46,6 +48,7 @@ _API_DELAY_SECS = 0.5
 # ---------------------------------------------------------------------------
 # Per-user sync
 # ---------------------------------------------------------------------------
+
 
 async def sync_user(
     user: db.YahooUser,
@@ -91,6 +94,7 @@ async def sync_user(
         log.error("yahoofantasy library not installed — cannot sync")
         return
 
+    CURRENT_PERSISTENCE.clear()
     ctx = Context(
         client_id=client_id,
         client_secret=client_secret,
@@ -109,7 +113,7 @@ async def sync_user(
     for game_code in _GAME_CODES:
         for season in seasons:
             try:
-                leagues = ctx.get_leagues(game_code, season)
+                leagues = ctx.get_leagues(game_code, season, persist_ttl=0)
                 for league in leagues:
                     lk = getattr(league, "league_key", "")
                     if lk in imported_keys:
@@ -117,10 +121,17 @@ async def sync_user(
             except Exception as exc:
                 log.debug(
                     "No %s leagues for user %s season %d: %s",
-                    game_code, user.guid, season, exc,
+                    game_code,
+                    user.guid,
+                    season,
+                    exc,
                 )
 
-    log.info("Matched %d imported leagues from Yahoo for user %s", len(all_leagues), user.guid)
+    log.info(
+        "Matched %d imported leagues from Yahoo for user %s",
+        len(all_leagues),
+        user.guid,
+    )
 
     # ------------------------------------------------------------------
     # 3. Refresh league metadata + update team_key in user_leagues
@@ -141,7 +152,9 @@ async def sync_user(
         # Update team_key/team_name (row already exists from import)
         team_key, team_name = _find_user_team(league_obj, user.guid)
         await db.upsert_yahoo_user_league(
-            pool, user.guid, league_key,
+            pool,
+            user.guid,
+            league_key,
             team_key=team_key,
             team_name=team_name,
         )
@@ -150,7 +163,8 @@ async def sync_user(
     # 3. Filter to active (not finished) leagues
     # ------------------------------------------------------------------
     active_leagues = [
-        (lo, gc) for lo, gc in all_leagues
+        (lo, gc)
+        for lo, gc in all_leagues
         if not serialize_league(lo, gc)["is_finished"]
     ]
     skipped = len(all_leagues) - len(active_leagues)
@@ -168,7 +182,11 @@ async def sync_user(
             standings_objs = league_obj.standings()
             standings_data = serialize_standings(standings_objs)
             await db.upsert_yahoo_standings(pool, league_key, standings_data)
-            log.info("Synced standings for league %s (%d teams)", league_key, len(standings_data))
+            log.info(
+                "Synced standings for league %s (%d teams)",
+                league_key,
+                len(standings_data),
+            )
         except Exception as exc:
             log.warning("Failed standings for league %s: %s", league_key, exc)
 
@@ -184,7 +202,9 @@ async def sync_user(
         try:
             current_week = _safe_int(league_obj, "current_week", 0)
             if current_week <= 0:
-                log.debug("No current_week for league %s, skipping matchups", league_key)
+                log.debug(
+                    "No current_week for league %s, skipping matchups", league_key
+                )
                 continue
 
             # Sync current week + previous week
@@ -204,15 +224,21 @@ async def sync_user(
                         wk = week_num  # fallback to the requested week
 
                     if matchup_data:
-                        await db.upsert_yahoo_matchups(pool, league_key, wk, matchup_data)
+                        await db.upsert_yahoo_matchups(
+                            pool, league_key, wk, matchup_data
+                        )
                         log.info(
                             "Synced %d matchups for league %s week %d",
-                            len(matchup_data), league_key, wk,
+                            len(matchup_data),
+                            league_key,
+                            wk,
                         )
                 except Exception as exc:
                     log.warning(
                         "Failed matchups for league %s week %d: %s",
-                        league_key, week_num, exc,
+                        league_key,
+                        week_num,
+                        exc,
                     )
         except Exception as exc:
             log.warning("Failed matchups for league %s: %s", league_key, exc)
@@ -238,7 +264,9 @@ async def sync_user(
                         team_key=team_key,
                         team_name=team_name,
                     )
-                    await db.upsert_yahoo_roster(pool, team_key, league_key, roster_data)
+                    await db.upsert_yahoo_roster(
+                        pool, team_key, league_key, roster_data
+                    )
                     log.info("Synced roster for team %s (%s)", team_key, team_name)
                 except Exception as exc:
                     log.warning("Failed roster for team %s: %s", team_key, exc)
@@ -264,6 +292,7 @@ async def sync_user(
 # Fast league discovery (no DB writes — returns metadata only)
 # ---------------------------------------------------------------------------
 
+
 async def discover_leagues(
     user: db.YahooUser,
     client_id: str,
@@ -284,6 +313,7 @@ async def discover_leagues(
         log.error("yahoofantasy library not installed — cannot discover leagues")
         return []
 
+    CURRENT_PERSISTENCE.clear()
     ctx = Context(
         client_id=client_id,
         client_secret=client_secret,
@@ -299,12 +329,15 @@ async def discover_leagues(
     def _fetch_combo(game_code: str, season: int) -> list[tuple[Any, str]]:
         """Blocking call — runs inside a thread."""
         try:
-            leagues = ctx.get_leagues(game_code, season)
+            leagues = ctx.get_leagues(game_code, season, persist_ttl=0)
             return [(league, game_code) for league in leagues]
         except Exception as exc:
             log.debug(
                 "discover: no %s leagues for user %s season %d: %s",
-                game_code, user.guid, season, exc,
+                game_code,
+                user.guid,
+                season,
+                exc,
             )
             return []
 
@@ -313,8 +346,7 @@ async def discover_leagues(
 
     with ThreadPoolExecutor(max_workers=8) as executor:
         futures = [
-            loop.run_in_executor(executor, _fetch_combo, gc, s)
-            for gc, s in combos
+            loop.run_in_executor(executor, _fetch_combo, gc, s) for gc, s in combos
         ]
         results = await asyncio.gather(*futures, return_exceptions=True)
 
@@ -340,6 +372,7 @@ async def discover_leagues(
 # Single-league import (fetches + persists one league's full data)
 # ---------------------------------------------------------------------------
 
+
 async def import_single_league(
     user: db.YahooUser,
     pool: asyncpg.Pool,
@@ -361,6 +394,7 @@ async def import_single_league(
     except ImportError:
         raise RuntimeError("yahoofantasy library not installed")
 
+    CURRENT_PERSISTENCE.clear()
     ctx = Context(
         client_id=client_id,
         client_secret=client_secret,
@@ -368,7 +402,7 @@ async def import_single_league(
         persist_key=user.guid,
     )
 
-    leagues = ctx.get_leagues(game_code, season)
+    leagues = ctx.get_leagues(game_code, season, persist_ttl=0)
 
     target_league = None
     for league in leagues:
@@ -393,7 +427,9 @@ async def import_single_league(
     # Store user's team_key
     team_key, team_name = _find_user_team(target_league, user.guid)
     await db.upsert_yahoo_user_league(
-        pool, user.guid, league_key,
+        pool,
+        user.guid,
+        league_key,
         team_key=team_key,
         team_name=team_name,
     )
@@ -433,15 +469,21 @@ async def import_single_league(
                             wk = week_num
 
                         if matchup_data:
-                            await db.upsert_yahoo_matchups(pool, league_key, wk, matchup_data)
+                            await db.upsert_yahoo_matchups(
+                                pool, league_key, wk, matchup_data
+                            )
                             log.info(
                                 "import: synced %d matchups for %s week %d",
-                                len(matchup_data), league_key, wk,
+                                len(matchup_data),
+                                league_key,
+                                wk,
                             )
                     except Exception as exc:
                         log.warning(
                             "import: failed matchups for %s week %d: %s",
-                            league_key, week_num, exc,
+                            league_key,
+                            week_num,
+                            exc,
                         )
         except Exception as exc:
             log.warning("import: failed matchups for %s: %s", league_key, exc)
@@ -467,7 +509,10 @@ async def import_single_league(
         except Exception as exc:
             log.warning("import: failed to get teams for %s: %s", league_key, exc)
     else:
-        log.info("import: league %s is finished, skipping standings/matchups/rosters", league_key)
+        log.info(
+            "import: league %s is finished, skipping standings/matchups/rosters",
+            league_key,
+        )
 
     # Capture refreshed token if the library refreshed it
     new_refresh = getattr(ctx, "_refresh_token", None)
@@ -484,6 +529,7 @@ async def import_single_league(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _find_user_team(league: Any, guid: str) -> tuple[str | None, str | None]:
     """
@@ -507,7 +553,8 @@ def _find_user_team(league: Any, guid: str) -> tuple[str | None, str | None]:
 
         mgr_list = _as_list(
             getattr(managers, "manager", managers)
-            if hasattr(managers, "manager") else managers
+            if hasattr(managers, "manager")
+            else managers
         )
 
         for mgr in mgr_list:
@@ -566,6 +613,7 @@ def _get_week(league: Any, week_num: int) -> Any | None:
 # Sync loop (called from main.py)
 # ---------------------------------------------------------------------------
 
+
 async def run_sync_loop(
     pool: asyncpg.Pool,
     shutdown_event: asyncio.Event,
@@ -593,7 +641,8 @@ async def run_sync_loop(
 
     log.info(
         "Yahoo sync loop starting (interval=%ds, client_id=%s...)",
-        interval, client_id[:8] if client_id else "<empty>",
+        interval,
+        client_id[:8] if client_id else "<empty>",
     )
 
     try:
@@ -609,13 +658,17 @@ async def run_sync_loop(
                         await sync_user(user, pool, client_id, client_secret)
                     except Exception as exc:
                         log.error(
-                            "Failed to sync user %s: %s", user.guid, exc,
+                            "Failed to sync user %s: %s",
+                            user.guid,
+                            exc,
                             exc_info=True,
                         )
 
             except Exception as exc:
                 log.error(
-                    "Failed to fetch users from DB: %s", exc, exc_info=True,
+                    "Failed to fetch users from DB: %s",
+                    exc,
+                    exc_info=True,
                 )
 
             # Sleep in small increments so we can respond to shutdown quickly
@@ -626,7 +679,8 @@ async def run_sync_loop(
 
     except Exception as exc:
         log.error(
-            "Sync loop crashed with unhandled exception: %s", exc,
+            "Sync loop crashed with unhandled exception: %s",
+            exc,
             exc_info=True,
         )
         raise
