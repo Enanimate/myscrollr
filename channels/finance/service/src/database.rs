@@ -57,11 +57,11 @@ pub async fn create_tables(pool: Arc<PgPool>) -> Result<()> {
         CREATE TABLE IF NOT EXISTS trades (
             id SERIAL PRIMARY KEY,
             symbol VARCHAR(30) UNIQUE NOT NULL,
-            price DECIMAL(10,2),
-            previous_close DECIMAL(10,2),
-            price_change DECIMAL(10,2),
-            percentage_change DECIMAL(5,2),
-            direction VARCHAR(10),
+            price DECIMAL(10,2) NOT NULL DEFAULT 0,
+            previous_close DECIMAL(10,2) NOT NULL DEFAULT 0,
+            price_change DECIMAL(10,2) NOT NULL DEFAULT 0,
+            percentage_change DECIMAL(5,2) NOT NULL DEFAULT 0,
+            direction VARCHAR(10) NOT NULL DEFAULT 'flat',
             last_updated TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
@@ -83,6 +83,23 @@ pub async fn create_tables(pool: Arc<PgPool>) -> Result<()> {
     let mut connection = pool.acquire().await?;
     query(trades_statement).execute(&mut *connection).await?;
     query(config_statement).execute(&mut *connection).await?;
+
+    // Backfill any NULL values from before defaults were added.
+    // SQLx requires one statement per execute call.
+    query("UPDATE trades SET price = 0 WHERE price IS NULL").execute(&mut *connection).await?;
+    query("UPDATE trades SET previous_close = 0 WHERE previous_close IS NULL").execute(&mut *connection).await?;
+    query("UPDATE trades SET price_change = 0 WHERE price_change IS NULL").execute(&mut *connection).await?;
+    query("UPDATE trades SET percentage_change = 0 WHERE percentage_change IS NULL").execute(&mut *connection).await?;
+    query("UPDATE trades SET direction = 'flat' WHERE direction IS NULL").execute(&mut *connection).await?;
+
+    // Set column defaults and NOT NULL constraints for the existing table
+    // (CREATE TABLE IF NOT EXISTS won't alter existing columns).
+    query("ALTER TABLE trades ALTER COLUMN price SET DEFAULT 0, ALTER COLUMN price SET NOT NULL").execute(&mut *connection).await?;
+    query("ALTER TABLE trades ALTER COLUMN previous_close SET DEFAULT 0, ALTER COLUMN previous_close SET NOT NULL").execute(&mut *connection).await?;
+    query("ALTER TABLE trades ALTER COLUMN price_change SET DEFAULT 0, ALTER COLUMN price_change SET NOT NULL").execute(&mut *connection).await?;
+    query("ALTER TABLE trades ALTER COLUMN percentage_change SET DEFAULT 0, ALTER COLUMN percentage_change SET NOT NULL").execute(&mut *connection).await?;
+    query("ALTER TABLE trades ALTER COLUMN direction SET DEFAULT 'flat', ALTER COLUMN direction SET NOT NULL").execute(&mut *connection).await?;
+
     query(add_name_col).execute(&mut *connection).await?;
     query(add_category_col).execute(&mut *connection).await?;
     Ok(())
@@ -115,7 +132,7 @@ pub async fn seed_tracked_symbols(pool: Arc<PgPool>, symbols: Vec<crate::types::
 }
 
 pub async fn insert_symbol(pool: Arc<PgPool>, symbol: String) -> Result<()> {
-    let statement = "INSERT INTO trades (symbol) VALUES ($1) ON CONFLICT (symbol) DO NOTHING";
+    let statement = "INSERT INTO trades (symbol, price, previous_close, price_change, percentage_change, direction) VALUES ($1, 0, 0, 0, 0, 'flat') ON CONFLICT (symbol) DO NOTHING";
     let mut connection = pool.acquire().await?;
     query(statement).bind(symbol).execute(&mut *connection).await?;
     Ok(())

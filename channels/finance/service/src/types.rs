@@ -1,6 +1,6 @@
 use std::{collections::HashMap, env, sync::Arc, time::{Duration, Instant}, pin::Pin};
 
-use reqwest::{Client, header::{HeaderMap, HeaderValue}};
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tokio::time::Sleep;
 use crate::database::PgPool;
@@ -13,20 +13,29 @@ pub struct TrackedSymbolConfig {
     pub category: String,
 }
 
-#[derive(Debug, Deserialize)]
-pub(crate) struct TradeUpdate {
-    #[serde(rename = "type")]
-    pub message_type: String,
-    pub data: Vec<TradeData>
+/// TwelveData WebSocket price event.
+///
+/// ```json
+/// {"event":"price","symbol":"AAPL","price":150.75,"timestamp":1678886400,"day_volume":5000000}
+/// ```
+#[derive(Debug, Deserialize, Clone)]
+#[allow(dead_code)]
+pub(crate) struct PriceEvent {
+    pub event: String,
+    pub symbol: Option<String>,
+    pub price: Option<f64>,
+    pub timestamp: Option<u64>,
+    pub day_volume: Option<u64>,
+    /// Present on status/error events
+    pub status: Option<String>,
+    pub message: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+/// Simplified trade data extracted from a PriceEvent for the update queue.
+#[derive(Debug, Clone)]
 pub(crate) struct TradeData {
-    #[serde(rename = "s")]
     pub symbol: String,
-    #[serde(rename = "p")]
     pub price: f64,
-    #[serde(rename = "t")]
     pub timestamp: u64,
 }
 
@@ -37,16 +46,47 @@ pub(crate) struct BatchStats {
     pub errors: u64,
 }
 
+/// TwelveData REST quote response.
+///
+/// Success example:
+/// ```json
+/// {"symbol":"AAPL","close":"150.75","previous_close":"149.50","change":"1.25","percent_change":"0.84",...}
+/// ```
+///
+/// Error example (rate limit, bad symbol, etc.):
+/// ```json
+/// {"code":429,"message":"Too many requests","status":"error"}
+/// ```
 #[derive(Debug, Deserialize)]
 pub(crate) struct QuoteResponse {
-    #[serde(rename = "c")]
-    pub current_price: f64,
-    #[serde(rename = "d")]
-    pub change: f64,
-    #[serde(rename = "dp")]
-    pub percent_change: f64,
-    #[serde(rename = "pc")]
-    pub previous_close: f64
+    pub close: Option<String>,
+    pub previous_close: Option<String>,
+    pub change: Option<String>,
+    pub percent_change: Option<String>,
+    /// Present on error responses (e.g. 400, 401, 429).
+    pub code: Option<u16>,
+    pub message: Option<String>,
+    pub status: Option<String>,
+}
+
+impl QuoteResponse {
+    /// Returns true when TwelveData returned an error instead of quote data.
+    pub fn is_error(&self) -> bool {
+        self.code.is_some() || self.status.as_deref() == Some("error")
+    }
+
+    pub fn close_f64(&self) -> f64 {
+        self.close.as_deref().and_then(|s| s.parse().ok()).unwrap_or(0.0)
+    }
+    pub fn previous_close_f64(&self) -> f64 {
+        self.previous_close.as_deref().and_then(|s| s.parse().ok()).unwrap_or(0.0)
+    }
+    pub fn change_f64(&self) -> f64 {
+        self.change.as_deref().and_then(|s| s.parse().ok()).unwrap_or(0.0)
+    }
+    pub fn percent_change_f64(&self) -> f64 {
+        self.percent_change.as_deref().and_then(|s| s.parse().ok()).unwrap_or(0.0)
+    }
 }
 
 pub(crate) struct WebSocketState {
@@ -81,15 +121,14 @@ pub struct FinanceState {
 
 impl FinanceState {
     pub async fn new(pool: Arc<PgPool>) -> Self {
-        let api_key = env::var("FINNHUB_API_KEY").expect("Finnhub API key needs to be set in .env");
+        let api_key = env::var("TWELVEDATA_API_KEY")
+            .expect("TWELVEDATA_API_KEY must be set in the environment");
 
-        let mut headers: HeaderMap = HeaderMap::new();
-        headers.append("X-Finnhub-Token", HeaderValue::from_str(&api_key).expect("Failed casting api_key to HeaderValue"));
-
+        // TwelveData uses apikey as a query parameter, no custom headers needed.
         let client = Client::builder()
-            .default_headers(headers)
             .timeout(Duration::from_millis(10_000))
-            .build().expect("Failed creating finance Reqwest Client");
+            .build()
+            .expect("Failed creating finance Reqwest Client");
 
         // Load symbols from database instead of file
         let subscriptions = crate::database::get_tracked_symbols(pool.clone()).await;

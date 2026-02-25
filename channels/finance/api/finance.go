@@ -38,7 +38,9 @@ const (
 	RedisFinanceSubscribersPrefix = "finance:subscribers:"
 
 	// TradesQuery is the SQL used to fetch all trades.
-	TradesQuery = "SELECT symbol, price, previous_close, price_change, percentage_change, direction, last_updated FROM trades ORDER BY symbol ASC"
+	// COALESCE guards against NULL columns for rows that have been inserted
+	// but not yet updated by the Rust ingestion service.
+	TradesQuery = `SELECT symbol, COALESCE(price, 0), COALESCE(previous_close, 0), COALESCE(price_change, 0), COALESCE(percentage_change, 0), COALESCE(direction, 'flat'), COALESCE(last_updated, created_at) FROM trades ORDER BY symbol ASC`
 )
 
 // =============================================================================
@@ -324,7 +326,8 @@ func (a *App) queryTradesBySymbols(symbols []string) []Trade {
 	}
 
 	rows, err := a.db.Query(context.Background(), `
-		SELECT symbol, price, previous_close, price_change, percentage_change, direction, last_updated
+		SELECT symbol, COALESCE(price, 0), COALESCE(previous_close, 0), COALESCE(price_change, 0),
+			COALESCE(percentage_change, 0), COALESCE(direction, 'flat'), COALESCE(last_updated, created_at)
 		FROM trades
 		WHERE symbol = ANY($1)
 		ORDER BY symbol ASC
