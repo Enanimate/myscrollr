@@ -27,15 +27,20 @@ log = logging.getLogger("yahoo-sync")
 # Connection
 # ---------------------------------------------------------------------------
 
+
 async def create_pool() -> asyncpg.Pool:
     """Create a connection pool, trying DATABASE_URL first, then individual vars."""
     database_url = os.environ.get("DATABASE_URL", "").strip().strip("'\"")
 
     if database_url:
         # Normalise scheme so asyncpg is happy
-        if database_url.startswith("postgres:") and not database_url.startswith("postgres://"):
+        if database_url.startswith("postgres:") and not database_url.startswith(
+            "postgres://"
+        ):
             database_url = database_url.replace("postgres:", "postgres://", 1)
-        elif database_url.startswith("postgresql:") and not database_url.startswith("postgresql://"):
+        elif database_url.startswith("postgresql:") and not database_url.startswith(
+            "postgresql://"
+        ):
             database_url = database_url.replace("postgresql:", "postgresql://", 1)
 
         return await asyncpg.create_pool(
@@ -119,6 +124,12 @@ CREATE TABLE IF NOT EXISTS yahoo_user_leagues (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (guid, league_key)
 );
+
+-- Indexes for batch queries and CDC resolution
+CREATE INDEX IF NOT EXISTS idx_yahoo_user_leagues_guid ON yahoo_user_leagues(guid);
+CREATE INDEX IF NOT EXISTS idx_yahoo_user_leagues_league_key ON yahoo_user_leagues(league_key);
+CREATE INDEX IF NOT EXISTS idx_yahoo_rosters_league_key ON yahoo_rosters(league_key);
+CREATE INDEX IF NOT EXISTS idx_yahoo_matchups_league_key_week ON yahoo_matchups(league_key, week DESC);
 """
 
 # Migration statements to evolve the old schema to the new one.
@@ -218,6 +229,7 @@ async def create_tables(pool: asyncpg.Pool) -> None:
 # Data model
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class YahooUser:
     guid: str
@@ -230,6 +242,7 @@ class YahooUser:
 # ---------------------------------------------------------------------------
 # Read helpers
 # ---------------------------------------------------------------------------
+
 
 async def get_all_yahoo_users(pool: asyncpg.Pool) -> list[YahooUser]:
     """Fetch all yahoo_users and decrypt their refresh tokens."""
@@ -247,13 +260,58 @@ async def get_all_yahoo_users(pool: asyncpg.Pool) -> list[YahooUser]:
             log.error("Failed to decrypt token for user %s: %s", row["guid"], exc)
             continue
 
-        users.append(YahooUser(
-            guid=row["guid"],
-            logto_sub=row["logto_sub"],
-            refresh_token=plaintext_token,
-            last_sync=row["last_sync"],
-            created_at=row["created_at"],
-        ))
+        users.append(
+            YahooUser(
+                guid=row["guid"],
+                logto_sub=row["logto_sub"],
+                refresh_token=plaintext_token,
+                last_sync=row["last_sync"],
+                created_at=row["created_at"],
+            )
+        )
+
+    return users
+
+
+async def get_yahoo_users_batch(
+    pool: asyncpg.Pool,
+    batch_size: int = 50,
+    offset: int = 0,
+) -> list[YahooUser]:
+    """
+    Fetch a batch of yahoo_users ordered by staleness (least recently synced first).
+
+    Users who have never been synced (last_sync IS NULL) are returned first,
+    then users with the oldest last_sync timestamps.  This ensures newly
+    connected users get synced immediately and long-idle users are prioritized.
+    """
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT guid, logto_sub, refresh_token, last_sync, created_at "
+            "FROM yahoo_users "
+            "ORDER BY last_sync ASC NULLS FIRST "
+            "LIMIT $1 OFFSET $2",
+            batch_size,
+            offset,
+        )
+
+    users: list[YahooUser] = []
+    for row in rows:
+        try:
+            plaintext_token = decrypt(row["refresh_token"])
+        except Exception as exc:
+            log.error("Failed to decrypt token for user %s: %s", row["guid"], exc)
+            continue
+
+        users.append(
+            YahooUser(
+                guid=row["guid"],
+                logto_sub=row["logto_sub"],
+                refresh_token=plaintext_token,
+                last_sync=row["last_sync"],
+                created_at=row["created_at"],
+            )
+        )
 
     return users
 
@@ -301,6 +359,7 @@ async def get_user_league_team_keys(
 # ---------------------------------------------------------------------------
 # Upsert helpers
 # ---------------------------------------------------------------------------
+
 
 async def upsert_yahoo_user(
     pool: asyncpg.Pool,

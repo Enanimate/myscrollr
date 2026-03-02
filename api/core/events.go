@@ -381,11 +381,12 @@ func extractFeedURLsFromConfig(config map[string]interface{}) []string {
 }
 
 // getUserFantasyLeagues returns the Yahoo league keys a user has imported.
+// Uses yahoo_user_leagues junction table (yahoo_leagues.guid was removed).
 func getUserFantasyLeagues(ctx context.Context, userID string) ([]string, error) {
 	rows, err := DBPool.Query(ctx, `
-		SELECT yl.league_key
-		FROM yahoo_leagues yl
-		INNER JOIN yahoo_users yu ON yu.guid = yl.guid
+		SELECT yul.league_key
+		FROM yahoo_user_leagues yul
+		INNER JOIN yahoo_users yu ON yu.guid = yul.guid
 		WHERE yu.logto_sub = $1
 	`, userID)
 	if err != nil {

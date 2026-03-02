@@ -46,6 +46,9 @@ _startup_time = datetime.now(timezone.utc)
 _sync_task: asyncio.Task | None = None
 _shutdown_event = asyncio.Event()
 _pool: db.asyncpg.Pool | None = None
+_SYNC_RESTART_DELAY = 10  # seconds before restarting a crashed sync loop
+_MAX_SYNC_RESTARTS = 5  # max consecutive restarts before giving up
+_sync_restart_count = 0
 
 # Health tracking (mirrors Rust YahooHealth)
 _health = {
@@ -62,15 +65,49 @@ _health = {
 # FastAPI app with lifespan
 # ---------------------------------------------------------------------------
 
+
 def _on_sync_task_done(task: asyncio.Task) -> None:
-    """Callback attached to the sync background task so exceptions are never silent."""
+    """Callback attached to the sync background task — restarts on crash."""
+    global _sync_task, _sync_restart_count
     try:
         exc = task.exception()
     except asyncio.CancelledError:
         log.info("Sync task was cancelled")
         return
     if exc is not None:
-        log.error("Sync task crashed with unhandled exception: %s", exc, exc_info=exc)
+        _sync_restart_count += 1
+        log.error(
+            "Sync task crashed (restart %d/%d): %s",
+            _sync_restart_count,
+            _MAX_SYNC_RESTARTS,
+            exc,
+            exc_info=exc,
+        )
+        if _shutdown_event.is_set():
+            return
+        if _sync_restart_count > _MAX_SYNC_RESTARTS:
+            log.error(
+                "Sync loop exceeded max restarts (%d) — giving up", _MAX_SYNC_RESTARTS
+            )
+            _health["status"] = "unhealthy"
+            _health["last_error"] = f"Sync loop crashed {_sync_restart_count} times"
+            return
+        # Schedule restart after a delay
+        loop = asyncio.get_event_loop()
+        loop.call_later(_SYNC_RESTART_DELAY, _restart_sync_loop)
+    else:
+        # Successful completion resets the counter
+        _sync_restart_count = 0
+
+
+def _restart_sync_loop() -> None:
+    """Restart the sync loop after a crash."""
+    global _sync_task
+    if _shutdown_event.is_set() or _pool is None:
+        return
+    log.info("Restarting sync loop after %ds delay...", _SYNC_RESTART_DELAY)
+    _sync_task = asyncio.create_task(run_sync_loop(_pool, _shutdown_event))
+    _sync_task.add_done_callback(_on_sync_task_done)
 
 
 def _check_required_env(name: str) -> str:
@@ -95,7 +132,9 @@ async def lifespan(app: FastAPI):
         _check_required_env("YAHOO_CLIENT_ID")
         _check_required_env("YAHOO_CLIENT_SECRET")
         _check_required_env("ENCRYPTION_KEY")
-        log.info("Required env vars validated (YAHOO_CLIENT_ID, YAHOO_CLIENT_SECRET, ENCRYPTION_KEY)")
+        log.info(
+            "Required env vars validated (YAHOO_CLIENT_ID, YAHOO_CLIENT_SECRET, ENCRYPTION_KEY)"
+        )
     except RuntimeError as exc:
         log.error("Cannot start sync loop — %s", exc)
         # Still yield so the health endpoint runs (reports unhealthy)
@@ -143,6 +182,7 @@ async def health():
 # ---------------------------------------------------------------------------
 # League discovery & import endpoints
 # ---------------------------------------------------------------------------
+
 
 @app.post("/discover/{guid}")
 async def discover(guid: str):
@@ -223,8 +263,13 @@ async def import_league(req: ImportLeagueRequest):
 
     try:
         result = await import_single_league(
-            user, _pool, client_id, client_secret,
-            req.league_key, req.game_code, req.season,
+            user,
+            _pool,
+            client_id,
+            client_secret,
+            req.league_key,
+            req.game_code,
+            req.season,
         )
     except ValueError as exc:
         return JSONResponse(
@@ -234,7 +279,10 @@ async def import_league(req: ImportLeagueRequest):
     except Exception as exc:
         log.error(
             "import failed for %s league %s: %s",
-            req.guid, req.league_key, exc, exc_info=True,
+            req.guid,
+            req.league_key,
+            exc,
+            exc_info=True,
         )
         return JSONResponse(
             status_code=500,
@@ -248,6 +296,7 @@ async def import_league(req: ImportLeagueRequest):
 # Signal handling for graceful shutdown
 # ---------------------------------------------------------------------------
 
+
 def _handle_signal(sig, frame):
     log.info("Received signal %s, initiating shutdown...", sig)
     _shutdown_event.set()
@@ -256,6 +305,7 @@ def _handle_signal(sig, frame):
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def main():
     # Register signal handlers

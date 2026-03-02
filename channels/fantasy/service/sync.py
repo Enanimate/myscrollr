@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import random
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
@@ -43,6 +44,53 @@ _GAME_CODES = ("nfl", "nba", "nhl", "mlb")
 
 # Delay between Yahoo API calls to avoid rate-limiting
 _API_DELAY_SECS = 0.5
+
+# Retry configuration for Yahoo API calls
+_MAX_RETRIES = 3
+_RETRY_BASE_DELAY = 1.0  # seconds
+
+# Concurrent user sync — bounded parallelism to avoid overwhelming Yahoo API
+_SYNC_CONCURRENCY = 3
+
+# Lock to protect CURRENT_PERSISTENCE (yahoofantasy global singleton) during
+# Context creation.  Each sync_user call clears the persistence and creates a
+# new Context keyed by user GUID — without serialisation, concurrent calls
+# would corrupt each other's state.
+_persistence_lock = asyncio.Lock()
+
+
+async def _with_retry(fn, *args, label: str = "API call"):
+    """
+    Call a blocking function with exponential backoff retry.
+
+    The yahoofantasy library uses synchronous HTTP calls internally, so `fn`
+    is a regular callable.  We wrap each attempt with the standard API delay
+    and add jittered exponential backoff between retries.
+    """
+    last_exc: Exception | None = None
+    for attempt in range(_MAX_RETRIES):
+        try:
+            await asyncio.sleep(_API_DELAY_SECS)
+            return fn(*args)
+        except Exception as exc:
+            last_exc = exc
+            if attempt == _MAX_RETRIES - 1:
+                break
+            delay = _RETRY_BASE_DELAY * (2**attempt) + random.uniform(0, 0.5)
+            log.info(
+                "[Retry] %s attempt %d/%d failed, retrying in %.1fs: %s",
+                label,
+                attempt + 1,
+                _MAX_RETRIES,
+                delay,
+                exc,
+            )
+            await asyncio.sleep(delay)
+
+    log.warning(
+        "[Retry] %s failed after %d attempts: %s", label, _MAX_RETRIES, last_exc
+    )
+    raise last_exc  # type: ignore[misc]
 
 
 # ---------------------------------------------------------------------------
@@ -94,13 +142,17 @@ async def sync_user(
         log.error("yahoofantasy library not installed — cannot sync")
         return
 
-    CURRENT_PERSISTENCE.clear()
-    ctx = Context(
-        client_id=client_id,
-        client_secret=client_secret,
-        refresh_token=user.refresh_token,
-        persist_key=user.guid,
-    )
+    # CURRENT_PERSISTENCE is a global mutable singleton.  Serialise the
+    # clear + Context creation so concurrent sync_user calls don't corrupt
+    # each other's persistence state.
+    async with _persistence_lock:
+        CURRENT_PERSISTENCE.clear()
+        ctx = Context(
+            client_id=client_id,
+            client_secret=client_secret,
+            refresh_token=user.refresh_token,
+            persist_key=user.guid,
+        )
 
     # ------------------------------------------------------------------
     # 2. Fetch leagues from Yahoo, but ONLY keep imported ones
@@ -176,10 +228,12 @@ async def sync_user(
     # ------------------------------------------------------------------
     for league_obj, game_code in active_leagues:
         league_key = getattr(league_obj, "league_key", "")
-        await asyncio.sleep(_API_DELAY_SECS)
 
         try:
-            standings_objs = league_obj.standings()
+            standings_objs = await _with_retry(
+                league_obj.standings,
+                label=f"standings({league_key})",
+            )
             standings_data = serialize_standings(standings_objs)
             await db.upsert_yahoo_standings(pool, league_key, standings_data)
             log.info(
@@ -197,7 +251,6 @@ async def sync_user(
     # ------------------------------------------------------------------
     for league_obj, game_code in active_leagues:
         league_key = getattr(league_obj, "league_key", "")
-        await asyncio.sleep(_API_DELAY_SECS)
 
         try:
             current_week = _safe_int(league_obj, "current_week", 0)
@@ -213,9 +266,13 @@ async def sync_user(
                 weeks_to_sync.append(current_week - 1)
 
             for week_num in weeks_to_sync:
-                await asyncio.sleep(_API_DELAY_SECS)
                 try:
-                    week_obj = _get_week(league_obj, week_num)
+                    week_obj = await _with_retry(
+                        _get_week,
+                        league_obj,
+                        week_num,
+                        label=f"matchups({league_key},wk{week_num})",
+                    )
                     if week_obj is None:
                         continue
 
@@ -255,10 +312,12 @@ async def sync_user(
             for team_obj in teams:
                 team_key = getattr(team_obj, "team_key", "")
                 team_name = _safe_str(team_obj, "name")
-                await asyncio.sleep(_API_DELAY_SECS)
 
                 try:
-                    roster_obj = team_obj.roster()
+                    roster_obj = await _with_retry(
+                        team_obj.roster,
+                        label=f"roster({team_key})",
+                    )
                     roster_data = serialize_roster(
                         roster_obj,
                         team_key=team_key,
@@ -645,24 +704,54 @@ async def run_sync_loop(
         client_id[:8] if client_id else "<empty>",
     )
 
+    batch_size = 50
+    semaphore = asyncio.Semaphore(_SYNC_CONCURRENCY)
+
+    async def _sync_one(user: db.YahooUser) -> bool:
+        """Sync a single user under the concurrency semaphore. Returns True on success."""
+        async with semaphore:
+            if shutdown_event.is_set():
+                return False
+            try:
+                await sync_user(user, pool, client_id, client_secret)
+                return True
+            except Exception as exc:
+                log.error(
+                    "Failed to sync user %s: %s",
+                    user.guid,
+                    exc,
+                    exc_info=True,
+                )
+                return False
+
     try:
         while not shutdown_event.is_set():
             try:
-                users = await db.get_all_yahoo_users(pool)
-                log.info("Syncing %d Yahoo users...", len(users))
-
-                for user in users:
-                    if shutdown_event.is_set():
+                # Process users in batches, ordered by staleness
+                offset = 0
+                total_synced = 0
+                while not shutdown_event.is_set():
+                    users = await db.get_yahoo_users_batch(pool, batch_size, offset)
+                    if not users:
                         break
-                    try:
-                        await sync_user(user, pool, client_id, client_secret)
-                    except Exception as exc:
-                        log.error(
-                            "Failed to sync user %s: %s",
-                            user.guid,
-                            exc,
-                            exc_info=True,
+
+                    if offset == 0:
+                        log.info(
+                            "Starting sync cycle (batch_size=%d, concurrency=%d)...",
+                            batch_size,
+                            _SYNC_CONCURRENCY,
                         )
+
+                    # Run up to _SYNC_CONCURRENCY users concurrently within each batch
+                    results = await asyncio.gather(
+                        *[_sync_one(user) for user in users],
+                        return_exceptions=True,
+                    )
+                    total_synced += sum(1 for r in results if r is True)
+
+                    offset += batch_size
+
+                log.info("Sync cycle complete: %d users synced", total_synced)
 
             except Exception as exc:
                 log.error(

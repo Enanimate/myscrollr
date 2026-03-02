@@ -278,8 +278,8 @@ func (a *App) GetYahooStatus(c *fiber.Ctx) error {
 }
 
 // GetMyYahooLeagues returns all leagues + standings + matchups + rosters for
-// the authenticated user in a single response. This is the main data endpoint
-// for the dashboard — Postgres is the single source of truth.
+// the authenticated user in a single response. Uses the shared
+// fetchLeagueBundleCached for efficient, cached data fetching.
 func (a *App) GetMyYahooLeagues(c *fiber.Ctx) error {
 	userID := GetUserSub(c)
 	if userID == "" {
@@ -297,106 +297,10 @@ func (a *App) GetMyYahooLeagues(c *fiber.Ctx) error {
 		return c.JSON(MyLeaguesResponse{Leagues: []LeagueResponse{}})
 	}
 
-	// Fetch all leagues for this user
-	leagueRows, err := a.db.Query(context.Background(), `
-		SELECT l.league_key, l.name, l.game_code, l.season, l.data,
-		       ul.team_key, ul.team_name
-		FROM yahoo_leagues l
-		JOIN yahoo_user_leagues ul ON l.league_key = ul.league_key
-		WHERE ul.guid = $1
-		ORDER BY l.game_code, l.season DESC
-	`, guid)
+	leagues, err := a.fetchLeagueBundleCached(context.Background(), guid)
 	if err != nil {
-		log.Printf("[GetMyYahooLeagues] League query error: %v", err)
+		log.Printf("[GetMyYahooLeagues] fetchLeagueBundle error: %v", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Status: "error", Error: "Failed to fetch leagues"})
-	}
-	defer leagueRows.Close()
-
-	leagues := make([]LeagueResponse, 0)
-	leagueKeys := make([]string, 0)
-	for leagueRows.Next() {
-		var lr LeagueResponse
-		if err := leagueRows.Scan(
-			&lr.LeagueKey, &lr.Name, &lr.GameCode, &lr.Season, &lr.Data,
-			&lr.TeamKey, &lr.TeamName,
-		); err != nil {
-			log.Printf("[GetMyYahooLeagues] Scan error: %v", err)
-			continue
-		}
-		leagues = append(leagues, lr)
-		leagueKeys = append(leagueKeys, lr.LeagueKey)
-	}
-
-	if len(leagues) == 0 {
-		return c.JSON(MyLeaguesResponse{Leagues: leagues})
-	}
-
-	// Batch-fetch standings
-	standingsMap := make(map[string]json.RawMessage)
-	standingsRows, err := a.db.Query(context.Background(),
-		"SELECT league_key, data FROM yahoo_standings WHERE league_key = ANY($1)", leagueKeys)
-	if err == nil {
-		defer standingsRows.Close()
-		for standingsRows.Next() {
-			var lk string
-			var data json.RawMessage
-			if err := standingsRows.Scan(&lk, &data); err == nil {
-				standingsMap[lk] = data
-			}
-		}
-	}
-
-	// Batch-fetch current matchups (most recent week per league)
-	matchupsMap := make(map[string]json.RawMessage)
-	matchupsRows, err := a.db.Query(context.Background(), `
-		SELECT DISTINCT ON (league_key) league_key, data
-		FROM yahoo_matchups
-		WHERE league_key = ANY($1)
-		ORDER BY league_key, week DESC
-	`, leagueKeys)
-	if err == nil {
-		defer matchupsRows.Close()
-		for matchupsRows.Next() {
-			var lk string
-			var data json.RawMessage
-			if err := matchupsRows.Scan(&lk, &data); err == nil {
-				matchupsMap[lk] = data
-			}
-		}
-	}
-
-	// Batch-fetch all rosters grouped by league
-	rostersMap := make(map[string]json.RawMessage)
-	rostersRows, err := a.db.Query(context.Background(), `
-		SELECT league_key,
-		       json_agg(json_build_object('team_key', team_key, 'data', data)) AS rosters
-		FROM yahoo_rosters
-		WHERE league_key = ANY($1)
-		GROUP BY league_key
-	`, leagueKeys)
-	if err == nil {
-		defer rostersRows.Close()
-		for rostersRows.Next() {
-			var lk string
-			var data json.RawMessage
-			if err := rostersRows.Scan(&lk, &data); err == nil {
-				rostersMap[lk] = data
-			}
-		}
-	}
-
-	// Attach data to each league
-	for i := range leagues {
-		lk := leagues[i].LeagueKey
-		if s, ok := standingsMap[lk]; ok {
-			leagues[i].Standings = s
-		}
-		if m, ok := matchupsMap[lk]; ok {
-			leagues[i].Matchups = m
-		}
-		if r, ok := rostersMap[lk]; ok {
-			leagues[i].Rosters = r
-		}
 	}
 
 	return c.JSON(MyLeaguesResponse{Leagues: leagues})
@@ -536,9 +440,10 @@ func (a *App) ImportYahooLeague(c *fiber.Ctx) error {
 
 	respBody, _ := io.ReadAll(resp.Body)
 
-	// On successful import, populate Redis CDC subscriber set for this league
+	// On successful import, populate Redis CDC subscriber set and invalidate cache
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		a.AddLeagueSubscriber(context.Background(), incoming.LeagueKey, userID)
+		a.invalidateLeagueCache(context.Background(), guid)
 		log.Printf("[ImportYahooLeague] Added user %s to CDC set for league %s", userID, incoming.LeagueKey)
 	}
 
@@ -565,9 +470,10 @@ func (a *App) DisconnectYahoo(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "ok", "message": "No Yahoo account connected"})
 	}
 
-	// Clean up Redis CDC subscriber sets BEFORE deleting DB rows
+	// Clean up Redis CDC subscriber sets and cache BEFORE deleting DB rows
 	// (we need the user_leagues data to know which sets to clean)
 	a.CleanupLeagueSubscribers(context.Background(), guid, userID)
+	a.invalidateLeagueCache(context.Background(), guid)
 
 	// Delete from yahoo_users — cascading deletes handle leagues, standings, etc.
 	_, err = a.db.Exec(context.Background(),

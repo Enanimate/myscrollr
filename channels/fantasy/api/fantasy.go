@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"strings"
@@ -69,6 +70,158 @@ func resolveFrontendURL() string {
 }
 
 // =============================================================================
+// Shared League Data Fetcher (used by both dashboard & user handlers)
+// =============================================================================
+
+// LeagueCacheTTL controls how long assembled league data is cached in Redis.
+const LeagueCacheTTL = 90 * time.Second
+const LeagueCachePrefix = "fantasy:leagues:"
+
+// fetchLeagueBundle fetches all leagues + standings + matchups + rosters for a
+// user (identified by their Yahoo GUID). This is the single implementation of
+// the 4-query sequence, eliminating duplication between handleInternalDashboard
+// and GetMyYahooLeagues.
+func (a *App) fetchLeagueBundle(ctx context.Context, guid string) ([]LeagueResponse, error) {
+	// Fetch all leagues via the user_leagues junction table
+	leagueRows, err := a.db.Query(ctx, `
+		SELECT l.league_key, l.name, l.game_code, l.season, l.data,
+		       ul.team_key, ul.team_name
+		FROM yahoo_leagues l
+		JOIN yahoo_user_leagues ul ON l.league_key = ul.league_key
+		WHERE ul.guid = $1
+		ORDER BY l.game_code, l.season DESC
+	`, guid)
+	if err != nil {
+		return nil, fmt.Errorf("query leagues: %w", err)
+	}
+	defer leagueRows.Close()
+
+	leagues := make([]LeagueResponse, 0)
+	leagueKeys := make([]string, 0)
+	for leagueRows.Next() {
+		var lr LeagueResponse
+		if err := leagueRows.Scan(
+			&lr.LeagueKey, &lr.Name, &lr.GameCode, &lr.Season, &lr.Data,
+			&lr.TeamKey, &lr.TeamName,
+		); err != nil {
+			log.Printf("[LeagueBundle] Scan error: %v", err)
+			continue
+		}
+		leagues = append(leagues, lr)
+		leagueKeys = append(leagueKeys, lr.LeagueKey)
+	}
+
+	if len(leagues) == 0 {
+		return leagues, nil
+	}
+
+	// Batch-fetch standings
+	standingsMap := make(map[string]json.RawMessage)
+	standingsRows, err := a.db.Query(ctx,
+		"SELECT league_key, data FROM yahoo_standings WHERE league_key = ANY($1)", leagueKeys)
+	if err == nil {
+		defer standingsRows.Close()
+		for standingsRows.Next() {
+			var lk string
+			var data json.RawMessage
+			if err := standingsRows.Scan(&lk, &data); err == nil {
+				standingsMap[lk] = data
+			}
+		}
+	}
+
+	// Batch-fetch current matchups (most recent week per league)
+	matchupsMap := make(map[string]json.RawMessage)
+	matchupsRows, err := a.db.Query(ctx, `
+		SELECT DISTINCT ON (league_key) league_key, data
+		FROM yahoo_matchups
+		WHERE league_key = ANY($1)
+		ORDER BY league_key, week DESC
+	`, leagueKeys)
+	if err == nil {
+		defer matchupsRows.Close()
+		for matchupsRows.Next() {
+			var lk string
+			var data json.RawMessage
+			if err := matchupsRows.Scan(&lk, &data); err == nil {
+				matchupsMap[lk] = data
+			}
+		}
+	}
+
+	// Batch-fetch all rosters grouped by league
+	rostersMap := make(map[string]json.RawMessage)
+	rostersRows, err := a.db.Query(ctx, `
+		SELECT league_key,
+		       json_agg(json_build_object('team_key', team_key, 'data', data)) AS rosters
+		FROM yahoo_rosters
+		WHERE league_key = ANY($1)
+		GROUP BY league_key
+	`, leagueKeys)
+	if err == nil {
+		defer rostersRows.Close()
+		for rostersRows.Next() {
+			var lk string
+			var data json.RawMessage
+			if err := rostersRows.Scan(&lk, &data); err == nil {
+				rostersMap[lk] = data
+			}
+		}
+	}
+
+	// Attach associated data to each league
+	for i := range leagues {
+		lk := leagues[i].LeagueKey
+		if s, ok := standingsMap[lk]; ok {
+			leagues[i].Standings = s
+		}
+		if m, ok := matchupsMap[lk]; ok {
+			leagues[i].Matchups = m
+		}
+		if r, ok := rostersMap[lk]; ok {
+			leagues[i].Rosters = r
+		}
+	}
+
+	return leagues, nil
+}
+
+// fetchLeagueBundleCached wraps fetchLeagueBundle with a Redis cache layer.
+// Fantasy data only changes every ~120s (sync interval), so caching the
+// assembled response eliminates redundant DB queries for concurrent requests.
+func (a *App) fetchLeagueBundleCached(ctx context.Context, guid string) ([]LeagueResponse, error) {
+	cacheKey := LeagueCachePrefix + guid
+
+	// Try cache first
+	cached, err := a.rdb.Get(ctx, cacheKey).Bytes()
+	if err == nil {
+		var leagues []LeagueResponse
+		if json.Unmarshal(cached, &leagues) == nil {
+			return leagues, nil
+		}
+	}
+
+	// Cache miss — fetch from DB
+	leagues, err := a.fetchLeagueBundle(ctx, guid)
+	if err != nil {
+		return nil, err
+	}
+
+	// Store in cache (best-effort)
+	if data, marshalErr := json.Marshal(leagues); marshalErr == nil {
+		a.rdb.Set(ctx, cacheKey, data, LeagueCacheTTL)
+	}
+
+	return leagues, nil
+}
+
+// invalidateLeagueCache removes the cached league data for a user.
+// Called when CDC events arrive or after league import/disconnect.
+func (a *App) invalidateLeagueCache(ctx context.Context, guid string) {
+	a.rdb.Del(ctx, LeagueCachePrefix+guid)
+}
+
+// =============================================================================
 // Internal Routes (called by core gateway)
 // =============================================================================
 
@@ -131,12 +284,20 @@ func (a *App) handleInternalCDC(c *fiber.Ctx) error {
 		users = append(users, sub)
 	}
 
+	// Invalidate cached league bundles for all affected users (best-effort)
+	for _, sub := range users {
+		var guid string
+		if err := a.db.QueryRow(ctx,
+			"SELECT guid FROM yahoo_users WHERE logto_sub = $1", sub).Scan(&guid); err == nil {
+			a.invalidateLeagueCache(ctx, guid)
+		}
+	}
+
 	return c.JSON(fiber.Map{"users": users})
 }
 
 // handleInternalDashboard returns fantasy data for a user's dashboard.
-// Returns all leagues the user has imported, with standings, current matchups,
-// and rosters for all teams in each league.
+// Uses the shared fetchLeagueBundleCached to avoid query duplication.
 // Query param: user={logto_sub}
 func (a *App) handleInternalDashboard(c *fiber.Ctx) error {
 	userSub := c.Query("user")
@@ -152,106 +313,10 @@ func (a *App) handleInternalDashboard(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"fantasy": nil})
 	}
 
-	// Fetch all leagues for this user via the user_leagues junction table
-	leagueRows, err := a.db.Query(context.Background(), `
-		SELECT l.league_key, l.name, l.game_code, l.season, l.data,
-		       ul.team_key, ul.team_name
-		FROM yahoo_leagues l
-		JOIN yahoo_user_leagues ul ON l.league_key = ul.league_key
-		WHERE ul.guid = $1
-		ORDER BY l.game_code, l.season DESC
-	`, guid)
+	leagues, err := a.fetchLeagueBundleCached(context.Background(), guid)
 	if err != nil {
-		log.Printf("[Dashboard] League query error for guid=%s: %v", guid, err)
+		log.Printf("[Dashboard] fetchLeagueBundle error for guid=%s: %v", guid, err)
 		return c.JSON(fiber.Map{"fantasy": nil})
-	}
-	defer leagueRows.Close()
-
-	leagues := make([]LeagueResponse, 0)
-	leagueKeys := make([]string, 0)
-	for leagueRows.Next() {
-		var lr LeagueResponse
-		if err := leagueRows.Scan(
-			&lr.LeagueKey, &lr.Name, &lr.GameCode, &lr.Season, &lr.Data,
-			&lr.TeamKey, &lr.TeamName,
-		); err != nil {
-			log.Printf("[Dashboard] Scan error: %v", err)
-			continue
-		}
-		leagues = append(leagues, lr)
-		leagueKeys = append(leagueKeys, lr.LeagueKey)
-	}
-
-	if len(leagues) == 0 {
-		return c.JSON(fiber.Map{"fantasy": MyLeaguesResponse{Leagues: leagues}})
-	}
-
-	// Batch-fetch standings for all leagues
-	standingsMap := make(map[string]json.RawMessage)
-	standingsRows, err := a.db.Query(context.Background(),
-		"SELECT league_key, data FROM yahoo_standings WHERE league_key = ANY($1)", leagueKeys)
-	if err == nil {
-		defer standingsRows.Close()
-		for standingsRows.Next() {
-			var lk string
-			var data json.RawMessage
-			if err := standingsRows.Scan(&lk, &data); err == nil {
-				standingsMap[lk] = data
-			}
-		}
-	}
-
-	// Batch-fetch current matchups for all leagues (most recent week per league)
-	matchupsMap := make(map[string]json.RawMessage)
-	matchupsRows, err := a.db.Query(context.Background(), `
-		SELECT DISTINCT ON (league_key) league_key, data
-		FROM yahoo_matchups
-		WHERE league_key = ANY($1)
-		ORDER BY league_key, week DESC
-	`, leagueKeys)
-	if err == nil {
-		defer matchupsRows.Close()
-		for matchupsRows.Next() {
-			var lk string
-			var data json.RawMessage
-			if err := matchupsRows.Scan(&lk, &data); err == nil {
-				matchupsMap[lk] = data
-			}
-		}
-	}
-
-	// Batch-fetch all rosters grouped by league
-	rostersMap := make(map[string]json.RawMessage)
-	rostersRows, err := a.db.Query(context.Background(), `
-		SELECT league_key,
-		       json_agg(json_build_object('team_key', team_key, 'data', data)) AS rosters
-		FROM yahoo_rosters
-		WHERE league_key = ANY($1)
-		GROUP BY league_key
-	`, leagueKeys)
-	if err == nil {
-		defer rostersRows.Close()
-		for rostersRows.Next() {
-			var lk string
-			var data json.RawMessage
-			if err := rostersRows.Scan(&lk, &data); err == nil {
-				rostersMap[lk] = data
-			}
-		}
-	}
-
-	// Attach associated data to each league
-	for i := range leagues {
-		lk := leagues[i].LeagueKey
-		if s, ok := standingsMap[lk]; ok {
-			leagues[i].Standings = s
-		}
-		if m, ok := matchupsMap[lk]; ok {
-			leagues[i].Matchups = m
-		}
-		if r, ok := rostersMap[lk]; ok {
-			leagues[i].Rosters = r
-		}
 	}
 
 	return c.JSON(fiber.Map{"fantasy": MyLeaguesResponse{Leagues: leagues}})

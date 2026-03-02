@@ -14,7 +14,7 @@ import (
 )
 
 var proxyClient = &http.Client{
-	Timeout: 30 * time.Second,
+	Timeout: 70 * time.Second,
 	CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		return http.ErrUseLastResponse
 	},
@@ -116,7 +116,12 @@ func proxyRequest(c *fiber.Ctx, intg *ChannelInfo, route ChannelRoute, targetPat
 
 	// Create the proxy request with an independent context (Fiber's c.Context()
 	// is pooled and may be recycled before the proxy completes).
-	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	// POST/PUT/DELETE routes (e.g. league import) may take 60s+; GET routes are fast.
+	proxyTimeout := 25 * time.Second
+	if c.Method() == "POST" || c.Method() == "PUT" || c.Method() == "DELETE" {
+		proxyTimeout = 65 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), proxyTimeout)
 	defer cancel()
 
 	var bodyReader io.Reader
