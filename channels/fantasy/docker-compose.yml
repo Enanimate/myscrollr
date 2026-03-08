@@ -19,21 +19,7 @@ services:
       - YAHOO_CLIENT_SECRET=${YAHOO_CLIENT_SECRET}
       - YAHOO_CALLBACK_URL=${YAHOO_CALLBACK_URL}
       - FRONTEND_URL=${FRONTEND_URL}
-      - INTERNAL_YAHOO_URL=http://scrollr-fantasy-service:3003
-    restart: unless-stopped
-
-  scrollr-fantasy-service:
-    build:
-      context: ./service
-      dockerfile: Dockerfile
-    container_name: scrollr-fantasy-service
-    ports:
-      - "3003:3003"
-    environment:
-      - DATABASE_URL=${DATABASE_URL}
-      - REDIS_URL=${REDIS_URL}
-      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
-      - YAHOO_CLIENT_ID=${YAHOO_CLIENT_ID}
-      - YAHOO_CLIENT_SECRET=${YAHOO_CLIENT_SECRET}
-      - SYNC_INTERVAL_SECS=${SYNC_INTERVAL_SECS}
+      - SYNC_ENABLED=${SYNC_ENABLED:-true}
+      - SYNC_INTERVAL_SECS=${SYNC_INTERVAL_SECS:-120}
+      - SYNC_CONCURRENCY=${SYNC_CONCURRENCY:-40}
     restart: unless-stopped
