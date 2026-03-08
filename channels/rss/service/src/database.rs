@@ -123,23 +123,32 @@ pub async fn create_tables(pool: &Arc<PgPool>) -> Result<()> {
     Ok(())
 }
 
-// ── Seed default feeds from config file ──────────────────────────
+// ── Seed default feeds from config file (batched) ───────────────
 
 pub async fn seed_tracked_feeds(pool: Arc<PgPool>, feeds: Vec<FeedConfig>) -> Result<()> {
+    if feeds.is_empty() {
+        return Ok(());
+    }
+
+    let urls: Vec<&str> = feeds.iter().map(|f| f.url.as_str()).collect();
+    let names: Vec<&str> = feeds.iter().map(|f| f.name.as_str()).collect();
+    let categories: Vec<&str> = feeds.iter().map(|f| f.category.as_str()).collect();
+
     let statement = "
         INSERT INTO tracked_feeds (url, name, category, is_default, is_enabled)
-        VALUES ($1, $2, $3, true, true)
+        SELECT * FROM UNNEST($1::text[], $2::text[], $3::text[])
+            AS t(url, name, category),
+            LATERAL (SELECT true AS is_default, true AS is_enabled) defaults
         ON CONFLICT (url) DO UPDATE SET category = EXCLUDED.category, name = EXCLUDED.name
     ";
     let mut connection = pool.acquire().await?;
-    for feed in feeds {
-        query(statement)
-            .bind(&feed.url)
-            .bind(&feed.name)
-            .bind(&feed.category)
-            .execute(&mut *connection)
-            .await?;
-    }
+    query(statement)
+        .bind(&urls)
+        .bind(&names)
+        .bind(&categories)
+        .execute(&mut *connection)
+        .await
+        .context("Failed to batch seed tracked feeds")?;
     Ok(())
 }
 
@@ -229,14 +238,29 @@ pub async fn record_feed_failure(pool: &Arc<PgPool>, feed_url: &str, error: &str
     }
 }
 
-// ── Upsert a single RSS item ────────────────────────────────────
+// ── Batch upsert RSS items ──────────────────────────────────────
 
-pub async fn upsert_rss_item(pool: Arc<PgPool>, article: ParsedArticle) -> Result<()> {
+pub async fn batch_upsert_rss_items(pool: &Arc<PgPool>, articles: Vec<ParsedArticle>) -> Result<()> {
+    if articles.is_empty() {
+        return Ok(());
+    }
+
+    let feed_urls: Vec<&str> = articles.iter().map(|a| a.feed_url.as_str()).collect();
+    let guids: Vec<&str> = articles.iter().map(|a| a.guid.as_str()).collect();
+    let titles: Vec<&str> = articles.iter().map(|a| a.title.as_str()).collect();
+    let links: Vec<&str> = articles.iter().map(|a| a.link.as_str()).collect();
+    let descriptions: Vec<&str> = articles.iter().map(|a| a.description.as_str()).collect();
+    let source_names: Vec<&str> = articles.iter().map(|a| a.source_name.as_str()).collect();
+    let published_ats: Vec<Option<DateTime<Utc>>> = articles.iter().map(|a| a.published_at).collect();
+
     // Only touch the row when content actually changed — unchanged articles
     // are skipped so Sequin CDC won't fire redundant UPDATE events on repoll.
     let statement = "
         INSERT INTO rss_items (feed_url, guid, title, link, description, source_name, published_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        SELECT * FROM UNNEST(
+            $1::text[], $2::text[], $3::text[], $4::text[],
+            $5::text[], $6::text[], $7::timestamptz[]
+        ) AS t(feed_url, guid, title, link, description, source_name, published_at)
         ON CONFLICT (feed_url, guid)
         DO UPDATE SET
             title = EXCLUDED.title,
@@ -246,23 +270,24 @@ pub async fn upsert_rss_item(pool: Arc<PgPool>, article: ParsedArticle) -> Resul
             published_at = EXCLUDED.published_at,
             updated_at = CURRENT_TIMESTAMP
         WHERE
-            rss_items.title       IS DISTINCT FROM EXCLUDED.title
-            OR rss_items.link        IS DISTINCT FROM EXCLUDED.link
-            OR rss_items.description IS DISTINCT FROM EXCLUDED.description
-            OR rss_items.source_name IS DISTINCT FROM EXCLUDED.source_name
-            OR rss_items.published_at IS DISTINCT FROM EXCLUDED.published_at;
+            rss_items.title        IS DISTINCT FROM EXCLUDED.title
+            OR rss_items.link         IS DISTINCT FROM EXCLUDED.link
+            OR rss_items.description  IS DISTINCT FROM EXCLUDED.description
+            OR rss_items.source_name  IS DISTINCT FROM EXCLUDED.source_name
+            OR rss_items.published_at IS DISTINCT FROM EXCLUDED.published_at
     ";
     let mut connection = pool.acquire().await?;
     query(statement)
-        .bind(&article.feed_url)
-        .bind(&article.guid)
-        .bind(&article.title)
-        .bind(&article.link)
-        .bind(&article.description)
-        .bind(&article.source_name)
-        .bind(article.published_at)
+        .bind(&feed_urls)
+        .bind(&guids)
+        .bind(&titles)
+        .bind(&links)
+        .bind(&descriptions)
+        .bind(&source_names)
+        .bind(&published_ats)
         .execute(&mut *connection)
-        .await?;
+        .await
+        .context("Failed to batch upsert RSS items")?;
     Ok(())
 }
 

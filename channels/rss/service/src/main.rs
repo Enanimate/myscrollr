@@ -1,9 +1,9 @@
 use axum::{routing::get, Router, Json, extract::State};
-use dotenv::dotenv;
+use dotenvy::dotenv;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
-use rss_service::{start_rss_service, RssHealth, log::init_async_logger, database::initialize_pool};
+use rss_service::{start_rss_service, RssHealth, log::init_async_logger, database::{initialize_pool, create_tables}};
 
 #[derive(Clone)]
 struct AppState {
@@ -29,6 +29,20 @@ async fn main() {
             }
         }
     };
+    // Run table creation once at startup (not every cycle)
+    if let Err(e) = create_tables(&pool).await {
+        panic!("Failed to create database tables: {}", e);
+    }
+
+    // Build HTTP client once and reuse across all cycles for connection pooling
+    let http_client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .connect_timeout(std::time::Duration::from_secs(5))
+        .gzip(true)
+        .user_agent("MyScrollr RSS Bot/1.0")
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+
     let health = Arc::new(Mutex::new(RssHealth::new()));
 
     // Cancellation token for coordinated shutdown
@@ -48,7 +62,7 @@ async fn main() {
                     break;
                 }
                 _ = async {
-                    start_rss_service(pool_clone.clone(), health_clone.clone(), cycle).await;
+                    start_rss_service(pool_clone.clone(), health_clone.clone(), &http_client, cycle).await;
                     cycle += 1;
                     tokio::time::sleep(std::time::Duration::from_secs(300)).await;
                 } => {}
