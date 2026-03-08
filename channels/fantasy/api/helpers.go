@@ -30,9 +30,17 @@ func GetSubscribers(rdb *redis.Client, ctx context.Context, setKey string) ([]st
 	return rdb.SMembers(ctx, setKey).Result()
 }
 
-// AddSubscriber adds a user to a Redis subscriber set.
+// SubscriberSetTTL controls how long CDC subscriber sets persist in Redis.
+// Sets are refreshed on each OAuth link / league import, so a 7-day TTL
+// allows stale sets to expire if cleanup was missed.
+const SubscriberSetTTL = 7 * 24 * time.Hour
+
+// AddSubscriber adds a user to a Redis subscriber set with a TTL.
 func AddSubscriber(rdb *redis.Client, ctx context.Context, setKey, userSub string) {
-	if err := rdb.SAdd(ctx, setKey, userSub).Err(); err != nil {
+	pipe := rdb.Pipeline()
+	pipe.SAdd(ctx, setKey, userSub)
+	pipe.Expire(ctx, setKey, SubscriberSetTTL)
+	if _, err := pipe.Exec(ctx); err != nil {
 		log.Printf("[Redis] Failed to add subscriber %s to %s: %v", userSub, setKey, err)
 	}
 }
@@ -86,13 +94,23 @@ func ProxyInternalHealth(c *fiber.Ctx, internalURL string) error {
 // Encryption
 // =============================================================================
 
+// decodeEncryptionKey reads and decodes the ENCRYPTION_KEY env var.
+func decodeEncryptionKey() ([]byte, error) {
+	key := os.Getenv("ENCRYPTION_KEY")
+	decoded, err := base64.StdEncoding.DecodeString(key)
+	if err != nil || len(decoded) != 32 {
+		return nil, fmt.Errorf("invalid ENCRYPTION_KEY")
+	}
+	return decoded, nil
+}
+
 // Encrypt encrypts a plaintext string using AES-256-GCM and returns a
 // base64-encoded ciphertext.
+// Wire format: base64( 12-byte-nonce || ciphertext || 16-byte-GCM-tag )
 func Encrypt(plaintext string) (string, error) {
-	key := os.Getenv("ENCRYPTION_KEY")
-	decodedKey, err := base64.StdEncoding.DecodeString(key)
-	if err != nil || len(decodedKey) != 32 {
-		return "", fmt.Errorf("invalid ENCRYPTION_KEY")
+	decodedKey, err := decodeEncryptionKey()
+	if err != nil {
+		return "", err
 	}
 
 	block, err := aes.NewCipher(decodedKey)
@@ -112,6 +130,46 @@ func Encrypt(plaintext string) (string, error) {
 
 	ciphertext := gcm.Seal(nonce, nonce, []byte(plaintext), nil)
 	return base64.StdEncoding.EncodeToString(ciphertext), nil
+}
+
+// Decrypt reverses Encrypt: decodes base64, splits nonce from ciphertext+tag,
+// and returns the original plaintext.
+// Wire format: base64( 12-byte-nonce || ciphertext || 16-byte-GCM-tag )
+func Decrypt(encrypted string) (string, error) {
+	decodedKey, err := decodeEncryptionKey()
+	if err != nil {
+		return "", err
+	}
+
+	raw, err := base64.StdEncoding.DecodeString(encrypted)
+	if err != nil {
+		return "", fmt.Errorf("decrypt: invalid base64: %w", err)
+	}
+
+	block, err := aes.NewCipher(decodedKey)
+	if err != nil {
+		return "", err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+
+	nonceSize := gcm.NonceSize()
+	if len(raw) < nonceSize {
+		return "", fmt.Errorf("decrypt: ciphertext too short")
+	}
+
+	nonce := raw[:nonceSize]
+	ciphertext := raw[nonceSize:]
+
+	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return "", fmt.Errorf("decrypt: %w", err)
+	}
+
+	return string(plaintext), nil
 }
 
 // =============================================================================

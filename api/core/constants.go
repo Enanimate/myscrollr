@@ -64,6 +64,12 @@ const (
 const (
 	RateLimitMax        = 120
 	RateLimitExpiration = 1 * time.Minute
+
+	// Stricter rate limit for OAuth initiation endpoints to prevent abuse.
+	// 10 attempts per 5 minutes per IP is generous for legitimate users
+	// but blocks automated abuse.
+	OAuthRateLimitMax        = 10
+	OAuthRateLimitExpiration = 5 * time.Minute
 )
 
 // =============================================================================

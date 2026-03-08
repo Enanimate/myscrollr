@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
-	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -278,8 +277,8 @@ func (a *App) GetYahooStatus(c *fiber.Ctx) error {
 }
 
 // GetMyYahooLeagues returns all leagues + standings + matchups + rosters for
-// the authenticated user in a single response. This is the main data endpoint
-// for the dashboard — Postgres is the single source of truth.
+// the authenticated user in a single response. Uses the shared
+// fetchLeagueBundleCached for efficient, cached data fetching.
 func (a *App) GetMyYahooLeagues(c *fiber.Ctx) error {
 	userID := GetUserSub(c)
 	if userID == "" {
@@ -297,113 +296,18 @@ func (a *App) GetMyYahooLeagues(c *fiber.Ctx) error {
 		return c.JSON(MyLeaguesResponse{Leagues: []LeagueResponse{}})
 	}
 
-	// Fetch all leagues for this user
-	leagueRows, err := a.db.Query(context.Background(), `
-		SELECT l.league_key, l.name, l.game_code, l.season, l.data,
-		       ul.team_key, ul.team_name
-		FROM yahoo_leagues l
-		JOIN yahoo_user_leagues ul ON l.league_key = ul.league_key
-		WHERE ul.guid = $1
-		ORDER BY l.game_code, l.season DESC
-	`, guid)
+	leagues, err := a.fetchLeagueBundleCached(context.Background(), guid)
 	if err != nil {
-		log.Printf("[GetMyYahooLeagues] League query error: %v", err)
+		log.Printf("[GetMyYahooLeagues] fetchLeagueBundle error: %v", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Status: "error", Error: "Failed to fetch leagues"})
-	}
-	defer leagueRows.Close()
-
-	leagues := make([]LeagueResponse, 0)
-	leagueKeys := make([]string, 0)
-	for leagueRows.Next() {
-		var lr LeagueResponse
-		if err := leagueRows.Scan(
-			&lr.LeagueKey, &lr.Name, &lr.GameCode, &lr.Season, &lr.Data,
-			&lr.TeamKey, &lr.TeamName,
-		); err != nil {
-			log.Printf("[GetMyYahooLeagues] Scan error: %v", err)
-			continue
-		}
-		leagues = append(leagues, lr)
-		leagueKeys = append(leagueKeys, lr.LeagueKey)
-	}
-
-	if len(leagues) == 0 {
-		return c.JSON(MyLeaguesResponse{Leagues: leagues})
-	}
-
-	// Batch-fetch standings
-	standingsMap := make(map[string]json.RawMessage)
-	standingsRows, err := a.db.Query(context.Background(),
-		"SELECT league_key, data FROM yahoo_standings WHERE league_key = ANY($1)", leagueKeys)
-	if err == nil {
-		defer standingsRows.Close()
-		for standingsRows.Next() {
-			var lk string
-			var data json.RawMessage
-			if err := standingsRows.Scan(&lk, &data); err == nil {
-				standingsMap[lk] = data
-			}
-		}
-	}
-
-	// Batch-fetch current matchups (most recent week per league)
-	matchupsMap := make(map[string]json.RawMessage)
-	matchupsRows, err := a.db.Query(context.Background(), `
-		SELECT DISTINCT ON (league_key) league_key, data
-		FROM yahoo_matchups
-		WHERE league_key = ANY($1)
-		ORDER BY league_key, week DESC
-	`, leagueKeys)
-	if err == nil {
-		defer matchupsRows.Close()
-		for matchupsRows.Next() {
-			var lk string
-			var data json.RawMessage
-			if err := matchupsRows.Scan(&lk, &data); err == nil {
-				matchupsMap[lk] = data
-			}
-		}
-	}
-
-	// Batch-fetch all rosters grouped by league
-	rostersMap := make(map[string]json.RawMessage)
-	rostersRows, err := a.db.Query(context.Background(), `
-		SELECT league_key,
-		       json_agg(json_build_object('team_key', team_key, 'data', data)) AS rosters
-		FROM yahoo_rosters
-		WHERE league_key = ANY($1)
-		GROUP BY league_key
-	`, leagueKeys)
-	if err == nil {
-		defer rostersRows.Close()
-		for rostersRows.Next() {
-			var lk string
-			var data json.RawMessage
-			if err := rostersRows.Scan(&lk, &data); err == nil {
-				rostersMap[lk] = data
-			}
-		}
-	}
-
-	// Attach data to each league
-	for i := range leagues {
-		lk := leagues[i].LeagueKey
-		if s, ok := standingsMap[lk]; ok {
-			leagues[i].Standings = s
-		}
-		if m, ok := matchupsMap[lk]; ok {
-			leagues[i].Matchups = m
-		}
-		if r, ok := rostersMap[lk]; ok {
-			leagues[i].Rosters = r
-		}
 	}
 
 	return c.JSON(MyLeaguesResponse{Leagues: leagues})
 }
 
-// DiscoverYahooLeagues calls the Python sync service to quickly discover all
-// Yahoo Fantasy leagues for the current user WITHOUT persisting them.
+// DiscoverYahooLeagues discovers all Yahoo Fantasy leagues for the current
+// user across all game codes and recent seasons.  Returns league metadata
+// WITHOUT persisting to the database (used for the "Add Leagues" UI).
 func (a *App) DiscoverYahooLeagues(c *fiber.Ctx) error {
 	userID := GetUserSub(c)
 	if userID == "" {
@@ -424,40 +328,76 @@ func (a *App) DiscoverYahooLeagues(c *fiber.Ctx) error {
 		})
 	}
 
-	internalURL := strings.TrimSuffix(os.Getenv("INTERNAL_YAHOO_URL"), "/")
-	if internalURL == "" {
-		return c.Status(fiber.StatusServiceUnavailable).JSON(ErrorResponse{
-			Status: "error",
-			Error:  "Internal service URL not configured",
-		})
-	}
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	req, err := http.NewRequest("POST", internalURL+"/discover/"+guid, nil)
+	// Fetch + decrypt refresh token
+	var encryptedToken string
+	err = a.db.QueryRow(context.Background(),
+		"SELECT refresh_token FROM yahoo_users WHERE guid = $1", guid,
+	).Scan(&encryptedToken)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
-			Status: "error",
-			Error:  "Failed to create request",
+			Status: "error", Error: "Failed to read user token",
 		})
 	}
 
-	resp, err := client.Do(req)
+	refreshToken, err := Decrypt(encryptedToken)
 	if err != nil {
-		log.Printf("[DiscoverYahooLeagues] Proxy to service failed: %v", err)
-		return c.Status(fiber.StatusServiceUnavailable).JSON(ErrorResponse{
-			Status: "error",
-			Error:  "Sync service unavailable",
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
+			Status: "error", Error: "Failed to decrypt token",
 		})
 	}
-	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
-	c.Set("Content-Type", "application/json")
-	return c.Status(resp.StatusCode).Send(respBody)
+	clientID := os.Getenv("YAHOO_CLIENT_ID")
+	clientSecret := os.Getenv("YAHOO_CLIENT_SECRET")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	client := NewYahooClient(clientID, clientSecret, refreshToken)
+
+	currentYear := time.Now().Year()
+	seasons := []int{currentYear, currentYear - 1}
+
+	// Fetch leagues across all game codes concurrently
+	type result struct {
+		leagues []map[string]any
+		err     error
+	}
+	ch := make(chan result, len(SupportedGameCodes)*len(seasons))
+
+	for _, gc := range SupportedGameCodes {
+		for _, s := range seasons {
+			go func(gameCode string, season int) {
+				leagues, err := client.GetLeagues(ctx, gameCode, season)
+				ch <- result{leagues: leagues, err: err}
+			}(gc, s)
+		}
+	}
+
+	var allLeagues []map[string]any
+	for i := 0; i < len(SupportedGameCodes)*len(seasons); i++ {
+		r := <-ch
+		if r.err != nil {
+			log.Printf("[Discover] Game/season fetch error: %v", r.err)
+			continue
+		}
+		allLeagues = append(allLeagues, r.leagues...)
+	}
+
+	log.Printf("[Discover] Found %d leagues for user %s", len(allLeagues), guid)
+
+	// Persist rotated refresh token if changed
+	if newToken := client.RefreshedToken(); newToken != "" && newToken != refreshToken {
+		if encrypted, err := Encrypt(newToken); err == nil {
+			a.updateRefreshToken(context.Background(), guid, encrypted)
+		}
+	}
+
+	return c.JSON(fiber.Map{"leagues": allLeagues})
 }
 
-// ImportYahooLeague calls the Python sync service to import a single league,
-// then populates the Redis CDC subscriber set for that league.
+// ImportYahooLeague imports a single league directly via the Yahoo Fantasy API.
+// Fetches league metadata, standings, matchups, and rosters, then persists
+// everything to the database and populates the Redis CDC subscriber set.
 func (a *App) ImportYahooLeague(c *fiber.Ctx) error {
 	userID := GetUserSub(c)
 	if userID == "" {
@@ -497,53 +437,180 @@ func (a *App) ImportYahooLeague(c *fiber.Ctx) error {
 		})
 	}
 
-	internalURL := strings.TrimSuffix(os.Getenv("INTERNAL_YAHOO_URL"), "/")
-	if internalURL == "" {
-		return c.Status(fiber.StatusServiceUnavailable).JSON(ErrorResponse{
-			Status: "error",
-			Error:  "Internal service URL not configured",
-		})
-	}
-
-	// Build the request body for the Python service (add guid)
-	payload, _ := json.Marshal(map[string]interface{}{
-		"guid":       guid,
-		"league_key": incoming.LeagueKey,
-		"game_code":  incoming.GameCode,
-		"season":     incoming.Season,
-	})
-
-	client := &http.Client{Timeout: 60 * time.Second}
-	req, err := http.NewRequest("POST", internalURL+"/import-league",
-		strings.NewReader(string(payload)))
+	// Fetch + decrypt refresh token
+	var encryptedToken string
+	err = a.db.QueryRow(context.Background(),
+		"SELECT refresh_token FROM yahoo_users WHERE guid = $1", guid,
+	).Scan(&encryptedToken)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
-			Status: "error",
-			Error:  "Failed to create request",
+			Status: "error", Error: "Failed to read user token",
 		})
 	}
-	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := client.Do(req)
+	refreshToken, err := Decrypt(encryptedToken)
 	if err != nil {
-		log.Printf("[ImportYahooLeague] Proxy to service failed: %v", err)
-		return c.Status(fiber.StatusServiceUnavailable).JSON(ErrorResponse{
-			Status: "error",
-			Error:  "Sync service unavailable",
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
+			Status: "error", Error: "Failed to decrypt token",
 		})
 	}
-	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
+	clientID := os.Getenv("YAHOO_CLIENT_ID")
+	clientSecret := os.Getenv("YAHOO_CLIENT_SECRET")
 
-	// On successful import, populate Redis CDC subscriber set for this league
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		a.AddLeagueSubscriber(context.Background(), incoming.LeagueKey, userID)
-		log.Printf("[ImportYahooLeague] Added user %s to CDC set for league %s", userID, incoming.LeagueKey)
+	// 60s timeout for the entire import operation (multiple Yahoo API calls)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	client := NewYahooClient(clientID, clientSecret, refreshToken)
+
+	// 1. Fetch leagues for the game/season to find the target league
+	leagues, err := client.GetLeagues(ctx, incoming.GameCode, incoming.Season)
+	if err != nil {
+		log.Printf("[Import] GetLeagues failed for %s/%d: %v", incoming.GameCode, incoming.Season, err)
+		return c.Status(fiber.StatusBadGateway).JSON(ErrorResponse{
+			Status: "error", Error: "Failed to fetch leagues from Yahoo",
+		})
 	}
 
-	c.Set("Content-Type", "application/json")
-	return c.Status(resp.StatusCode).Send(respBody)
+	// Find the target league by key
+	var targetLeague map[string]any
+	for _, l := range leagues {
+		if lk, _ := l["league_key"].(string); lk == incoming.LeagueKey {
+			targetLeague = l
+			break
+		}
+	}
+	if targetLeague == nil {
+		return c.Status(fiber.StatusNotFound).JSON(ErrorResponse{
+			Status: "error",
+			Error:  fmt.Sprintf("League %s not found in %s/%d", incoming.LeagueKey, incoming.GameCode, incoming.Season),
+		})
+	}
+
+	// 2. Upsert league metadata
+	name, _ := targetLeague["name"].(string)
+	season := fmt.Sprintf("%v", targetLeague["season"])
+
+	if err := a.upsertLeague(ctx, incoming.LeagueKey, name, incoming.GameCode, season, targetLeague); err != nil {
+		log.Printf("[Import] Failed upsert league %s: %v", incoming.LeagueKey, err)
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
+			Status: "error", Error: "Failed to save league",
+		})
+	}
+
+	// 3. Find user's team and upsert user_league
+	teams, err := client.GetTeams(ctx, incoming.LeagueKey)
+	if err != nil {
+		log.Printf("[Import] Failed to get teams for %s: %v", incoming.LeagueKey, err)
+	}
+	var teamKey, teamName *string
+	if teams != nil {
+		teamKey, teamName = findUserTeam(teams, guid)
+	}
+
+	if err := a.upsertUserLeague(ctx, guid, incoming.LeagueKey, teamKey, teamName); err != nil {
+		log.Printf("[Import] Failed upsert user_league %s/%s: %v", guid, incoming.LeagueKey, err)
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
+			Status: "error", Error: "Failed to save user league",
+		})
+	}
+
+	result := map[string]any{
+		"league":   targetLeague,
+		"standings": nil,
+	}
+
+	// 4. For active leagues, fetch standings, matchups, and rosters
+	isFinished, _ := targetLeague["is_finished"].(bool)
+	if !isFinished {
+		// Standings
+		standings, err := client.GetStandings(ctx, incoming.LeagueKey)
+		if err != nil {
+			log.Printf("[Import] Failed standings for %s: %v", incoming.LeagueKey, err)
+		} else if standings != nil {
+			if err := a.upsertStandings(ctx, incoming.LeagueKey, standings); err != nil {
+				log.Printf("[Import] Failed upsert standings for %s: %v", incoming.LeagueKey, err)
+			} else {
+				result["standings"] = standings
+				log.Printf("[Import] Synced standings for %s", incoming.LeagueKey)
+			}
+		}
+
+		// Matchups — current week + previous week
+		currentWeek := 0
+		if cw, ok := targetLeague["current_week"]; ok && cw != nil {
+			switch v := cw.(type) {
+			case int:
+				currentWeek = v
+			case *int:
+				if v != nil {
+					currentWeek = *v
+				}
+			}
+		}
+
+		if currentWeek > 0 {
+			weeksToSync := []int{currentWeek}
+			if currentWeek > 1 {
+				weeksToSync = append(weeksToSync, currentWeek-1)
+			}
+
+			for _, weekNum := range weeksToSync {
+				wk, matchups, err := client.GetScoreboard(ctx, incoming.LeagueKey, weekNum)
+				if err != nil {
+					log.Printf("[Import] Failed matchups for %s week %d: %v", incoming.LeagueKey, weekNum, err)
+					continue
+				}
+				if wk <= 0 {
+					wk = weekNum
+				}
+				if matchups != nil {
+					if err := a.upsertMatchups(ctx, incoming.LeagueKey, wk, matchups); err != nil {
+						log.Printf("[Import] Failed upsert matchups for %s week %d: %v", incoming.LeagueKey, wk, err)
+					} else {
+						log.Printf("[Import] Synced %d matchups for %s week %d", len(matchups), incoming.LeagueKey, wk)
+					}
+				}
+			}
+		}
+
+		// Rosters — all teams in the league
+		if teams != nil {
+			for _, team := range teams {
+				roster, err := client.GetRoster(ctx, team.TeamKey, incoming.LeagueKey, team.Name)
+				if err != nil {
+					log.Printf("[Import] Failed roster for %s: %v", team.TeamKey, err)
+					continue
+				}
+				if err := a.upsertRoster(ctx, team.TeamKey, incoming.LeagueKey, roster); err != nil {
+					log.Printf("[Import] Failed upsert roster for %s: %v", team.TeamKey, err)
+				} else {
+					log.Printf("[Import] Synced roster for %s (%s)", team.TeamKey, team.Name)
+				}
+			}
+		}
+	} else {
+		log.Printf("[Import] League %s is finished, skipping standings/matchups/rosters", incoming.LeagueKey)
+	}
+
+	// 5. Persist rotated refresh token if changed
+	if newToken := client.RefreshedToken(); newToken != "" && newToken != refreshToken {
+		log.Printf("[Import] Refresh token updated for user %s, persisting...", guid)
+		if encrypted, err := Encrypt(newToken); err == nil {
+			a.updateRefreshToken(ctx, guid, encrypted)
+		}
+	}
+
+	// 6. Update sync time
+	a.updateUserSyncTime(ctx, guid)
+
+	// 7. Add CDC subscriber and invalidate cache
+	a.AddLeagueSubscriber(context.Background(), incoming.LeagueKey, userID)
+	a.invalidateLeagueCache(context.Background(), guid)
+	log.Printf("[Import] Complete for league %s (user %s), added CDC subscriber %s", incoming.LeagueKey, guid, userID)
+
+	return c.JSON(result)
 }
 
 // DisconnectYahoo removes the user's Yahoo connection and all associated data,
@@ -565,9 +632,10 @@ func (a *App) DisconnectYahoo(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "ok", "message": "No Yahoo account connected"})
 	}
 
-	// Clean up Redis CDC subscriber sets BEFORE deleting DB rows
+	// Clean up Redis CDC subscriber sets and cache BEFORE deleting DB rows
 	// (we need the user_leagues data to know which sets to clean)
 	a.CleanupLeagueSubscribers(context.Background(), guid, userID)
+	a.invalidateLeagueCache(context.Background(), guid)
 
 	// Delete from yahoo_users — cascading deletes handle leagues, standings, etc.
 	_, err = a.db.Exec(context.Background(),

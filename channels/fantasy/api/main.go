@@ -82,7 +82,15 @@ func main() {
 		dbURL = strings.Replace(dbURL, "postgresql:", "postgresql://", 1)
 	}
 
-	pool, err := pgxpool.New(context.Background(), dbURL)
+	poolConfig, err := pgxpool.ParseConfig(dbURL)
+	if err != nil {
+		log.Fatalf("[Fantasy] Failed to parse DATABASE_URL: %v", err)
+	}
+	poolConfig.MaxConns = 60
+	poolConfig.MinConns = 5
+	poolConfig.MaxConnLifetime = 30 * time.Minute
+
+	pool, err := pgxpool.NewWithConfig(context.Background(), poolConfig)
 	if err != nil {
 		log.Fatalf("[Fantasy] Failed to connect to PostgreSQL: %v", err)
 	}
@@ -91,7 +99,8 @@ func main() {
 	if err := pool.Ping(context.Background()); err != nil {
 		log.Fatalf("[Fantasy] PostgreSQL ping failed: %v", err)
 	}
-	log.Println("[Fantasy] Connected to PostgreSQL")
+	log.Printf("[Fantasy] Connected to PostgreSQL (pool: max=%d, min=%d)",
+		poolConfig.MaxConns, poolConfig.MinConns)
 
 	// -------------------------------------------------------------------------
 	// Connect to Redis
@@ -145,8 +154,12 @@ func main() {
 		RedirectURL: redirectURL,
 	}
 
-	// NOTE: We do NOT create the yahoo_users table here.
-	// The Python yahoo_service owns that table and creates it on startup.
+	// -------------------------------------------------------------------------
+	// Create/migrate database tables
+	// -------------------------------------------------------------------------
+	if err := createTables(context.Background(), pool); err != nil {
+		log.Fatalf("[Fantasy] Failed to create tables: %v", err)
+	}
 
 	// -------------------------------------------------------------------------
 	// Start Redis self-registration heartbeat
@@ -159,7 +172,23 @@ func main() {
 	// -------------------------------------------------------------------------
 	// Fiber HTTP Server
 	// -------------------------------------------------------------------------
-	app := &App{db: pool, rdb: rdb, yahooConfig: yahooConfig}
+	app := &App{
+		db:          pool,
+		rdb:         rdb,
+		yahooConfig: yahooConfig,
+		syncState:   &syncHealth{status: "starting"},
+	}
+
+	// -------------------------------------------------------------------------
+	// Start background Yahoo sync loop (feature-flagged via SYNC_ENABLED)
+	// -------------------------------------------------------------------------
+	syncEnabled := os.Getenv("SYNC_ENABLED")
+	if syncEnabled == "" || syncEnabled == "true" || syncEnabled == "1" {
+		go app.startSyncWithRestart(ctx)
+		log.Println("[Fantasy] Background sync loop started")
+	} else {
+		log.Println("[Fantasy] Background sync loop DISABLED (SYNC_ENABLED != true)")
+	}
 
 	fiberApp := fiber.New(fiber.Config{
 		AppName:               "Scrollr Fantasy API",

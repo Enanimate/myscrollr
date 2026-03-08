@@ -95,6 +95,22 @@ func (s *Server) setupMiddleware() {
 		"/channels":        true,
 	}
 
+	// Stricter rate limiter for OAuth initiation endpoints (e.g. /yahoo/start).
+	// Applied BEFORE the general rate limiter so it runs first.
+	oauthRateLimitPaths := map[string]bool{
+		"/yahoo/start": true,
+	}
+	s.App.Use(limiter.New(limiter.Config{
+		Max:        OAuthRateLimitMax,
+		Expiration: OAuthRateLimitExpiration,
+		KeyGenerator: func(c *fiber.Ctx) string {
+			return "oauth:" + c.IP()
+		},
+		Next: func(c *fiber.Ctx) bool {
+			return !oauthRateLimitPaths[c.Path()]
+		},
+	}))
+
 	s.App.Use(limiter.New(limiter.Config{
 		Max:        RateLimitMax,
 		Expiration: RateLimitExpiration,
