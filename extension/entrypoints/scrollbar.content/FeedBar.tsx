@@ -29,6 +29,10 @@ interface FeedBarProps {
   onToggleCollapse: () => void;
   onHeightChange: (height: number) => void;
   onHeightCommit: (height: number) => void;
+  /** Optional: externally controlled active tab (desktop ticker click). */
+  activeTab?: string;
+  /** Optional: called when the user switches tabs (for external state sync). */
+  onActiveTabChange?: (tab: string) => void;
 }
 
 const COLLAPSED_HEIGHT = 32;
@@ -62,12 +66,26 @@ export default function FeedBar({
   onToggleCollapse,
   onHeightChange,
   onHeightCommit,
+  activeTab: externalActiveTab,
+  onActiveTabChange,
 }: FeedBarProps) {
-  const [activeTab, setActiveTab] = useState<string>(
-    activeTabs[0] ?? "finance",
+  const [internalActiveTab, setInternalActiveTab] = useState<string>(
+    externalActiveTab ?? activeTabs[0] ?? "finance",
   );
+  const activeTab = externalActiveTab ?? internalActiveTab;
+  const setActiveTab = (tab: string) => {
+    setInternalActiveTab(tab);
+    onActiveTabChange?.(tab);
+  };
   const [isDragging, setIsDragging] = useState(false);
   const barRef = useRef<HTMLDivElement>(null);
+
+  // Sync internal state when external activeTab prop changes (e.g., ticker click)
+  useEffect(() => {
+    if (externalActiveTab && externalActiveTab !== internalActiveTab) {
+      setInternalActiveTab(externalActiveTab);
+    }
+  }, [externalActiveTab, internalActiveTab]);
 
   // Sync activeTab when activeTabs changes (e.g., user disables current tab)
   useEffect(() => {
@@ -163,8 +181,14 @@ export default function FeedBar({
         <div className="mx-auto mt-1 h-0.5 w-10 rounded-full bg-fg-4 group-hover:bg-accent/60 transition-colors" />
       </div>
 
-      {/* Header */}
-      <div className="flex items-center justify-between h-8 px-3 border-b border-edge shrink-0">
+      {/* Header — data-tauri-drag-region enables window dragging in the desktop
+           app. Browsers ignore unknown data-* attributes, so this is a no-op
+           in the extension. Interactive children (buttons, tabs) are automatically
+           excluded from the drag region by Tauri. */}
+      <div
+        data-tauri-drag-region
+        className="flex items-center justify-between h-8 px-3 border-b border-edge shrink-0"
+      >
         <div className="flex items-center gap-3">
           <span className="text-[10px] font-mono font-bold tracking-[0.2em] text-accent uppercase select-none">
             scrollr
@@ -213,7 +237,7 @@ export default function FeedBar({
               </span>
               <button
                 onClick={onLogin}
-                className="text-[9px] font-bold uppercase tracking-[0.15em] px-2 py-0.5 bg-accent text-surface font-mono hover:bg-accent/90 transition-colors shrink-0 ml-2"
+                className="text-[9px] font-bold uppercase tracking-[0.15em] px-2.5 py-1 rounded-md bg-accent text-surface font-mono hover:bg-accent/90 transition-colors shrink-0 ml-2"
               >
                 Connect
               </button>
