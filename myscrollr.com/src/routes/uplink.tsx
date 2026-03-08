@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate, Link } from '@tanstack/react-router'
+import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import {
   AnimatePresence,
   motion,
@@ -8,7 +8,7 @@ import {
   useTransform,
 } from 'motion/react'
 import { AnimateNumber } from 'motion-plus/react'
-import { useCallback, useEffect, useRef, useState, lazy, Suspense } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
 import {
   BarChart3,
   Bell,
@@ -38,12 +38,12 @@ import {
   Zap,
 } from 'lucide-react'
 
+import type { FAQItem } from '@/components/landing/FAQSection'
 import { usePageMeta } from '@/lib/usePageMeta'
 import { useScrollrAuth } from '@/hooks/useScrollrAuth'
 import { useGetToken } from '@/hooks/useGetToken'
 import { billingApi } from '@/api/client'
 import { FAQSection } from '@/components/landing/FAQSection'
-import type { FAQItem } from '@/components/landing/FAQSection'
 
 const CheckoutForm = lazy(() => import('@/components/billing/CheckoutForm'))
 
@@ -90,7 +90,7 @@ interface ComparisonRow {
   unlimitedUp?: boolean
 }
 
-const COMPARISON: ComparisonRow[] = [
+const COMPARISON: Array<ComparisonRow> = [
   {
     label: 'Data Delivery',
     free: '60s polling',
@@ -267,10 +267,11 @@ interface TierShowcase {
   hex: string
   delivery: string
   deliverySub: string
-  features: string[]
+  features: Array<string>
+  useCase: string
 }
 
-const TIER_SHOWCASES: TierShowcase[] = [
+const TIER_SHOWCASES: Array<TierShowcase> = [
   {
     tier: 'uplink',
     Icon: Rocket,
@@ -279,6 +280,8 @@ const TIER_SHOWCASES: TierShowcase[] = [
     hex: '#00b8db',
     delivery: '30s polling',
     deliverySub: '2x faster than free',
+    useCase:
+      "You open Scrollr with your coffee, scan your watchlist, skim the morning RSS headlines, and check last night's scores. Data refreshes every 30 seconds — fast enough to catch a pre-market move before you leave for work.",
     features: [
       '25 tracked symbols',
       '50 RSS feeds, 10 custom',
@@ -296,6 +299,8 @@ const TIER_SHOWCASES: TierShowcase[] = [
     hex: '#a78bfa',
     delivery: '10s polling',
     deliverySub: '6x faster than free',
+    useCase:
+      'You set an alert when TSLA crosses $280. You save a "Work" feed profile that hides sports. When the 4th quarter starts on a close game, you get notified without checking. Scrollr watches so you don\'t have to.',
     features: [
       '75 tracked symbols',
       '150 RSS feeds, 25 custom',
@@ -315,6 +320,8 @@ const TIER_SHOWCASES: TierShowcase[] = [
     hex: '#34d399',
     delivery: 'Real-time SSE',
     deliverySub: 'Instant — zero delay',
+    useCase:
+      'Your data streams in real time via SSE. Webhooks push alerts to your Discord. You export weekly market data to a spreadsheet. Your personal dashboard pulls from the API. Scrollr becomes infrastructure, not just a feed.',
     features: [
       'Unlimited symbols, feeds & leagues',
       'Webhooks & integrations',
@@ -343,7 +350,7 @@ const PRICING: Record<TierKey, Record<PlanKey, PricingPlan>> = {
       price: 79.99,
       period: '/yr',
       perMonth: 6.67,
-      savings: 'Save 33%',
+      savings: 'Save ~$40/yr',
     },
   },
   pro: {
@@ -352,7 +359,7 @@ const PRICING: Record<TierKey, Record<PlanKey, PricingPlan>> = {
       price: 199.99,
       period: '/yr',
       perMonth: 16.67,
-      savings: 'Save 33%',
+      savings: 'Save ~$100/yr',
     },
   },
   unlimited: {
@@ -361,7 +368,7 @@ const PRICING: Record<TierKey, Record<PlanKey, PricingPlan>> = {
       price: 399.99,
       period: '/yr',
       perMonth: 33.33,
-      savings: 'Save 33%',
+      savings: 'Save ~$200/yr',
     },
   },
 }
@@ -388,7 +395,7 @@ const CTA_PARTICLES = Array.from({ length: 20 }, (_, i) => ({
 
 // ── Uplink FAQ ─────────────────────────────────────────────────
 
-const UPLINK_FAQ: FAQItem[] = [
+const UPLINK_FAQ: Array<FAQItem> = [
   {
     icon: Zap,
     question: 'What does "data delivery" mean?',
@@ -410,8 +417,7 @@ const UPLINK_FAQ: FAQItem[] = [
   {
     icon: Rss,
     question: 'How many RSS feeds can I follow?',
-    highlight:
-      'From 5 feeds on Free to completely unlimited on the top tier.',
+    highlight: 'From 5 feeds on Free to completely unlimited on the top tier.',
     answer:
       'RSS feeds power the news channel. Free accounts can subscribe to 5 feeds from the default catalog. Uplink expands that to 50, Pro to 150, giving you broad coverage across topics. Unlimited removes the limit entirely — subscribe to as many sources as you want.',
     accent: 'amber',
@@ -428,10 +434,9 @@ const UPLINK_FAQ: FAQItem[] = [
   {
     icon: Trophy,
     question: 'What sports leagues are included?',
-    highlight:
-      'Free covers pro leagues. All paid tiers add college sports.',
+    highlight: 'Free covers pro leagues. All paid tiers add college sports.',
     answer:
-      'Every tier includes live scores from the NFL, NBA, MLB, NHL, MLS, and Premier League. All paid tiers add college football (NCAAF) and college basketball (NCAAM), with scores updating at your tier\'s delivery speed.',
+      "Every tier includes live scores from the NFL, NBA, MLB, NHL, MLS, and Premier League. All paid tiers add college football (NCAAF) and college basketball (NCAAM), with scores updating at your tier's delivery speed.",
     accent: 'violet',
   },
   {
@@ -610,9 +615,7 @@ function BottomCTA({
             }}
             initial={{ opacity: 0, scaleX: 0 }}
             animate={
-              isInView
-                ? { opacity: [0, 0.6, 0.3], scaleX: [0, 1, 1] }
-                : {}
+              isInView ? { opacity: [0, 0.6, 0.3], scaleX: [0, 1, 1] } : {}
             }
             transition={{ delay: beam.delay, duration: 2, ease: EASE }}
           />
@@ -634,9 +637,7 @@ function BottomCTA({
               opacity: 0,
             }}
             animate={
-              isInView
-                ? { y: [0, -80, -160], opacity: [0, 0.5, 0] }
-                : {}
+              isInView ? { y: [0, -80, -160], opacity: [0, 0.5, 0] } : {}
             }
             transition={{
               delay: p.delay,
@@ -654,11 +655,7 @@ function BottomCTA({
           key={i}
           className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-primary/20 pointer-events-none"
           style={{ width: 280, height: 280, opacity: 0 }}
-          animate={
-            isInView
-              ? { scale: [0.8, 2.5], opacity: [0.4, 0] }
-              : {}
-          }
+          animate={isInView ? { scale: [0.8, 2.5], opacity: [0.4, 0] } : {}}
           transition={{
             delay: 1.2 + i,
             duration: 3,
@@ -714,8 +711,8 @@ function BottomCTA({
             transition={{ delay: 0.25, duration: 0.5, ease: EASE }}
             className="block mt-6 text-lg sm:text-xl text-base-content/50 max-w-lg leading-relaxed"
           >
-            The core is free forever. Uplink, Pro, and Unlimited are for
-            those who want more data, faster delivery, and zero limits.
+            The core is free forever. Uplink, Pro, and Unlimited are for those
+            who want more data, faster delivery, and zero limits.
           </motion.span>
 
           {/* CTA buttons with central glow */}
@@ -745,14 +742,14 @@ function BottomCTA({
                 onClick={() => handleSelectPlan('annual', 'unlimited')}
                 className="btn btn-pulse gap-2 text-base px-8 py-5 shadow-2xl"
               >
-                <Crown size={14} /> Get Unlimited — $33.33/mo
+                <Crown size={14} /> Start Free Trial — Unlimited
               </button>
               <button
                 type="button"
                 onClick={() => handleSelectPlan('annual', 'pro')}
                 className="btn btn-outline gap-2 px-6 py-4"
               >
-                <Gauge size={14} /> Pro — $16.67/mo
+                <Gauge size={14} /> Try Pro Free for 7 Days
               </button>
             </div>
           </motion.div>
@@ -767,10 +764,10 @@ function BottomCTA({
             className="mt-6 flex items-center gap-4 text-xs text-base-content/30"
           >
             {[
+              '7-day free trial',
               'Cancel anytime',
-              'No contracts',
               'Instant activation',
-              'Secure checkout',
+              'Stripe-secured',
             ].map((item) => (
               <span key={item} className="flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-primary/40" />
@@ -1097,8 +1094,8 @@ function UplinkPage() {
                 </span>
                 <p className="text-base text-base-content/40 leading-relaxed">
                   Scrollr is free and open source. Three paid tiers for power
-                  users who want more — expanded limits, faster delivery,
-                  custom alerts, and real-time data via SSE.
+                  users who want more — expanded limits, faster delivery, custom
+                  alerts, and real-time data via SSE.
                 </p>
               </motion.div>
 
@@ -1111,17 +1108,21 @@ function UplinkPage() {
               >
                 <button
                   type="button"
-                  onClick={() => handleSelectPlan('annual', 'pro')}
+                  onClick={() => {
+                    document
+                      .getElementById('pricing')
+                      ?.scrollIntoView({ behavior: 'smooth' })
+                  }}
                   className="btn btn-pulse btn-lg gap-2.5"
                 >
-                  <Gauge size={14} />
-                  Get Pro
+                  <Zap size={14} />
+                  Start Free Trial
                 </button>
 
                 <div className="flex items-center gap-3">
                   <span className="h-px w-6 bg-base-300/50" />
                   <span className="text-[10px] font-mono text-base-content/20">
-                    From $6.67/mo &middot; Unlimited from $33.33/mo
+                    7 days free &middot; From $6.67/mo &middot; Cancel anytime
                   </span>
                 </div>
               </motion.div>
@@ -1278,14 +1279,10 @@ function UplinkPage() {
                       className="relative w-12 h-12 rounded-2xl flex items-center justify-center"
                       style={{
                         background: '#34d39910',
-                        boxShadow:
-                          '0 0 24px #34d39915, 0 0 0 1px #34d39920',
+                        boxShadow: '0 0 24px #34d39915, 0 0 0 1px #34d39920',
                       }}
                     >
-                      <Satellite
-                        size={22}
-                        className="text-primary/70"
-                      />
+                      <Satellite size={22} className="text-primary/70" />
                     </div>
                   </div>
                 </motion.div>
@@ -1308,12 +1305,48 @@ function UplinkPage() {
 
                 {/* ── Floating data dots ── */}
                 {[
-                  { angle: 30, radius: 45, color: '#34d399', size: 3, delay: 2 },
-                  { angle: 150, radius: 70, color: '#00b8db', size: 2.5, delay: 2.8 },
-                  { angle: 250, radius: 55, color: '#34d399', size: 2, delay: 3.5 },
-                  { angle: 80, radius: 85, color: '#00b8db', size: 3, delay: 2.4 },
-                  { angle: 200, radius: 40, color: '#34d399', size: 2.5, delay: 3.2 },
-                  { angle: 320, radius: 75, color: '#00b8db', size: 2, delay: 2.6 },
+                  {
+                    angle: 30,
+                    radius: 45,
+                    color: '#34d399',
+                    size: 3,
+                    delay: 2,
+                  },
+                  {
+                    angle: 150,
+                    radius: 70,
+                    color: '#00b8db',
+                    size: 2.5,
+                    delay: 2.8,
+                  },
+                  {
+                    angle: 250,
+                    radius: 55,
+                    color: '#34d399',
+                    size: 2,
+                    delay: 3.5,
+                  },
+                  {
+                    angle: 80,
+                    radius: 85,
+                    color: '#00b8db',
+                    size: 3,
+                    delay: 2.4,
+                  },
+                  {
+                    angle: 200,
+                    radius: 40,
+                    color: '#34d399',
+                    size: 2.5,
+                    delay: 3.2,
+                  },
+                  {
+                    angle: 320,
+                    radius: 75,
+                    color: '#00b8db',
+                    size: 2,
+                    delay: 2.6,
+                  },
                 ].map((dot) => (
                   <motion.div
                     key={`${dot.angle}-${dot.radius}`}
@@ -1329,12 +1362,16 @@ function UplinkPage() {
                     }}
                     animate={{
                       x: [
-                        Math.cos((dot.angle * Math.PI) / 180) * (dot.radius * 0.6),
-                        Math.cos((dot.angle * Math.PI) / 180) * (dot.radius * 1.8),
+                        Math.cos((dot.angle * Math.PI) / 180) *
+                          (dot.radius * 0.6),
+                        Math.cos((dot.angle * Math.PI) / 180) *
+                          (dot.radius * 1.8),
                       ],
                       y: [
-                        Math.sin((dot.angle * Math.PI) / 180) * (dot.radius * 0.6),
-                        Math.sin((dot.angle * Math.PI) / 180) * (dot.radius * 1.8),
+                        Math.sin((dot.angle * Math.PI) / 180) *
+                          (dot.radius * 0.6),
+                        Math.sin((dot.angle * Math.PI) / 180) *
+                          (dot.radius * 1.8),
                       ],
                       opacity: [0, 0.8, 0],
                     }}
@@ -1359,7 +1396,7 @@ function UplinkPage() {
       {/* ================================================================
           PRICING — TOGGLE + 4 COLUMNS
           ================================================================ */}
-      <section className="relative overflow-hidden">
+      <section id="pricing" className="relative overflow-hidden scroll-mt-24">
         <div className="container">
           {/* Section header */}
           <motion.div
@@ -1388,982 +1425,1125 @@ function UplinkPage() {
             className="flex items-center justify-center mb-10"
           >
             <div className="relative inline-flex items-center gap-1 p-1 rounded-xl bg-base-200/60 border border-base-300/30 backdrop-blur-sm">
-              {(['monthly', 'annual', 'lifetime'] as const).map(
-                (period) => (
-                  <button
-                    key={period}
-                    type="button"
-                    onClick={() => setBillingView(period)}
-                    className={`relative z-10 px-5 py-2 text-[11px] font-bold uppercase tracking-wider rounded-lg transition-colors duration-200 ${
-                      billingView === period
-                        ? period === 'lifetime'
-                          ? 'text-base-100'
-                          : 'text-primary-content'
-                        : period === 'lifetime'
-                          ? 'text-warning/40 hover:text-warning/60'
-                          : 'text-base-content/35 hover:text-base-content/55'
-                    }`}
-                  >
-                    {billingView === period && (
-                      <motion.div
-                        layoutId="billing-toggle"
-                        className={`absolute inset-0 rounded-lg ${period === 'lifetime' ? 'bg-warning' : 'bg-primary'}`}
-                        transition={{
-                          type: 'spring',
-                          bounce: 0.15,
-                          duration: 0.5,
-                        }}
-                      />
-                    )}
-                    <span className="relative z-10">
-                      {BILLING_LABELS[period]}
+              {(['monthly', 'annual', 'lifetime'] as const).map((period) => (
+                <button
+                  key={period}
+                  type="button"
+                  onClick={() => setBillingView(period)}
+                  className={`relative z-10 px-5 py-2 text-[11px] font-bold uppercase tracking-wider rounded-lg transition-colors duration-200 ${
+                    billingView === period
+                      ? period === 'lifetime'
+                        ? 'text-base-100'
+                        : 'text-primary-content'
+                      : period === 'lifetime'
+                        ? 'text-warning/40 hover:text-warning/60'
+                        : 'text-base-content/35 hover:text-base-content/55'
+                  }`}
+                >
+                  {billingView === period && (
+                    <motion.div
+                      layoutId="billing-toggle"
+                      className={`absolute inset-0 rounded-lg ${period === 'lifetime' ? 'bg-warning' : 'bg-primary'}`}
+                      transition={{
+                        type: 'spring',
+                        bounce: 0.15,
+                        duration: 0.5,
+                      }}
+                    />
+                  )}
+                  <span className="relative z-10">
+                    {BILLING_LABELS[period]}
+                  </span>
+                  {period === 'annual' && (
+                    <span
+                      className={`relative z-10 ml-1.5 text-[8px] ${billingView === period ? 'text-primary-content/70' : 'text-primary/50'}`}
+                    >
+                      Best
                     </span>
-                    {period === 'annual' && (
-                      <span
-                        className={`relative z-10 ml-1.5 text-[8px] ${billingView === period ? 'text-primary-content/70' : 'text-primary/50'}`}
-                      >
-                        Best
-                      </span>
-                    )}
-                    {period === 'lifetime' && (
-                      <span
-                        className={`relative z-10 ml-1.5 text-[8px] ${billingView === period ? 'text-base-100/70' : 'text-warning/40'}`}
-                      >
-                        Limited
-                      </span>
-                    )}
-                  </button>
-                ),
-              )}
+                  )}
+                  {period === 'lifetime' && (
+                    <span
+                      className={`relative z-10 ml-1.5 text-[8px] ${billingView === period ? 'text-base-100/70' : 'text-warning/40'}`}
+                    >
+                      Limited
+                    </span>
+                  )}
+                </button>
+              ))}
             </div>
+          </motion.div>
+
+          {/* Risk-free trial banner */}
+          <motion.div
+            style={{ opacity: 0 }}
+            initial={{ opacity: 0 }}
+            whileInView={{ opacity: 1 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.4, delay: 0.15, ease: EASE }}
+            className="flex items-center justify-center gap-2 mb-8"
+          >
+            <CheckCircle2 size={13} className="text-primary/50 shrink-0" />
+            <span className="text-[11px] text-base-content/35">
+              Every plan includes a 7-day free trial. Cancel anytime &mdash; you
+              won&apos;t be charged until day 8.
+            </span>
           </motion.div>
 
           {/* Pricing cards — AnimatePresence swaps between tiers and Lifetime */}
           <AnimatePresence mode="wait">
-          {isLifetime ? (
-            /* ═══════════════════════════════════════════════════════════════
+            {isLifetime ? (
+              /* ═══════════════════════════════════════════════════════════════
                LIFETIME REVEAL — Epic single card with aura
                ═══════════════════════════════════════════════════════════════ */
-            <motion.div
-              key="lifetime-reveal"
-              initial={{ opacity: 0, scale: 0.88 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.94, y: 10 }}
-              transition={{ duration: 0.55, ease: EASE }}
-              className="flex justify-center py-4"
-            >
-              <div className="relative w-full" style={{ maxWidth: 560 }}>
-                {/* ── Expanding aura rings ── */}
-                {[0, 1, 2, 3].map((i) => (
+              <motion.div
+                key="lifetime-reveal"
+                initial={{ opacity: 0, scale: 0.88 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.94, y: 10 }}
+                transition={{ duration: 0.55, ease: EASE }}
+                className="flex justify-center py-4"
+              >
+                <div className="relative w-full" style={{ maxWidth: 560 }}>
+                  {/* ── Expanding aura rings ── */}
+                  {[0, 1, 2, 3].map((i) => (
+                    <motion.div
+                      key={i}
+                      className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border pointer-events-none"
+                      style={{
+                        width: 300 + i * 100,
+                        height: 300 + i * 100,
+                        borderColor: `rgba(245, 158, 11, ${0.12 - i * 0.025})`,
+                      }}
+                      initial={{ scale: 0, opacity: 0 }}
+                      animate={{
+                        scale: [0.6, 1.1, 1],
+                        opacity: [0, 0.8, 0.3],
+                      }}
+                      transition={{
+                        delay: 0.2 + i * 0.12,
+                        duration: 1.2,
+                        ease: EASE,
+                      }}
+                    />
+                  ))}
+
+                  {/* ── Perpetual pulse rings ── */}
+                  {[0, 1, 2].map((i) => (
+                    <motion.div
+                      key={`pulse-${i}`}
+                      className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-warning/15 pointer-events-none"
+                      style={{ width: 400, height: 400 }}
+                      animate={{ scale: [0.7, 1.8], opacity: [0.5, 0] }}
+                      transition={{
+                        delay: 1 + i * 1.3,
+                        duration: 3,
+                        ease: 'easeOut',
+                        repeat: Infinity,
+                        repeatDelay: 1.5,
+                      }}
+                    />
+                  ))}
+
+                  {/* ── Ambient orb ── */}
                   <motion.div
-                    key={i}
-                    className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border pointer-events-none"
+                    className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none"
                     style={{
-                      width: 300 + i * 100,
-                      height: 300 + i * 100,
-                      borderColor: `rgba(245, 158, 11, ${0.12 - i * 0.025})`,
+                      width: 500,
+                      height: 500,
+                      background:
+                        'radial-gradient(circle, rgba(245,158,11,0.1) 0%, rgba(245,158,11,0.03) 40%, transparent 70%)',
+                      filter: 'blur(40px)',
                     }}
-                    initial={{ scale: 0, opacity: 0 }}
                     animate={{
-                      scale: [0.6, 1.1, 1],
-                      opacity: [0, 0.8, 0.3],
+                      scale: [1, 1.15, 1],
+                      opacity: [0.5, 1, 0.5],
                     }}
                     transition={{
-                      delay: 0.2 + i * 0.12,
-                      duration: 1.2,
-                      ease: EASE,
-                    }}
-                  />
-                ))}
-
-                {/* ── Perpetual pulse rings ── */}
-                {[0, 1, 2].map((i) => (
-                  <motion.div
-                    key={`pulse-${i}`}
-                    className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-warning/15 pointer-events-none"
-                    style={{ width: 400, height: 400 }}
-                    animate={{ scale: [0.7, 1.8], opacity: [0.5, 0] }}
-                    transition={{
-                      delay: 1 + i * 1.3,
-                      duration: 3,
-                      ease: 'easeOut',
-                      repeat: Infinity,
-                      repeatDelay: 1.5,
-                    }}
-                  />
-                ))}
-
-                {/* ── Ambient orb ── */}
-                <motion.div
-                  className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none"
-                  style={{
-                    width: 500,
-                    height: 500,
-                    background:
-                      'radial-gradient(circle, rgba(245,158,11,0.1) 0%, rgba(245,158,11,0.03) 40%, transparent 70%)',
-                    filter: 'blur(40px)',
-                  }}
-                  animate={{
-                    scale: [1, 1.15, 1],
-                    opacity: [0.5, 1, 0.5],
-                  }}
-                  transition={{
-                    duration: 5,
-                    repeat: Infinity,
-                    ease: 'easeInOut',
-                  }}
-                />
-
-                {/* ── Floating particles ── */}
-                {Array.from({ length: 14 }, (_, i) => ({
-                  id: i,
-                  x: 20 + Math.random() * 60,
-                  y: 10 + Math.random() * 80,
-                  size: Math.random() * 2.5 + 1.5,
-                  delay: 0.5 + Math.random() * 3,
-                  duration: Math.random() * 5 + 6,
-                })).map((p) => (
-                  <motion.div
-                    key={p.id}
-                    className="absolute rounded-full pointer-events-none"
-                    style={{
-                      left: `${p.x}%`,
-                      top: `${p.y}%`,
-                      width: p.size,
-                      height: p.size,
-                      backgroundColor: '#f59e0b',
-                    }}
-                    animate={{ y: [0, -60, -120], opacity: [0, 0.6, 0] }}
-                    transition={{
-                      delay: p.delay,
-                      duration: p.duration,
-                      ease: 'easeInOut',
-                      repeat: Infinity,
-                    }}
-                  />
-                ))}
-
-                {/* ── The Card ── */}
-                <motion.div
-                  initial={{ y: 20 }}
-                  animate={{ y: 0 }}
-                  transition={{ delay: 0.15, duration: 0.6, ease: EASE }}
-                  className="relative rounded-2xl overflow-hidden"
-                >
-                  {/* Pulsing border glow */}
-                  <motion.div
-                    className="absolute -inset-px rounded-2xl bg-gradient-to-b from-warning/30 via-warning/10 to-warning/5"
-                    animate={{ opacity: [0.5, 1, 0.5] }}
-                    transition={{
-                      duration: 3,
+                      duration: 5,
                       repeat: Infinity,
                       ease: 'easeInOut',
                     }}
                   />
 
-                  <div className="relative border border-warning/25 rounded-2xl p-8 sm:p-10">
-                    {/* Background */}
-                    <div className="absolute inset-0 bg-base-200/70 rounded-2xl pointer-events-none" />
+                  {/* ── Floating particles ── */}
+                  {Array.from({ length: 14 }, (_, i) => ({
+                    id: i,
+                    x: 20 + Math.random() * 60,
+                    y: 10 + Math.random() * 80,
+                    size: Math.random() * 2.5 + 1.5,
+                    delay: 0.5 + Math.random() * 3,
+                    duration: Math.random() * 5 + 6,
+                  })).map((p) => (
+                    <motion.div
+                      key={p.id}
+                      className="absolute rounded-full pointer-events-none"
+                      style={{
+                        left: `${p.x}%`,
+                        top: `${p.y}%`,
+                        width: p.size,
+                        height: p.size,
+                        backgroundColor: '#f59e0b',
+                      }}
+                      animate={{ y: [0, -60, -120], opacity: [0, 0.6, 0] }}
+                      transition={{
+                        delay: p.delay,
+                        duration: p.duration,
+                        ease: 'easeInOut',
+                        repeat: Infinity,
+                      }}
+                    />
+                  ))}
 
-                    {/* Top accent */}
+                  {/* ── The Card ── */}
+                  <motion.div
+                    initial={{ y: 20 }}
+                    animate={{ y: 0 }}
+                    transition={{ delay: 0.15, duration: 0.6, ease: EASE }}
+                    className="relative rounded-2xl overflow-hidden"
+                  >
+                    {/* Pulsing border glow */}
+                    <motion.div
+                      className="absolute -inset-px rounded-2xl bg-gradient-to-b from-warning/30 via-warning/10 to-warning/5"
+                      animate={{ opacity: [0.5, 1, 0.5] }}
+                      transition={{
+                        duration: 3,
+                        repeat: Infinity,
+                        ease: 'easeInOut',
+                      }}
+                    />
+
+                    <div className="relative border border-warning/25 rounded-2xl p-8 sm:p-10">
+                      {/* Background */}
+                      <div className="absolute inset-0 bg-base-200/70 rounded-2xl pointer-events-none" />
+
+                      {/* Top accent */}
+                      <div
+                        className="absolute top-0 left-0 right-0 h-px"
+                        style={{
+                          background:
+                            'linear-gradient(90deg, transparent, #f59e0b 50%, transparent)',
+                        }}
+                      />
+
+                      {/* ── Amber smoke ── */}
+                      <div
+                        className="absolute inset-0 pointer-events-none overflow-hidden rounded-2xl"
+                        style={{ zIndex: 1 }}
+                      >
+                        <motion.div
+                          className="absolute inset-0"
+                          style={{
+                            background:
+                              'linear-gradient(135deg, #f59e0b12 0%, #f59e0b20 40%, #f59e0b12 60%, #f59e0b1a 100%)',
+                          }}
+                          animate={{ opacity: [0.4, 0.8, 0.4] }}
+                          transition={{
+                            duration: 4,
+                            repeat: Infinity,
+                            ease: 'easeInOut',
+                          }}
+                        />
+                        <motion.div
+                          className="absolute bottom-[-10%] left-[10%] w-[80%] h-[55%] rounded-full blur-3xl"
+                          style={{
+                            background:
+                              'radial-gradient(ellipse 70% 60% at center bottom, #f59e0b30 0%, transparent 70%)',
+                          }}
+                          animate={{
+                            y: [0, -30, 0],
+                            scaleX: [1, 1.25, 1],
+                            opacity: [0.3, 0.7, 0.3],
+                          }}
+                          transition={{
+                            duration: 7,
+                            repeat: Infinity,
+                            ease: 'easeInOut',
+                          }}
+                        />
+                        <motion.div
+                          className="absolute top-[-8%] right-[5%] w-[70%] h-[50%] rounded-full blur-3xl"
+                          style={{
+                            background:
+                              'radial-gradient(ellipse 65% 55% at center top, #f59e0b25 0%, transparent 65%)',
+                          }}
+                          animate={{
+                            y: [0, 20, 0],
+                            scaleX: [1, 1.15, 1],
+                            opacity: [0.25, 0.6, 0.25],
+                          }}
+                          transition={{
+                            duration: 8,
+                            repeat: Infinity,
+                            ease: 'easeInOut',
+                            delay: 1.5,
+                          }}
+                        />
+                        <motion.div
+                          className="absolute top-[30%] left-[15%] w-[45px] h-[45px] rounded-full blur-xl"
+                          style={{
+                            background:
+                              'radial-gradient(circle, #f59e0b45 0%, transparent 70%)',
+                          }}
+                          animate={{
+                            y: [0, -15, 10, 0],
+                            opacity: [0, 0.7, 0.3, 0],
+                          }}
+                          transition={{
+                            duration: 5,
+                            repeat: Infinity,
+                            ease: 'easeInOut',
+                          }}
+                        />
+                        <motion.div
+                          className="absolute top-[60%] right-[12%] w-[40px] h-[40px] rounded-full blur-lg"
+                          style={{
+                            background:
+                              'radial-gradient(circle, #f59e0b40 0%, transparent 70%)',
+                          }}
+                          animate={{
+                            y: [0, -10, 0],
+                            opacity: [0, 0.5, 0],
+                          }}
+                          transition={{
+                            duration: 4,
+                            repeat: Infinity,
+                            ease: 'easeInOut',
+                            delay: 2.5,
+                          }}
+                        />
+                      </div>
+
+                      {/* Watermark */}
+                      <Sparkles
+                        size={140}
+                        strokeWidth={0.3}
+                        className="absolute -bottom-8 -right-8 text-base-content/[0.02] pointer-events-none"
+                      />
+
+                      {/* ── Content ── */}
+                      <div className="relative z-10">
+                        {/* Header */}
+                        <div className="text-center mb-8">
+                          <motion.div
+                            initial={{ scale: 0 }}
+                            animate={{ scale: 1 }}
+                            transition={{
+                              delay: 0.3,
+                              type: 'spring',
+                              bounce: 0.35,
+                              duration: 0.6,
+                            }}
+                            className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-5"
+                            style={{
+                              background: '#f59e0b15',
+                              boxShadow:
+                                '0 0 40px #f59e0b20, 0 0 0 1px #f59e0b25',
+                            }}
+                          >
+                            <Sparkles size={28} className="text-warning" />
+                          </motion.div>
+
+                          <h3 className="text-2xl font-black text-base-content mb-1">
+                            The First Byte
+                          </h3>
+                          <p className="text-xs text-warning/50 font-medium">
+                            Lifetime Uplink &middot; Founding Member
+                          </p>
+                        </div>
+
+                        {/* Price */}
+                        <div className="text-center mb-6">
+                          <div className="flex items-baseline justify-center gap-2 mb-1">
+                            <span className="text-5xl font-black text-base-content tracking-tight">
+                              $399
+                            </span>
+                            <span className="text-sm text-base-content/25">
+                              one-time
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-warning/40">
+                            Permanent Uplink access &middot; No renewals
+                          </p>
+                        </div>
+
+                        {/* Slot progress */}
+                        <div className="mb-8 p-4 rounded-xl bg-base-100/60 border border-base-300/30">
+                          <div className="flex items-center justify-between mb-2.5">
+                            <span className="text-[9px] text-base-content/25 uppercase tracking-wide">
+                              Founding Member Slots
+                            </span>
+                            <span className="text-[10px] font-mono text-warning/60 font-bold">
+                              128 total &middot; 0x00 — 0x7F
+                            </span>
+                          </div>
+                          <div className="h-1.5 rounded-full bg-base-300/50 overflow-hidden">
+                            <motion.div
+                              className="h-full rounded-full bg-gradient-to-r from-warning/70 via-warning to-primary/60 origin-left"
+                              initial={{ scaleX: 0 }}
+                              animate={{ scaleX: 1 }}
+                              transition={{
+                                duration: 2,
+                                delay: 0.5,
+                                ease: EASE,
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Features — 2 columns */}
+                        <div className="grid grid-cols-2 gap-x-6 gap-y-3 mb-8">
+                          {[
+                            'Permanent Uplink-tier access',
+                            '50% off Unlimited upgrade',
+                            '30s polling delivery',
+                            'Founding member badge',
+                            '25 symbols, 50 RSS feeds',
+                            'Priority support',
+                            'Pro + College sports',
+                            'Early access to features',
+                          ].map((feature) => (
+                            <div
+                              key={feature}
+                              className="flex items-center gap-2"
+                            >
+                              <Check
+                                size={12}
+                                className="text-warning shrink-0"
+                              />
+                              <span className="text-[11px] text-base-content/55">
+                                {feature}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Unlimited callout */}
+                        <div
+                          className="relative mb-8 p-3.5 rounded-xl border border-primary/15 overflow-hidden"
+                          style={{ background: 'rgba(52, 211, 153, 0.04)' }}
+                        >
+                          <div className="relative z-10">
+                            <p className="text-[10px] text-primary/70 font-semibold mb-1">
+                              50% Off Unlimited — From $25.00/mo
+                            </p>
+                            <p className="text-[10px] text-base-content/35 leading-relaxed">
+                              Lifetime members get half off any Unlimited
+                              subscription. Real-time SSE, unlimited symbols and
+                              feeds, webhooks, API access, and data export — all
+                              at half price.
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* CTA */}
+                        <Link
+                          to="/uplink/lifetime"
+                          search={{ session_id: undefined }}
+                          className="block w-full py-3.5 text-center text-xs font-bold bg-warning/10 border border-warning/30 text-warning rounded-xl hover:bg-warning/20 hover:border-warning/50 transition-colors"
+                        >
+                          Claim Your Slot
+                        </Link>
+                      </div>
+                    </div>
+                  </motion.div>
+                </div>
+              </motion.div>
+            ) : (
+              /* ═══════════════════════════════════════════════════════════════
+               TIER CARDS — Uplink / Pro / Unlimited
+               ═══════════════════════════════════════════════════════════════ */
+              <motion.div
+                key="tier-cards"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.97, y: 6 }}
+                transition={{ duration: 0.35, ease: EASE }}
+              >
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
+                  {/* ─── FREE ─── */}
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.03, duration: 0.5, ease: EASE }}
+                    className="group relative bg-base-200/20 border border-base-300/20 rounded-xl p-6 overflow-hidden"
+                  >
+                    <div className="relative z-10">
+                      <div className="flex items-center gap-2.5 mb-3">
+                        <div
+                          className="h-9 w-9 rounded-lg flex items-center justify-center bg-base-300/30"
+                          style={{
+                            boxShadow: '0 0 0 1px rgba(255,255,255,0.04)',
+                          }}
+                        >
+                          <Satellite
+                            size={16}
+                            className="text-base-content/40"
+                          />
+                        </div>
+                        <h3 className="text-sm font-bold text-base-content/50">
+                          Free
+                        </h3>
+                      </div>
+                      <p className="text-xs text-base-content/30 leading-relaxed mb-5">
+                        For people getting started with Scrollr
+                      </p>
+
+                      {/* Price */}
+                      <div className="mb-4">
+                        <div className="flex items-baseline gap-1 mb-1">
+                          <span className="text-3xl font-black text-base-content/40 tracking-tight font-mono tabular-nums">
+                            $0
+                          </span>
+                          <span className="text-xs font-mono text-base-content/20">
+                            /mo
+                          </span>
+                        </div>
+                        <div className="h-5 flex items-center">
+                          <span className="text-[10px] font-mono text-base-content/20">
+                            Free forever
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2.5 mb-6">
+                        <PricingFeature>60s polling delivery</PricingFeature>
+                        <PricingFeature>10 symbols, 5 RSS feeds</PricingFeature>
+                        <PricingFeature>1 fantasy league</PricingFeature>
+                        <PricingFeature>Pro sports leagues</PricingFeature>
+                        <PricingFeature>25 items retention</PricingFeature>
+                        <PricingFeature>Full dashboard access</PricingFeature>
+                      </div>
+
+                      <Link
+                        to="/dashboard"
+                        className="block w-full py-2.5 text-center text-[10px] font-semibold border border-base-300/30 text-base-content/35 rounded-lg hover:border-base-300/50 hover:text-base-content/50 transition-colors"
+                      >
+                        Get Started Free
+                      </Link>
+                    </div>
+                  </motion.div>
+
+                  {/* ─── UPLINK ─── */}
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.06, duration: 0.5, ease: EASE }}
+                    whileHover={{
+                      y: -3,
+                      transition: { type: 'tween', duration: 0.2 },
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Select Uplink ${BILLING_LABELS[billingPeriod]} plan`}
+                    onClick={() => handleSelectPlan(billingPeriod, 'uplink')}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        handleSelectPlan(billingPeriod, 'uplink')
+                      }
+                    }}
+                    className="group relative bg-base-200/40 border border-info/15 rounded-xl p-6 hover:border-info/30 transition-colors overflow-hidden cursor-pointer"
+                  >
                     <div
                       className="absolute top-0 left-0 right-0 h-px"
                       style={{
                         background:
-                          'linear-gradient(90deg, transparent, #f59e0b 50%, transparent)',
+                          'linear-gradient(90deg, transparent, #00b8db 50%, transparent)',
                       }}
                     />
-
-                    {/* ── Amber smoke ── */}
-                    <div
-                      className="absolute inset-0 pointer-events-none overflow-hidden rounded-2xl"
-                      style={{ zIndex: 1 }}
-                    >
-                      <motion.div
-                        className="absolute inset-0"
-                        style={{
-                          background:
-                            'linear-gradient(135deg, #f59e0b12 0%, #f59e0b20 40%, #f59e0b12 60%, #f59e0b1a 100%)',
-                        }}
-                        animate={{ opacity: [0.4, 0.8, 0.4] }}
-                        transition={{
-                          duration: 4,
-                          repeat: Infinity,
-                          ease: 'easeInOut',
-                        }}
-                      />
-                      <motion.div
-                        className="absolute bottom-[-10%] left-[10%] w-[80%] h-[55%] rounded-full blur-3xl"
-                        style={{
-                          background:
-                            'radial-gradient(ellipse 70% 60% at center bottom, #f59e0b30 0%, transparent 70%)',
-                        }}
-                        animate={{
-                          y: [0, -30, 0],
-                          scaleX: [1, 1.25, 1],
-                          opacity: [0.3, 0.7, 0.3],
-                        }}
-                        transition={{
-                          duration: 7,
-                          repeat: Infinity,
-                          ease: 'easeInOut',
-                        }}
-                      />
-                      <motion.div
-                        className="absolute top-[-8%] right-[5%] w-[70%] h-[50%] rounded-full blur-3xl"
-                        style={{
-                          background:
-                            'radial-gradient(ellipse 65% 55% at center top, #f59e0b25 0%, transparent 65%)',
-                        }}
-                        animate={{
-                          y: [0, 20, 0],
-                          scaleX: [1, 1.15, 1],
-                          opacity: [0.25, 0.6, 0.25],
-                        }}
-                        transition={{
-                          duration: 8,
-                          repeat: Infinity,
-                          ease: 'easeInOut',
-                          delay: 1.5,
-                        }}
-                      />
-                      <motion.div
-                        className="absolute top-[30%] left-[15%] w-[45px] h-[45px] rounded-full blur-xl"
-                        style={{
-                          background:
-                            'radial-gradient(circle, #f59e0b45 0%, transparent 70%)',
-                        }}
-                        animate={{
-                          y: [0, -15, 10, 0],
-                          opacity: [0, 0.7, 0.3, 0],
-                        }}
-                        transition={{
-                          duration: 5,
-                          repeat: Infinity,
-                          ease: 'easeInOut',
-                        }}
-                      />
-                      <motion.div
-                        className="absolute top-[60%] right-[12%] w-[40px] h-[40px] rounded-full blur-lg"
-                        style={{
-                          background:
-                            'radial-gradient(circle, #f59e0b40 0%, transparent 70%)',
-                        }}
-                        animate={{
-                          y: [0, -10, 0],
-                          opacity: [0, 0.5, 0],
-                        }}
-                        transition={{
-                          duration: 4,
-                          repeat: Infinity,
-                          ease: 'easeInOut',
-                          delay: 2.5,
-                        }}
-                      />
-                    </div>
-
-                    {/* Watermark */}
-                    <Sparkles
-                      size={140}
-                      strokeWidth={0.3}
-                      className="absolute -bottom-8 -right-8 text-base-content/[0.02] pointer-events-none"
+                    <div className="absolute -top-12 -right-12 w-36 h-36 rounded-full pointer-events-none blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-info/[0.06]" />
+                    <Rocket
+                      size={90}
+                      strokeWidth={0.4}
+                      className="absolute -bottom-4 -right-4 text-base-content/[0.02] pointer-events-none"
                     />
-
-                    {/* ── Content ── */}
                     <div className="relative z-10">
-                      {/* Header */}
-                      <div className="text-center mb-8">
-                        <motion.div
-                          initial={{ scale: 0 }}
-                          animate={{ scale: 1 }}
-                          transition={{
-                            delay: 0.3,
-                            type: 'spring',
-                            bounce: 0.35,
-                            duration: 0.6,
-                          }}
-                          className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-5"
+                      <div className="flex items-center gap-2.5 mb-3">
+                        <div
+                          className="h-9 w-9 rounded-lg flex items-center justify-center"
                           style={{
-                            background: '#f59e0b15',
+                            background: '#00b8db15',
                             boxShadow:
-                              '0 0 40px #f59e0b20, 0 0 0 1px #f59e0b25',
+                              '0 0 20px #00b8db15, 0 0 0 1px #00b8db20',
                           }}
                         >
-                          <Sparkles
-                            size={28}
-                            className="text-warning"
-                          />
-                        </motion.div>
-
-                        <h3 className="text-2xl font-black text-base-content mb-1">
-                          The First Byte
+                          <Rocket size={16} className="text-base-content/80" />
+                        </div>
+                        <h3 className="text-sm font-bold text-base-content">
+                          Uplink
                         </h3>
-                        <p className="text-xs text-warning/50 font-medium">
-                          Lifetime Uplink &middot; Founding Member
-                        </p>
                       </div>
+                      <p className="text-xs text-base-content/40 leading-relaxed mb-5">
+                        For people who check their markets every morning
+                      </p>
 
-                      {/* Price */}
-                      <div className="text-center mb-6">
-                        <div className="flex items-baseline justify-center gap-2 mb-1">
-                          <span className="text-5xl font-black text-base-content tracking-tight">
-                            $399
+                      {/* Price — monthly-first for annual, per-digit slot animation */}
+                      <div className="mb-4">
+                        <div className="flex items-baseline gap-1 mb-1">
+                          <span className="text-3xl font-black text-base-content tracking-tight font-mono tabular-nums">
+                            $
+                            <AnimateNumber
+                              transition={{
+                                y: {
+                                  type: 'spring',
+                                  bounce: 0.15,
+                                  duration: 0.45,
+                                },
+                                opacity: { duration: 0.15 },
+                              }}
+                            >
+                              {PRICING.uplink[billingPeriod].perMonth}
+                            </AnimateNumber>
                           </span>
-                          <span className="text-sm text-base-content/25">
-                            one-time
-                          </span>
-                        </div>
-                        <p className="text-[10px] text-warning/40">
-                          Permanent Uplink access &middot; No renewals
-                        </p>
-                      </div>
-
-                      {/* Slot progress */}
-                      <div className="mb-8 p-4 rounded-xl bg-base-100/60 border border-base-300/30">
-                        <div className="flex items-center justify-between mb-2.5">
-                          <span className="text-[9px] text-base-content/25 uppercase tracking-wide">
-                            Founding Member Slots
-                          </span>
-                          <span className="text-[10px] font-mono text-warning/60 font-bold">
-                            128 total &middot; 0x00 — 0x7F
+                          <span className="text-xs font-mono text-base-content/25">
+                            /mo
                           </span>
                         </div>
-                        <div className="h-1.5 rounded-full bg-base-300/50 overflow-hidden">
-                          <motion.div
-                            className="h-full rounded-full bg-gradient-to-r from-warning/70 via-warning to-primary/60 origin-left"
-                            initial={{ scaleX: 0 }}
-                            animate={{ scaleX: 1 }}
-                            transition={{
-                              duration: 2,
-                              delay: 0.5,
-                              ease: EASE,
-                            }}
-                          />
-                        </div>
-                      </div>
-
-                      {/* Features — 2 columns */}
-                      <div className="grid grid-cols-2 gap-x-6 gap-y-3 mb-8">
-                        {[
-                          'Permanent Uplink-tier access',
-                          '50% off Unlimited upgrade',
-                          '30s polling delivery',
-                          'Founding member badge',
-                          '25 symbols, 50 RSS feeds',
-                          'Priority support',
-                          'Pro + College sports',
-                          'Early access to features',
-                        ].map((feature) => (
-                          <div
-                            key={feature}
-                            className="flex items-center gap-2"
-                          >
-                            <Check
-                              size={12}
-                              className="text-warning shrink-0"
-                            />
-                            <span className="text-[11px] text-base-content/55">
-                              {feature}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Unlimited callout */}
-                      <div className="relative mb-8 p-3.5 rounded-xl border border-primary/15 overflow-hidden"
-                        style={{ background: 'rgba(52, 211, 153, 0.04)' }}
-                      >
-                        <div className="relative z-10">
-                          <p className="text-[10px] text-primary/70 font-semibold mb-1">
-                            50% Off Unlimited — From $25.00/mo
-                          </p>
-                          <p className="text-[10px] text-base-content/35 leading-relaxed">
-                            Lifetime members get half off any Unlimited
-                            subscription. Real-time SSE, unlimited symbols
-                            and feeds, webhooks, API access, and data export
-                            — all at half price.
-                          </p>
+                        <div className="flex items-center gap-2 h-5">
+                          <AnimatePresence mode="wait">
+                            {billingPeriod === 'annual' ? (
+                              <motion.span
+                                key="annual-billed"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                transition={{ duration: 0.15 }}
+                                className="text-[10px] font-mono text-base-content/25 tabular-nums"
+                              >
+                                Billed ${PRICING.uplink.annual.price}/yr
+                              </motion.span>
+                            ) : (
+                              <motion.span
+                                key="monthly-billed"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                transition={{ duration: 0.15 }}
+                                className="text-[10px] font-mono text-base-content/25 tabular-nums"
+                              >
+                                Billed monthly
+                              </motion.span>
+                            )}
+                          </AnimatePresence>
+                          <AnimatePresence mode="wait">
+                            {PRICING.uplink[billingPeriod].savings && (
+                              <motion.span
+                                key={PRICING.uplink[billingPeriod].savings}
+                                initial={{ opacity: 0, scale: 0.9 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={{ opacity: 0, scale: 0.9 }}
+                                transition={{ duration: 0.2, ease: EASE }}
+                                className="text-[8px] font-bold text-info/60 bg-info/8 px-1.5 py-0.5 rounded"
+                              >
+                                {PRICING.uplink[billingPeriod].savings}
+                              </motion.span>
+                            )}
+                          </AnimatePresence>
                         </div>
                       </div>
 
-                      {/* CTA */}
-                      <Link
-                        to="/uplink/lifetime"
-                        search={{ session_id: undefined }}
-                        className="block w-full py-3.5 text-center text-xs font-bold bg-warning/10 border border-warning/30 text-warning rounded-xl hover:bg-warning/20 hover:border-warning/50 transition-colors"
-                      >
-                        Claim Your Slot
-                      </Link>
+                      <div className="space-y-2.5 mb-6">
+                        <PricingFeature>30s polling delivery</PricingFeature>
+                        <PricingFeature>
+                          25 symbols, 50 RSS feeds
+                        </PricingFeature>
+                        <PricingFeature>10 custom RSS feeds</PricingFeature>
+                        <PricingFeature>3 fantasy leagues</PricingFeature>
+                        <PricingFeature>Pro + College sports</PricingFeature>
+                        <PricingFeature>Early access</PricingFeature>
+                      </div>
+
+                      <div className="flex flex-col items-center gap-1.5">
+                        <div className="w-full py-2.5 text-center text-[10px] font-semibold border border-info/20 text-info/60 rounded-lg group-hover:border-info/40 group-hover:text-info/80 transition-colors">
+                          Start Free Trial
+                        </div>
+                        <span className="text-[9px] text-base-content/20">
+                          7 days free, then $
+                          {PRICING.uplink[billingPeriod].perMonth}/mo
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                </motion.div>
-              </div>
-            </motion.div>
-          ) : (
-            /* ═══════════════════════════════════════════════════════════════
-               TIER CARDS — Uplink / Pro / Unlimited
-               ═══════════════════════════════════════════════════════════════ */
-            <motion.div
-              key="tier-cards"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.97, y: 6 }}
-              transition={{ duration: 0.35, ease: EASE }}
-            >
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
-            {/* ─── UPLINK ─── */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.06, duration: 0.5, ease: EASE }}
-              whileHover={{
-                y: -3,
-                transition: { type: 'tween', duration: 0.2 },
-              }}
-              role="button"
-              tabIndex={0}
-              aria-label={`Select Uplink ${BILLING_LABELS[billingPeriod]} plan`}
-              onClick={() => handleSelectPlan(billingPeriod, 'uplink')}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  handleSelectPlan(billingPeriod, 'uplink')
-                }
-              }}
-              className="group relative bg-base-200/40 border border-info/15 rounded-xl p-6 hover:border-info/30 transition-colors overflow-hidden cursor-pointer"
-            >
-              <div
-                className="absolute top-0 left-0 right-0 h-px"
-                style={{
-                  background:
-                    'linear-gradient(90deg, transparent, #00b8db 50%, transparent)',
-                }}
-              />
-              <div className="absolute -top-12 -right-12 w-36 h-36 rounded-full pointer-events-none blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-info/[0.06]" />
-              <Rocket
-                size={90}
-                strokeWidth={0.4}
-                className="absolute -bottom-4 -right-4 text-base-content/[0.02] pointer-events-none"
-              />
-              <div className="relative z-10">
-                <div className="flex items-center gap-2.5 mb-3">
-                  <div
-                    className="h-9 w-9 rounded-lg flex items-center justify-center"
-                    style={{
-                      background: '#00b8db15',
-                      boxShadow:
-                        '0 0 20px #00b8db15, 0 0 0 1px #00b8db20',
+                  </motion.div>
+
+                  {/* ─── PRO ─── */}
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.09, duration: 0.5, ease: EASE }}
+                    whileHover={{
+                      y: -3,
+                      transition: { type: 'tween', duration: 0.2 },
                     }}
-                  >
-                    <Rocket size={16} className="text-base-content/80" />
-                  </div>
-                  <h3 className="text-sm font-bold text-base-content">
-                    Uplink
-                  </h3>
-                </div>
-                <p className="text-xs text-base-content/40 leading-relaxed mb-5">
-                  For people who check their markets every morning
-                </p>
-
-                {/* Price — per-digit slot animation */}
-                <div className="mb-4">
-                  <div className="flex items-baseline gap-1 mb-1">
-                    <span className="text-3xl font-black text-base-content tracking-tight font-mono tabular-nums">
-                      $
-                      <AnimateNumber
-                        transition={{
-                          y: { type: 'spring', bounce: 0.15, duration: 0.45 },
-                          opacity: { duration: 0.15 },
-                        }}
-                      >
-                        {PRICING.uplink[billingPeriod].price}
-                      </AnimateNumber>
-                    </span>
-                    <AnimatePresence mode="wait">
-                      <motion.span
-                        key={PRICING.uplink[billingPeriod].period}
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        transition={{ duration: 0.15 }}
-                        className="text-xs font-mono text-base-content/25"
-                      >
-                        {PRICING.uplink[billingPeriod].period}
-                      </motion.span>
-                    </AnimatePresence>
-                  </div>
-                    <div className="flex items-center gap-2 h-5">
-                    <span className="text-[10px] font-mono text-base-content/25 tabular-nums">
-                      ~$
-                      <AnimateNumber
-                        transition={{
-                          y: { type: 'spring', bounce: 0.15, duration: 0.45 },
-                          opacity: { duration: 0.15 },
-                        }}
-                      >
-                        {PRICING.uplink[billingPeriod].perMonth}
-                      </AnimateNumber>
-                      /mo
-                    </span>
-                    <AnimatePresence mode="wait">
-                      {PRICING.uplink[billingPeriod].savings && (
-                        <motion.span
-                          key={PRICING.uplink[billingPeriod].savings}
-                          initial={{ opacity: 0, scale: 0.9 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          exit={{ opacity: 0, scale: 0.9 }}
-                          transition={{ duration: 0.2, ease: EASE }}
-                          className="text-[8px] font-bold text-info/60 bg-info/8 px-1.5 py-0.5 rounded"
-                        >
-                          {PRICING.uplink[billingPeriod].savings}
-                        </motion.span>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                </div>
-
-                <div className="space-y-2.5 mb-6">
-                  <PricingFeature>30s polling delivery</PricingFeature>
-                  <PricingFeature>25 symbols, 50 RSS feeds</PricingFeature>
-                  <PricingFeature>10 custom RSS feeds</PricingFeature>
-                  <PricingFeature>3 fantasy leagues</PricingFeature>
-                  <PricingFeature>Pro + College sports</PricingFeature>
-                  <PricingFeature>Early access</PricingFeature>
-                </div>
-
-                <div className="w-full py-2.5 text-center text-[10px] font-semibold border border-info/20 text-info/60 rounded-lg group-hover:border-info/40 group-hover:text-info/80 transition-colors">
-                  Get Uplink
-                </div>
-              </div>
-            </motion.div>
-
-            {/* ─── PRO ─── */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.09, duration: 0.5, ease: EASE }}
-              whileHover={{
-                y: -3,
-                transition: { type: 'tween', duration: 0.2 },
-              }}
-              role="button"
-              tabIndex={0}
-              aria-label={`Select Pro ${BILLING_LABELS[billingPeriod]} plan`}
-              onClick={() => handleSelectPlan(billingPeriod, 'pro')}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  handleSelectPlan(billingPeriod, 'pro')
-                }
-              }}
-              className="group relative bg-base-200/40 border border-[#a78bfa]/15 rounded-xl p-6 hover:border-[#a78bfa]/30 transition-colors overflow-hidden cursor-pointer"
-            >
-              <div
-                className="absolute top-0 left-0 right-0 h-px"
-                style={{
-                  background:
-                    'linear-gradient(90deg, transparent, #a78bfa 50%, transparent)',
-                }}
-              />
-              <div className="absolute -top-12 -right-12 w-36 h-36 rounded-full pointer-events-none blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-[#a78bfa]/[0.06]" />
-              <Gauge
-                size={90}
-                strokeWidth={0.4}
-                className="absolute -bottom-4 -right-4 text-base-content/[0.02] pointer-events-none"
-              />
-              <div className="relative z-10">
-                <div className="flex items-center gap-2.5 mb-3">
-                  <div
-                    className="h-9 w-9 rounded-lg flex items-center justify-center"
-                    style={{
-                      background: '#a78bfa15',
-                      boxShadow:
-                        '0 0 20px #a78bfa15, 0 0 0 1px #a78bfa20',
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Select Pro ${BILLING_LABELS[billingPeriod]} plan`}
+                    onClick={() => handleSelectPlan(billingPeriod, 'pro')}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        handleSelectPlan(billingPeriod, 'pro')
+                      }
                     }}
+                    className="group relative bg-base-200/40 border border-[#a78bfa]/15 rounded-xl p-6 hover:border-[#a78bfa]/30 transition-colors overflow-hidden cursor-pointer"
                   >
-                    <Gauge size={16} className="text-base-content/80" />
-                  </div>
-                  <h3 className="text-sm font-bold text-base-content">
-                    Pro
-                  </h3>
-                </div>
-                <p className="text-xs text-base-content/40 leading-relaxed mb-5">
-                  For people who need to be notified, not just informed
-                </p>
-
-                {/* Price — per-digit slot animation */}
-                <div className="mb-4">
-                  <div className="flex items-baseline gap-1 mb-1">
-                    <span className="text-3xl font-black text-base-content tracking-tight font-mono tabular-nums">
-                      $
-                      <AnimateNumber
-                        transition={{
-                          y: { type: 'spring', bounce: 0.15, duration: 0.45 },
-                          opacity: { duration: 0.15 },
-                        }}
-                      >
-                        {PRICING.pro[billingPeriod].price}
-                      </AnimateNumber>
-                    </span>
-                    <AnimatePresence mode="wait">
-                      <motion.span
-                        key={PRICING.pro[billingPeriod].period}
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        transition={{ duration: 0.15 }}
-                        className="text-xs font-mono text-base-content/25"
-                      >
-                        {PRICING.pro[billingPeriod].period}
-                      </motion.span>
-                    </AnimatePresence>
-                  </div>
-                    <div className="flex items-center gap-2 h-5">
-                    <span className="text-[10px] font-mono text-base-content/25 tabular-nums">
-                      ~$
-                      <AnimateNumber
-                        transition={{
-                          y: { type: 'spring', bounce: 0.15, duration: 0.45 },
-                          opacity: { duration: 0.15 },
-                        }}
-                      >
-                        {PRICING.pro[billingPeriod].perMonth}
-                      </AnimateNumber>
-                      /mo
-                    </span>
-                    <AnimatePresence mode="wait">
-                      {PRICING.pro[billingPeriod].savings && (
-                        <motion.span
-                          key={PRICING.pro[billingPeriod].savings}
-                          initial={{ opacity: 0, scale: 0.9 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          exit={{ opacity: 0, scale: 0.9 }}
-                          transition={{ duration: 0.2, ease: EASE }}
-                          className="text-[8px] font-bold text-[#a78bfa]/60 bg-[#a78bfa]/8 px-1.5 py-0.5 rounded"
+                    <div
+                      className="absolute top-0 left-0 right-0 h-px"
+                      style={{
+                        background:
+                          'linear-gradient(90deg, transparent, #a78bfa 50%, transparent)',
+                      }}
+                    />
+                    <div className="absolute -top-12 -right-12 w-36 h-36 rounded-full pointer-events-none blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-[#a78bfa]/[0.06]" />
+                    <Gauge
+                      size={90}
+                      strokeWidth={0.4}
+                      className="absolute -bottom-4 -right-4 text-base-content/[0.02] pointer-events-none"
+                    />
+                    <div className="relative z-10">
+                      <div className="flex items-center gap-2.5 mb-3">
+                        <div
+                          className="h-9 w-9 rounded-lg flex items-center justify-center"
+                          style={{
+                            background: '#a78bfa15',
+                            boxShadow:
+                              '0 0 20px #a78bfa15, 0 0 0 1px #a78bfa20',
+                          }}
                         >
-                          {PRICING.pro[billingPeriod].savings}
-                        </motion.span>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                </div>
+                          <Gauge size={16} className="text-base-content/80" />
+                        </div>
+                        <h3 className="text-sm font-bold text-base-content">
+                          Pro
+                        </h3>
+                      </div>
+                      <p className="text-xs text-base-content/40 leading-relaxed mb-5">
+                        For people who need to be notified, not just informed
+                      </p>
 
-                <div className="space-y-2.5 mb-6">
-                  <PricingFeature highlight>10s polling delivery</PricingFeature>
-                  <PricingFeature highlight>75 symbols, 150 RSS feeds</PricingFeature>
-                  <PricingFeature highlight>Custom alerts & notifications</PricingFeature>
-                  <PricingFeature highlight>Feed profiles & controls</PricingFeature>
-                  <PricingFeature highlight>Priority RSS refresh</PricingFeature>
-                  <PricingFeature highlight>10 fantasy leagues</PricingFeature>
-                </div>
+                      {/* Price — monthly-first for annual, per-digit slot animation */}
+                      <div className="mb-4">
+                        <div className="flex items-baseline gap-1 mb-1">
+                          <span className="text-3xl font-black text-base-content tracking-tight font-mono tabular-nums">
+                            $
+                            <AnimateNumber
+                              transition={{
+                                y: {
+                                  type: 'spring',
+                                  bounce: 0.15,
+                                  duration: 0.45,
+                                },
+                                opacity: { duration: 0.15 },
+                              }}
+                            >
+                              {PRICING.pro[billingPeriod].perMonth}
+                            </AnimateNumber>
+                          </span>
+                          <span className="text-xs font-mono text-base-content/25">
+                            /mo
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 h-5">
+                          <AnimatePresence mode="wait">
+                            {billingPeriod === 'annual' ? (
+                              <motion.span
+                                key="annual-billed"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                transition={{ duration: 0.15 }}
+                                className="text-[10px] font-mono text-base-content/25 tabular-nums"
+                              >
+                                Billed ${PRICING.pro.annual.price}/yr
+                              </motion.span>
+                            ) : (
+                              <motion.span
+                                key="monthly-billed"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                transition={{ duration: 0.15 }}
+                                className="text-[10px] font-mono text-base-content/25 tabular-nums"
+                              >
+                                Billed monthly
+                              </motion.span>
+                            )}
+                          </AnimatePresence>
+                          <AnimatePresence mode="wait">
+                            {PRICING.pro[billingPeriod].savings && (
+                              <motion.span
+                                key={PRICING.pro[billingPeriod].savings}
+                                initial={{ opacity: 0, scale: 0.9 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={{ opacity: 0, scale: 0.9 }}
+                                transition={{ duration: 0.2, ease: EASE }}
+                                className="text-[8px] font-bold text-[#a78bfa]/60 bg-[#a78bfa]/8 px-1.5 py-0.5 rounded"
+                              >
+                                {PRICING.pro[billingPeriod].savings}
+                              </motion.span>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      </div>
 
-                <div className="w-full py-2.5 text-center text-[10px] font-semibold border border-[#a78bfa]/20 text-[#a78bfa]/60 rounded-lg group-hover:border-[#a78bfa]/40 group-hover:text-[#a78bfa]/80 transition-colors">
-                  Get Pro
-                </div>
-              </div>
-            </motion.div>
+                      <div className="space-y-2.5 mb-6">
+                        <PricingFeature highlight>
+                          10s polling delivery
+                        </PricingFeature>
+                        <PricingFeature highlight>
+                          75 symbols, 150 RSS feeds
+                        </PricingFeature>
+                        <PricingFeature highlight>
+                          Custom alerts & notifications
+                        </PricingFeature>
+                        <PricingFeature highlight>
+                          Feed profiles & controls
+                        </PricingFeature>
+                        <PricingFeature highlight>
+                          Priority RSS refresh
+                        </PricingFeature>
+                        <PricingFeature highlight>
+                          10 fantasy leagues
+                        </PricingFeature>
+                      </div>
 
-            {/* ─── UNLIMITED ─── */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.12, duration: 0.5, ease: EASE }}
-              whileHover={{
-                y: -4,
-                transition: { type: 'tween', duration: 0.2 },
-              }}
-              role="button"
-              tabIndex={0}
-              aria-label={`Select Unlimited ${BILLING_LABELS[billingPeriod]} plan`}
-              onClick={() =>
-                handleSelectPlan(billingPeriod, 'unlimited')
-              }
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  handleSelectPlan(billingPeriod, 'unlimited')
-                }
-              }}
-              className="group relative rounded-xl overflow-hidden cursor-pointer"
-            >
-              {/* Pulsing border glow */}
-              <motion.div
-                className="absolute -inset-px rounded-xl bg-gradient-to-b from-primary/30 via-primary/10 to-primary/5"
-                animate={{ opacity: [0.6, 1, 0.6] }}
-                transition={{
-                  duration: 4,
-                  repeat: Infinity,
-                  ease: 'easeInOut',
-                }}
-              />
-              <div className="relative p-6 border border-primary/20 rounded-xl">
-                {/* Background layer — below smoke. No backdrop-blur: it causes a
+                      <div className="flex flex-col items-center gap-1.5">
+                        <div className="w-full py-2.5 text-center text-[10px] font-semibold border border-[#a78bfa]/20 text-[#a78bfa]/60 rounded-lg group-hover:border-[#a78bfa]/40 group-hover:text-[#a78bfa]/80 transition-colors">
+                          Start Free Trial
+                        </div>
+                        <span className="text-[9px] text-base-content/20">
+                          7 days free, then $
+                          {PRICING.pro[billingPeriod].perMonth}/mo
+                        </span>
+                      </div>
+                    </div>
+                  </motion.div>
+
+                  {/* ─── UNLIMITED ─── */}
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.12, duration: 0.5, ease: EASE }}
+                    whileHover={{
+                      y: -4,
+                      transition: { type: 'tween', duration: 0.2 },
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Select Unlimited ${BILLING_LABELS[billingPeriod]} plan`}
+                    onClick={() => handleSelectPlan(billingPeriod, 'unlimited')}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        handleSelectPlan(billingPeriod, 'unlimited')
+                      }
+                    }}
+                    className="group relative rounded-xl overflow-hidden cursor-pointer lg:scale-[1.03] lg:-my-2 lg:origin-top"
+                  >
+                    {/* Pulsing border glow */}
+                    <motion.div
+                      className="absolute -inset-px rounded-xl bg-gradient-to-b from-primary/30 via-primary/10 to-primary/5"
+                      animate={{ opacity: [0.6, 1, 0.6] }}
+                      transition={{
+                        duration: 4,
+                        repeat: Infinity,
+                        ease: 'easeInOut',
+                      }}
+                    />
+                    <div className="relative p-6 border border-primary/20 rounded-xl">
+                      {/* Background layer — below smoke. No backdrop-blur: it causes a
                      compositing snap when the parent's whileInView opacity animation
                      completes and the WAAPI layer is torn down. */}
-                <div className="absolute inset-0 bg-base-200/60 rounded-xl pointer-events-none" />
-                <div
-                  className="absolute top-0 left-0 right-0 h-px"
-                  style={{
-                    background:
-                      'linear-gradient(90deg, transparent, #34d399 50%, transparent)',
-                  }}
-                />
-                <div className="absolute inset-0 bg-gradient-to-b from-primary/[0.04] to-transparent pointer-events-none rounded-xl" />
-                <Crown
-                  size={90}
-                  strokeWidth={0.4}
-                  className="absolute -bottom-4 -right-4 text-base-content/[0.02] pointer-events-none"
-                />
-
-                {/* "Popular" badge */}
-                <div className="absolute top-0 right-0" style={{ zIndex: 20 }}>
-                  <div className="bg-primary text-primary-content text-[7px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-bl-lg">
-                    Most Popular
-                  </div>
-                </div>
-
-                {/* ── Ethereal smoke — above background, below content ── */}
-                <div
-                  className="absolute inset-0 pointer-events-none rounded-xl overflow-hidden"
-                  style={{ zIndex: 1 }}
-                >
-                  {/* Base haze — fills card */}
-                  <motion.div
-                    className="absolute inset-0"
-                    style={{
-                      background:
-                        'radial-gradient(ellipse 90% 60% at 50% 40%, #34d39928 0%, transparent 70%)',
-                    }}
-                    animate={{ opacity: [0.5, 1, 0.5] }}
-                    transition={{
-                      duration: 5,
-                      repeat: Infinity,
-                      ease: 'easeInOut',
-                    }}
-                  />
-
-                  {/* Rising plume */}
-                  <motion.div
-                    className="absolute bottom-[-10%] left-[15%] w-[75%] h-[55%] rounded-full blur-2xl"
-                    style={{
-                      background:
-                        'radial-gradient(ellipse 70% 60% at center bottom, #34d39938 0%, transparent 70%)',
-                    }}
-                    animate={{
-                      y: [0, -30, 0],
-                      scaleX: [1, 1.25, 1],
-                      opacity: [0.4, 0.8, 0.4],
-                    }}
-                    transition={{
-                      duration: 7,
-                      repeat: Infinity,
-                      ease: 'easeInOut',
-                    }}
-                  />
-
-                  {/* Descending plume */}
-                  <motion.div
-                    className="absolute top-[-8%] right-[10%] w-[65%] h-[50%] rounded-full blur-2xl"
-                    style={{
-                      background:
-                        'radial-gradient(ellipse 65% 55% at center top, #34d39930 0%, transparent 65%)',
-                    }}
-                    animate={{
-                      y: [0, 25, 0],
-                      scaleX: [1, 1.15, 1],
-                      opacity: [0.35, 0.7, 0.35],
-                    }}
-                    transition={{
-                      duration: 8,
-                      repeat: Infinity,
-                      ease: 'easeInOut',
-                      delay: 1.5,
-                    }}
-                  />
-
-                  {/* Mid-card turbulence */}
-                  <motion.div
-                    className="absolute top-[25%] left-[5%] w-[90%] h-[50%] rounded-full blur-3xl"
-                    style={{
-                      background:
-                        'radial-gradient(ellipse 75% 50%, #34d39922 0%, transparent 60%)',
-                    }}
-                    animate={{
-                      scaleX: [1, 1.2, 0.9, 1],
-                      scaleY: [1, 0.9, 1.1, 1],
-                      opacity: [0.4, 0.7, 0.5, 0.4],
-                    }}
-                    transition={{
-                      duration: 10,
-                      repeat: Infinity,
-                      ease: 'easeInOut',
-                    }}
-                  />
-
-                  {/* Accent particle */}
-                  <motion.div
-                    className="absolute top-[30%] right-[15%] w-[50px] h-[50px] rounded-full blur-lg"
-                    style={{
-                      background:
-                        'radial-gradient(circle, #34d39950 0%, transparent 70%)',
-                    }}
-                    animate={{
-                      y: [0, -15, 10, 0],
-                      x: [0, -8, 5, 0],
-                      opacity: [0, 0.7, 0.35, 0],
-                    }}
-                    transition={{
-                      duration: 5,
-                      repeat: Infinity,
-                      ease: 'easeInOut',
-                    }}
-                  />
-
-                  {/* Second accent particle */}
-                  <motion.div
-                    className="absolute top-[65%] left-[20%] w-[40px] h-[40px] rounded-full blur-lg"
-                    style={{
-                      background:
-                        'radial-gradient(circle, #34d39945 0%, transparent 70%)',
-                    }}
-                    animate={{
-                      y: [0, -10, 0],
-                      opacity: [0, 0.6, 0],
-                    }}
-                    transition={{
-                      duration: 4,
-                      repeat: Infinity,
-                      ease: 'easeInOut',
-                      delay: 2.5,
-                    }}
-                  />
-                </div>
-
-                <div className="relative z-10">
-                  <div className="flex items-center gap-2.5 mb-3">
-                    <div
-                      className="h-9 w-9 rounded-lg flex items-center justify-center"
-                      style={{
-                        background: '#34d39915',
-                        boxShadow:
-                          '0 0 20px #34d39915, 0 0 0 1px #34d39920',
-                      }}
-                    >
-                      <Crown
-                        size={16}
-                        className="text-base-content/80"
+                      <div className="absolute inset-0 bg-base-200/60 rounded-xl pointer-events-none" />
+                      <div
+                        className="absolute top-0 left-0 right-0 h-px"
+                        style={{
+                          background:
+                            'linear-gradient(90deg, transparent, #34d399 50%, transparent)',
+                        }}
                       />
-                    </div>
-                    <h3 className="text-sm font-bold text-base-content">
-                      Unlimited
-                    </h3>
-                  </div>
-                  <p className="text-xs text-base-content/40 leading-relaxed mb-5">
-                    For people who want Scrollr in their stack
-                  </p>
+                      <div className="absolute inset-0 bg-gradient-to-b from-primary/[0.04] to-transparent pointer-events-none rounded-xl" />
+                      <Crown
+                        size={90}
+                        strokeWidth={0.4}
+                        className="absolute -bottom-4 -right-4 text-base-content/[0.02] pointer-events-none"
+                      />
 
-                  {/* Price — per-digit slot animation */}
-                  <div className="mb-4">
-                    <div className="flex items-baseline gap-1 mb-1">
-                      <span className="text-3xl font-black text-base-content tracking-tight font-mono tabular-nums">
-                        $
-                        <AnimateNumber
-                          transition={{
-                            y: { type: 'spring', bounce: 0.15, duration: 0.45 },
-                            opacity: { duration: 0.15 },
+                      {/* "Popular" badge */}
+                      <div
+                        className="absolute top-0 right-0"
+                        style={{ zIndex: 20 }}
+                      >
+                        <div className="bg-primary text-primary-content text-[7px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-bl-lg">
+                          Most Popular
+                        </div>
+                      </div>
+
+                      {/* ── Ethereal smoke — above background, below content ── */}
+                      <div
+                        className="absolute inset-0 pointer-events-none rounded-xl overflow-hidden"
+                        style={{ zIndex: 1 }}
+                      >
+                        {/* Base haze — fills card */}
+                        <motion.div
+                          className="absolute inset-0"
+                          style={{
+                            background:
+                              'radial-gradient(ellipse 90% 60% at 50% 40%, #34d39928 0%, transparent 70%)',
                           }}
-                        >
-                          {PRICING.unlimited[billingPeriod].price}
-                        </AnimateNumber>
-                      </span>
-                      <AnimatePresence mode="wait">
-                        <motion.span
-                          key={PRICING.unlimited[billingPeriod].period}
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          transition={{ duration: 0.15 }}
-                          className="text-xs font-mono text-base-content/25"
-                        >
-                          {PRICING.unlimited[billingPeriod].period}
-                        </motion.span>
-                      </AnimatePresence>
-                    </div>
-                    <div className="flex items-center gap-2 h-5">
-                      <span className="text-[10px] font-mono text-primary/40 tabular-nums">
-                        ~$
-                        <AnimateNumber
+                          animate={{ opacity: [0.5, 1, 0.5] }}
                           transition={{
-                            y: { type: 'spring', bounce: 0.15, duration: 0.45 },
-                            opacity: { duration: 0.15 },
+                            duration: 5,
+                            repeat: Infinity,
+                            ease: 'easeInOut',
                           }}
-                        >
-                          {PRICING.unlimited[billingPeriod].perMonth}
-                        </AnimateNumber>
-                        /mo
-                      </span>
-                      <AnimatePresence mode="wait">
-                        {PRICING.unlimited[billingPeriod].savings && (
-                          <motion.span
-                            key={PRICING.unlimited[billingPeriod].savings}
-                            initial={{ opacity: 0, scale: 0.9 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.9 }}
-                            transition={{ duration: 0.2, ease: EASE }}
-                            className="text-[8px] font-bold text-primary/70 bg-primary/10 px-1.5 py-0.5 rounded"
+                        />
+
+                        {/* Rising plume */}
+                        <motion.div
+                          className="absolute bottom-[-10%] left-[15%] w-[75%] h-[55%] rounded-full blur-2xl"
+                          style={{
+                            background:
+                              'radial-gradient(ellipse 70% 60% at center bottom, #34d39938 0%, transparent 70%)',
+                          }}
+                          animate={{
+                            y: [0, -30, 0],
+                            scaleX: [1, 1.25, 1],
+                            opacity: [0.4, 0.8, 0.4],
+                          }}
+                          transition={{
+                            duration: 7,
+                            repeat: Infinity,
+                            ease: 'easeInOut',
+                          }}
+                        />
+
+                        {/* Descending plume */}
+                        <motion.div
+                          className="absolute top-[-8%] right-[10%] w-[65%] h-[50%] rounded-full blur-2xl"
+                          style={{
+                            background:
+                              'radial-gradient(ellipse 65% 55% at center top, #34d39930 0%, transparent 65%)',
+                          }}
+                          animate={{
+                            y: [0, 25, 0],
+                            scaleX: [1, 1.15, 1],
+                            opacity: [0.35, 0.7, 0.35],
+                          }}
+                          transition={{
+                            duration: 8,
+                            repeat: Infinity,
+                            ease: 'easeInOut',
+                            delay: 1.5,
+                          }}
+                        />
+
+                        {/* Mid-card turbulence */}
+                        <motion.div
+                          className="absolute top-[25%] left-[5%] w-[90%] h-[50%] rounded-full blur-3xl"
+                          style={{
+                            background:
+                              'radial-gradient(ellipse 75% 50%, #34d39922 0%, transparent 60%)',
+                          }}
+                          animate={{
+                            scaleX: [1, 1.2, 0.9, 1],
+                            scaleY: [1, 0.9, 1.1, 1],
+                            opacity: [0.4, 0.7, 0.5, 0.4],
+                          }}
+                          transition={{
+                            duration: 10,
+                            repeat: Infinity,
+                            ease: 'easeInOut',
+                          }}
+                        />
+
+                        {/* Accent particle */}
+                        <motion.div
+                          className="absolute top-[30%] right-[15%] w-[50px] h-[50px] rounded-full blur-lg"
+                          style={{
+                            background:
+                              'radial-gradient(circle, #34d39950 0%, transparent 70%)',
+                          }}
+                          animate={{
+                            y: [0, -15, 10, 0],
+                            x: [0, -8, 5, 0],
+                            opacity: [0, 0.7, 0.35, 0],
+                          }}
+                          transition={{
+                            duration: 5,
+                            repeat: Infinity,
+                            ease: 'easeInOut',
+                          }}
+                        />
+
+                        {/* Second accent particle */}
+                        <motion.div
+                          className="absolute top-[65%] left-[20%] w-[40px] h-[40px] rounded-full blur-lg"
+                          style={{
+                            background:
+                              'radial-gradient(circle, #34d39945 0%, transparent 70%)',
+                          }}
+                          animate={{
+                            y: [0, -10, 0],
+                            opacity: [0, 0.6, 0],
+                          }}
+                          transition={{
+                            duration: 4,
+                            repeat: Infinity,
+                            ease: 'easeInOut',
+                            delay: 2.5,
+                          }}
+                        />
+                      </div>
+
+                      <div className="relative z-10">
+                        <div className="flex items-center gap-2.5 mb-3">
+                          <div
+                            className="h-9 w-9 rounded-lg flex items-center justify-center"
+                            style={{
+                              background: '#34d39915',
+                              boxShadow:
+                                '0 0 20px #34d39915, 0 0 0 1px #34d39920',
+                            }}
                           >
-                            {PRICING.unlimited[billingPeriod].savings}
-                          </motion.span>
-                        )}
-                      </AnimatePresence>
+                            <Crown size={16} className="text-base-content/80" />
+                          </div>
+                          <h3 className="text-sm font-bold text-base-content">
+                            Unlimited
+                          </h3>
+                        </div>
+                        <p className="text-xs text-base-content/40 leading-relaxed mb-5">
+                          For people who want Scrollr in their stack
+                        </p>
+
+                        {/* Price — monthly-first for annual, per-digit slot animation */}
+                        <div className="mb-4">
+                          <div className="flex items-baseline gap-1 mb-1">
+                            <span className="text-3xl font-black text-base-content tracking-tight font-mono tabular-nums">
+                              $
+                              <AnimateNumber
+                                transition={{
+                                  y: {
+                                    type: 'spring',
+                                    bounce: 0.15,
+                                    duration: 0.45,
+                                  },
+                                  opacity: { duration: 0.15 },
+                                }}
+                              >
+                                {PRICING.unlimited[billingPeriod].perMonth}
+                              </AnimateNumber>
+                            </span>
+                            <span className="text-xs font-mono text-base-content/25">
+                              /mo
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 h-5">
+                            <AnimatePresence mode="wait">
+                              {billingPeriod === 'annual' ? (
+                                <motion.span
+                                  key="annual-billed"
+                                  initial={{ opacity: 0 }}
+                                  animate={{ opacity: 1 }}
+                                  exit={{ opacity: 0 }}
+                                  transition={{ duration: 0.15 }}
+                                  className="text-[10px] font-mono text-primary/40 tabular-nums"
+                                >
+                                  Billed ${PRICING.unlimited.annual.price}/yr
+                                </motion.span>
+                              ) : (
+                                <motion.span
+                                  key="monthly-billed"
+                                  initial={{ opacity: 0 }}
+                                  animate={{ opacity: 1 }}
+                                  exit={{ opacity: 0 }}
+                                  transition={{ duration: 0.15 }}
+                                  className="text-[10px] font-mono text-primary/40 tabular-nums"
+                                >
+                                  Billed monthly
+                                </motion.span>
+                              )}
+                            </AnimatePresence>
+                            <AnimatePresence mode="wait">
+                              {PRICING.unlimited[billingPeriod].savings && (
+                                <motion.span
+                                  key={PRICING.unlimited[billingPeriod].savings}
+                                  initial={{ opacity: 0, scale: 0.9 }}
+                                  animate={{ opacity: 1, scale: 1 }}
+                                  exit={{ opacity: 0, scale: 0.9 }}
+                                  transition={{ duration: 0.2, ease: EASE }}
+                                  className="text-[8px] font-bold text-primary/70 bg-primary/10 px-1.5 py-0.5 rounded"
+                                >
+                                  {PRICING.unlimited[billingPeriod].savings}
+                                </motion.span>
+                              )}
+                            </AnimatePresence>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2.5 mb-6">
+                          <PricingFeature highlight>
+                            Real-time SSE delivery
+                          </PricingFeature>
+                          <PricingFeature highlight>
+                            Unlimited everything
+                          </PricingFeature>
+                          <PricingFeature highlight>
+                            Webhooks & integrations
+                          </PricingFeature>
+                          <PricingFeature highlight>
+                            Data export & API access
+                          </PricingFeature>
+                          <PricingFeature highlight>
+                            Priority support
+                          </PricingFeature>
+                          <PricingFeature highlight>
+                            Everything in Pro, plus more
+                          </PricingFeature>
+                        </div>
+
+                        <div className="flex flex-col items-center gap-1.5">
+                          <div className="w-full py-2.5 text-center text-[10px] font-semibold bg-primary/10 border border-primary/30 text-primary rounded-lg group-hover:bg-primary/20 group-hover:border-primary/50 transition-colors">
+                            Start Free Trial
+                          </div>
+                          <span className="text-[9px] text-base-content/20">
+                            7 days free, then $
+                            {PRICING.unlimited[billingPeriod].perMonth}/mo
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-
-                  <div className="space-y-2.5 mb-6">
-                    <PricingFeature highlight>
-                      Real-time SSE delivery
-                    </PricingFeature>
-                    <PricingFeature highlight>
-                      Unlimited everything
-                    </PricingFeature>
-                    <PricingFeature highlight>
-                      Webhooks & integrations
-                    </PricingFeature>
-                    <PricingFeature highlight>
-                      Data export & API access
-                    </PricingFeature>
-                    <PricingFeature highlight>
-                      Priority support
-                    </PricingFeature>
-                    <PricingFeature highlight>
-                      Everything in Pro, plus more
-                    </PricingFeature>
-                  </div>
-
-                  <div className="w-full py-2.5 text-center text-[10px] font-semibold bg-primary/10 border border-primary/30 text-primary rounded-lg group-hover:bg-primary/20 group-hover:border-primary/50 transition-colors">
-                    Get Unlimited
-                  </div>
+                  </motion.div>
                 </div>
-              </div>
-            </motion.div>
-
-          </div>
-            </motion.div>
-          )}
+              </motion.div>
+            )}
           </AnimatePresence>
 
-          {/* Pricing footer */}
+          {/* Trust signals strip */}
           <motion.div
             style={{ opacity: 0 }}
             initial={{ opacity: 0 }}
             whileInView={{ opacity: 1 }}
             viewport={{ once: true }}
             transition={{ delay: 0.3, duration: 0.5 }}
-            className="mt-8 text-center"
+            className="mt-8 flex flex-col items-center gap-3"
           >
-            <p className="text-[9px] text-base-content/20">
-              Free tier always included &middot; Cancel anytime
-              &middot; Payments via Stripe
+            <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
+              {[
+                { icon: Clock, text: '7-day free trial' },
+                { icon: CreditCard, text: 'Cancel with one click' },
+                { icon: Lock, text: 'No hidden fees' },
+                { icon: Zap, text: 'Instant activation' },
+              ].map(({ icon: Icon, text }) => (
+                <span
+                  key={text}
+                  className="flex items-center gap-1.5 text-[10px] text-base-content/30"
+                >
+                  <Icon size={11} className="text-primary/40 shrink-0" />
+                  {text}
+                </span>
+              ))}
+            </div>
+            <p className="text-[9px] text-base-content/15">
+              Free tier always included &middot; Payments via Stripe
             </p>
           </motion.div>
         </div>
@@ -2403,7 +2583,10 @@ function UplinkPage() {
                  Grid is 1.4fr+1fr+1fr+1fr+1fr = 5.4fr.
                  Unlimited column = rightmost 1/5.4 ≈ 18.5% of table.
                  Smoke fills the full column and bleeds at edges. */}
-            <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 1 }}>
+            <div
+              className="absolute inset-0 pointer-events-none"
+              style={{ zIndex: 1 }}
+            >
               {/* Base wash — fills exact column bounds, breathing opacity */}
               <motion.div
                 className="absolute inset-y-0 right-0 w-[18.5%]"
@@ -2700,7 +2883,10 @@ function UplinkPage() {
                     </span>
                   ) : (
                     <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-base-content/25">
-                      <Minus size={9} className="text-base-content/15 shrink-0" />
+                      <Minus
+                        size={9}
+                        className="text-base-content/15 shrink-0"
+                      />
                       {row.uplink}
                     </span>
                   )}
@@ -2713,7 +2899,10 @@ function UplinkPage() {
                     </span>
                   ) : (
                     <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-base-content/25">
-                      <Minus size={9} className="text-base-content/15 shrink-0" />
+                      <Minus
+                        size={9}
+                        className="text-base-content/15 shrink-0"
+                      />
                       {row.pro}
                     </span>
                   )}
@@ -2755,7 +2944,10 @@ function UplinkPage() {
                     </span>
                   ) : (
                     <span className="relative inline-flex items-center gap-1.5 text-[11px] font-mono text-base-content/25">
-                      <Minus size={9} className="text-base-content/15 shrink-0" />
+                      <Minus
+                        size={9}
+                        className="text-base-content/15 shrink-0"
+                      />
                       {row.unlimited}
                     </span>
                   )}
@@ -2897,14 +3089,17 @@ function UplinkPage() {
 
                   {/* "Recommended" badge for Unlimited */}
                   {tier.tier === 'unlimited' && (
-                    <div className="absolute top-0 right-0" style={{ zIndex: 20 }}>
+                    <div
+                      className="absolute top-0 right-0"
+                      style={{ zIndex: 20 }}
+                    >
                       <div className="bg-primary text-primary-content text-[7px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-bl-lg">
                         Recommended
                       </div>
                     </div>
                   )}
 
-                   {/* ── Ethereal smoke (Unlimited only) — above background, below content ── */}
+                  {/* ── Ethereal smoke (Unlimited only) — above background, below content ── */}
                   {tier.tier === 'unlimited' && (
                     <div
                       className="absolute inset-0 pointer-events-none overflow-hidden rounded-2xl"
@@ -3064,7 +3259,7 @@ function UplinkPage() {
 
                     {/* Delivery highlight */}
                     <div
-                      className="mb-6 p-3.5 rounded-xl border"
+                      className="mb-5 p-3.5 rounded-xl border"
                       style={{
                         background: `${tier.hex}06`,
                         borderColor: `${tier.hex}15`,
@@ -3089,6 +3284,11 @@ function UplinkPage() {
                         </div>
                       </div>
                     </div>
+
+                    {/* Use case — differentiates from feature list */}
+                    <p className="text-xs text-base-content/40 leading-relaxed mb-6 italic">
+                      &ldquo;{tier.useCase}&rdquo;
+                    </p>
 
                     {/* Feature list */}
                     <div className="space-y-3">
@@ -3122,9 +3322,7 @@ function UplinkPage() {
                     <div className="mt-auto pt-7">
                       <button
                         type="button"
-                        onClick={() =>
-                          handleSelectPlan('annual', tier.tier)
-                        }
+                        onClick={() => handleSelectPlan('annual', tier.tier)}
                         className={`w-full py-2.5 text-center text-[10px] font-semibold rounded-lg transition-colors ${
                           tier.tier === 'unlimited'
                             ? 'bg-primary/10 border border-primary/30 text-primary hover:bg-primary/20 hover:border-primary/50'
@@ -3133,12 +3331,15 @@ function UplinkPage() {
                               : 'border border-info/20 text-info/60 hover:border-info/40 hover:text-info/80'
                         }`}
                       >
-                        {tier.tier === 'unlimited'
-                          ? 'Get Unlimited — from $33.33/mo'
-                          : tier.tier === 'pro'
-                            ? 'Get Pro — from $16.67/mo'
-                            : 'Get Uplink — from $6.67/mo'}
+                        Start Free Trial
                       </button>
+                      <p className="text-center mt-1.5 text-[9px] text-base-content/20">
+                        {tier.tier === 'unlimited'
+                          ? '7 days free, then $33.33/mo'
+                          : tier.tier === 'pro'
+                            ? '7 days free, then $16.67/mo'
+                            : '7 days free, then $6.67/mo'}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -3149,7 +3350,7 @@ function UplinkPage() {
       </section>
 
       {/* ================================================================
-          HOW IT WORKS — CONVERSION
+          START RISK-FREE — CONVERSION
           ================================================================ */}
       <section className="relative overflow-hidden">
         {/* Top border accent */}
@@ -3166,25 +3367,24 @@ function UplinkPage() {
             className="text-center mb-14"
           >
             <h2 className="text-4xl sm:text-5xl font-black tracking-tight leading-[0.95] mb-4">
-              How It{' '}
-              <span className="text-gradient-primary">Works</span>
+              Start <span className="text-gradient-primary">Risk-Free</span>
             </h2>
             <p className="text-sm text-base-content/40 max-w-lg mx-auto leading-relaxed">
-              Start free, try everything for a week, and upgrade only if it
-              fits. No surprises.
+              Try any plan free for 7 days. If it doesn&apos;t fit, cancel
+              before the trial ends and pay nothing.
             </p>
           </motion.div>
 
           {/* 4-card grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5 max-w-4xl mx-auto">
-            {/* Free Trial */}
+            {/* Free Trial — spans full width for emphasis */}
             <motion.div
               style={{ opacity: 0 }}
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.5, delay: 0.05, ease: EASE }}
-              className="relative bg-base-200/40 border border-base-300/30 rounded-xl p-6 overflow-hidden"
+              className="relative md:col-span-2 bg-base-200/40 border border-primary/15 rounded-xl p-6 overflow-hidden"
             >
               {/* Top accent line */}
               <div
@@ -3209,8 +3409,8 @@ function UplinkPage() {
                 strokeWidth={0.3}
                 className="absolute -bottom-3 -right-3 text-base-content/[0.02] pointer-events-none"
               />
-              <div className="relative z-10">
-                <div className="flex items-center gap-3 mb-4">
+              <div className="relative z-10 flex flex-col md:flex-row md:items-center gap-4">
+                <div className="flex items-center gap-3 shrink-0">
                   <div
                     className="h-9 w-9 rounded-lg flex items-center justify-center"
                     style={{
@@ -3218,10 +3418,7 @@ function UplinkPage() {
                       boxShadow: '0 0 20px #34d39915, 0 0 0 1px #34d39920',
                     }}
                   >
-                    <CreditCard
-                      size={16}
-                      className="text-base-content/80"
-                    />
+                    <CreditCard size={16} className="text-base-content/80" />
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-base-content">
@@ -3232,11 +3429,12 @@ function UplinkPage() {
                     </p>
                   </div>
                 </div>
+                <div className="hidden md:block w-px h-8 bg-base-300/30 shrink-0" />
                 <p className="text-xs text-base-content/45 leading-relaxed">
                   Every paid tier starts with a 7-day free trial. Add a card
                   during onboarding, try the full feature set, and only pay if
-                  you stay. Cancel before the trial ends and you won't be
-                  charged.
+                  you stay. Cancel before the trial ends and you won&apos;t be
+                  charged &mdash; no questions asked.
                 </p>
               </div>
             </motion.div>
@@ -3351,8 +3549,8 @@ function UplinkPage() {
                 <p className="text-xs text-base-content/45 leading-relaxed">
                   When you hit a free tier cap — like trying to add an 11th
                   symbol or 6th RSS feed — the extension shows a quiet prompt
-                  with what the next tier unlocks. No pop-ups, no dark
-                  patterns. Just context when it matters.
+                  with what the next tier unlocks. No pop-ups, no dark patterns.
+                  Just context when it matters.
                 </p>
               </div>
             </motion.div>
@@ -3407,10 +3605,10 @@ function UplinkPage() {
                   </div>
                 </div>
                 <p className="text-xs text-base-content/45 leading-relaxed">
-                  Locked features aren't hidden — they're visible but ghosted
-                  in the UI. Custom alerts, feed profiles, webhooks, and export
-                  all appear in their natural positions so you can see exactly
-                  what upgrading unlocks before you decide.
+                  Locked features aren't hidden — they're visible but ghosted in
+                  the UI. Custom alerts, feed profiles, webhooks, and export all
+                  appear in their natural positions so you can see exactly what
+                  upgrading unlocks before you decide.
                 </p>
               </div>
             </motion.div>
