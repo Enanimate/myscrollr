@@ -170,7 +170,8 @@ function FantasyDashboardTab({
   onDelete,
 }: DashboardTabProps) {
   const isUnlimited = subscriptionTier === 'uplink_unlimited'
-  const isUplink = subscriptionTier === 'uplink' || isUnlimited
+  const isPro = subscriptionTier === 'pro'
+  const isUplink = subscriptionTier === 'uplink' || isPro || isUnlimited
 
   // ── Core state ──────────────────────────────────────────────────
   const [leagues, setLeagues] = useState<LeagueData[]>([])
@@ -469,7 +470,7 @@ function FantasyDashboardTab({
           />
           <InfoCard
             label="Delivery"
-            value={isUnlimited ? 'Real-time SSE' : isUplink ? 'Poll 30s' : 'Poll 60s'}
+            value={isUnlimited ? 'Real-time SSE' : isPro ? 'Poll 10s' : subscriptionTier === 'uplink' ? 'Poll 30s' : 'Poll 60s'}
             hex={hex}
             glow={isUnlimited}
           />
@@ -488,9 +489,11 @@ function FantasyDashboardTab({
             className="text-base-content/40 group-hover:text-base-content/60 transition-colors"
           />
           <span className="text-[10px] font-bold text-base-content/50 uppercase tracking-widest group-hover:text-base-content/70 transition-colors">
-            {isUplink
+            {isPro
               ? 'Upgrade to Unlimited for real-time fantasy delivery'
-              : 'Upgrade to Uplink for faster fantasy delivery'}
+              : isUplink
+                ? 'Upgrade to Pro or Unlimited for even faster fantasy delivery'
+                : 'Upgrade to Uplink for faster fantasy delivery'}
           </span>
         </a>
       )}

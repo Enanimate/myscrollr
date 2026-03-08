@@ -464,38 +464,36 @@ export const LEGAL_DOCUMENTS: LegalDocument[] = [
     shortTitle: 'Billing',
     icon: CreditCard,
     category: 'commerce',
-    lastUpdated: 'February 2026',
-    effectiveDate: 'February 11, 2026',
-    badge: 'Effective upon Uplink launch — Q3 2026',
+    lastUpdated: 'March 2026',
+    effectiveDate: 'March 8, 2026',
     sections: [
       {
         heading: 'Overview',
-        callout: {
-          type: 'info',
-          text: 'Uplink is currently in development and not yet available for purchase. These terms will become effective when Uplink launches, targeted for Q3 2026. Pricing and features are subject to change before launch.',
-        },
         content: [
-          'Uplink is the premium tier of the Scrollr platform, offering expanded limits, priority data refresh, and additional features. This document outlines the terms governing Uplink subscriptions.',
+          'The Scrollr platform offers three paid subscription tiers — Uplink, Pro, and Unlimited — each providing expanded limits, faster data delivery, and additional features beyond the free tier. This document outlines the terms governing paid subscriptions.',
         ],
       },
       {
         heading: 'Pricing and Plans',
         content: [
-          'Uplink is available in four pricing tiers: Monthly at $8.99 per month, Quarterly at $21.99 per quarter (billed every 3 months, approximately 18% savings), Annual at $69.99 per year (billed annually, approximately 35% savings), and Lifetime at $549.00 (one-time payment, permanent access, limited to 128 slots).',
+          'Uplink is available in two billing periods: Monthly at $9.99 per month, or Annual at $79.99 per year (billed annually, approximately 33% savings).',
+          'Pro is available in two billing periods: Monthly at $24.99 per month, or Annual at $199.99 per year (billed annually, approximately 33% savings).',
+          'Unlimited is available in two billing periods: Monthly at $49.99 per month, or Annual at $399.99 per year (billed annually, approximately 33% savings).',
+          'Lifetime membership is a one-time payment of $399.00, granting permanent Uplink-tier access and a 50% discount on Unlimited subscriptions. Lifetime memberships are limited to 128 founding member slots.',
           'All prices are in US Dollars (USD). Prices may be adjusted with notice to existing subscribers. Existing subscribers will be honored at their original rate for the remainder of their current billing period.',
         ],
       },
       {
         heading: 'Billing and Renewal',
         content: [
-          'Monthly, Quarterly, and Annual subscriptions automatically renew at the end of each billing period unless cancelled before the renewal date. You will be charged the applicable subscription fee at the beginning of each billing period.',
-          'Lifetime subscriptions are a one-time payment and do not renew. Lifetime access is valid for as long as the Scrollr platform operates.',
+          'Monthly and Annual subscriptions automatically renew at the end of each billing period unless cancelled before the renewal date. You will be charged the applicable subscription fee at the beginning of each billing period.',
+          'Lifetime memberships are a one-time payment and do not renew. Lifetime access is valid for as long as the Scrollr platform operates.',
         ],
       },
       {
         heading: 'Cancellation',
         content: [
-          'You may cancel your Monthly, Quarterly, or Annual subscription at any time through your account settings. Cancellation takes effect at the end of your current billing period. You will continue to have Uplink access until the end of the period you have already paid for.',
+          'You may cancel your Monthly or Annual subscription at any time through your account settings. Cancellation takes effect at the end of your current billing period. You will continue to have access to your paid tier until the end of the period you have already paid for.',
           'We do not offer pro-rated refunds for partial billing periods. For refund eligibility, see our Refund Policy.',
         ],
       },
@@ -508,13 +506,13 @@ export const LEGAL_DOCUMENTS: LegalDocument[] = [
       {
         heading: 'Free Tier',
         content: [
-          'Scrollr offers a free tier with standard features and reasonable limits. The free tier is available indefinitely and is not a trial. You are not required to subscribe to Uplink to use the Platform.',
+          'Scrollr offers a free tier with standard features and reasonable limits. The free tier is available indefinitely and is not a trial. You are not required to subscribe to a paid tier to use the Platform.',
         ],
       },
       {
         heading: 'Changes to Pricing',
         content: [
-          'We reserve the right to change Uplink pricing. If we increase pricing for an active subscription, we will provide at least 30 days notice before the change takes effect. You may cancel before the price change takes effect to avoid being charged the new rate.',
+          'We reserve the right to change subscription pricing. If we increase pricing for an active subscription, we will provide at least 30 days notice before the change takes effect. You may cancel before the price change takes effect to avoid being charged the new rate.',
         ],
       },
     ],

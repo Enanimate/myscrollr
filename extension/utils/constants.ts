@@ -25,5 +25,8 @@ export const FREE_POLLING_ALARM_INTERVAL = 1;
 /** Polling interval for Uplink tier in minutes (0.5 = 30 seconds). */
 export const UPLINK_POLLING_ALARM_INTERVAL = 0.5;
 
+/** Polling interval for Pro tier in minutes (1/6 ≈ 10 seconds). */
+export const PRO_POLLING_ALARM_INTERVAL = 1 / 6;
+
 /** Alarm name for the polling timer. */
 export const POLLING_ALARM_NAME = 'scrollr-poll';

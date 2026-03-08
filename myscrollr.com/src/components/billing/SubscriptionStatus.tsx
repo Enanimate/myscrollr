@@ -12,10 +12,17 @@ interface SubscriptionStatusProps {
 
 const PLAN_LABELS: Record<string, string> = {
   free: 'Free',
-  monthly: 'Monthly',
-  quarterly: 'Quarterly',
-  annual: 'Annual',
+  monthly: 'Uplink Monthly',
+  quarterly: 'Uplink Quarterly',
+  annual: 'Uplink Annual',
   lifetime: 'Lifetime',
+  pro_monthly: 'Pro Monthly',
+  pro_annual: 'Pro Annual',
+  unlimited_monthly: 'Unlimited Monthly',
+  unlimited_annual: 'Unlimited Annual',
+  legacy_monthly: 'Legacy Monthly',
+  legacy_quarterly: 'Legacy Quarterly',
+  legacy_annual: 'Legacy Annual',
 }
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
@@ -100,7 +107,8 @@ export default function SubscriptionStatus({ getToken }: SubscriptionStatusProps
           </span>
         </div>
         <p className="text-xs text-base-content/30">
-          Upgrade to Uplink for faster polling, or Unlimited for real-time SSE.
+          Upgrade to Uplink for faster polling, Pro for even more features, or
+          Unlimited for real-time SSE.
         </p>
       </div>
     )
@@ -123,7 +131,6 @@ export default function SubscriptionStatus({ getToken }: SubscriptionStatusProps
             className={isUnlimited ? 'text-primary unlimited-dot-glow rounded-full' : 'text-primary'}
           />
           <span className={`text-xs font-semibold text-primary ${isUnlimited ? 'unlimited-text-glow' : ''}`}>
-            {isUnlimited ? 'Uplink Unlimited' : 'Uplink'}{' '}
             {PLAN_LABELS[subscription.plan] || subscription.plan}
           </span>
         </div>

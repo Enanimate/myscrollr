@@ -1,6 +1,6 @@
 import type { ClientMessage, BackgroundMessage, StateSnapshotMessage } from '~/utils/messaging';
 import type { CDCRecord } from '~/utils/types';
-import { FRONTEND_URL, FREE_POLLING_ALARM_INTERVAL, UPLINK_POLLING_ALARM_INTERVAL } from '~/utils/constants';
+import { FRONTEND_URL, FREE_POLLING_ALARM_INTERVAL, UPLINK_POLLING_ALARM_INTERVAL, PRO_POLLING_ALARM_INTERVAL } from '~/utils/constants';
 import {
   deliveryMode as deliveryModeStorage,
   subscriptionTier as subscriptionTierStorage,
@@ -52,6 +52,10 @@ export async function startAuthenticatedDelivery(): Promise<void> {
     // Unlimited tier gets real-time SSE + CDC push
     await deliveryModeStorage.setValue('sse');
     startSSE();
+  } else if (tier === 'pro') {
+    // Pro tier gets fast polling at 10s intervals
+    await deliveryModeStorage.setValue('polling');
+    startPolling(PRO_POLLING_ALARM_INTERVAL);
   } else if (tier === 'uplink') {
     // Uplink tier gets faster polling at 30s intervals
     await deliveryModeStorage.setValue('polling');

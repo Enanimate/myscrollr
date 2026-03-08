@@ -47,16 +47,18 @@ export function ChannelHeader({
   const [confirmDelete, setConfirmDelete] = useState(false)
   const active = channel.visible
   const isUnlimited = subscriptionTier === 'uplink_unlimited'
-  const isUplink = subscriptionTier === 'uplink' || isUnlimited
+  const isPro = subscriptionTier === 'pro'
 
   // Determine badge text and style based on tier
   const badgeLabel = isUnlimited
     ? connected
       ? 'Live'
       : 'Offline'
-    : isUplink
-      ? 'Poll 30s'
-      : 'Poll 60s'
+    : isPro
+      ? 'Poll 10s'
+      : subscriptionTier === 'uplink'
+        ? 'Poll 30s'
+        : 'Poll 60s'
   const badgeActive = isUnlimited ? !!connected : true
 
   return (

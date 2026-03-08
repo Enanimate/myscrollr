@@ -13,7 +13,8 @@ function SportsDashboardTab({
   onDelete,
 }: DashboardTabProps) {
   const isUnlimited = subscriptionTier === "uplink_unlimited";
-  const isUplink = subscriptionTier === "uplink" || isUnlimited;
+  const isPro = subscriptionTier === "pro";
+  const isUplink = subscriptionTier === "uplink" || isPro || isUnlimited;
   const leagues = ["NFL", "NBA", "NHL", "MLB"];
 
   return (
@@ -36,7 +37,7 @@ function SportsDashboardTab({
         <InfoCard label="Leagues" value={String(leagues.length)} hex={hex} />
         <InfoCard
           label="Delivery"
-          value={isUnlimited ? "Real-time SSE" : isUplink ? "Poll \u00b7 30s" : "Poll \u00b7 60s"}
+          value={isUnlimited ? "Real-time SSE" : isPro ? "Poll \u00b7 10s" : subscriptionTier === "uplink" ? "Poll \u00b7 30s" : "Poll \u00b7 60s"}
           hex={hex}
           glow={isUnlimited}
         />
@@ -57,9 +58,11 @@ function SportsDashboardTab({
             className="text-base-content/40 group-hover:text-base-content/60 transition-colors"
           />
           <span className="text-[10px] font-bold text-base-content/50 uppercase tracking-widest group-hover:text-base-content/70 transition-colors">
-            {isUplink
+            {isPro
               ? "Upgrade to Unlimited for real-time score delivery"
-              : "Upgrade to Uplink for faster score delivery"}
+              : isUplink
+                ? "Upgrade to Pro or Unlimited for even faster score delivery"
+                : "Upgrade to Uplink for faster score delivery"}
           </span>
         </a>
       )}

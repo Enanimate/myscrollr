@@ -118,6 +118,11 @@ func handleCheckoutCompleted(event stripe.Event) {
 			if err := AssignUnlimitedRole(logtoSub); err != nil {
 				log.Printf("[Stripe Webhook] Failed to assign uplink_unlimited role to %s: %v", logtoSub, err)
 			}
+		} else if isProPlan(plan) {
+			// Pro subscribers get pro role
+			if err := AssignProRole(logtoSub); err != nil {
+				log.Printf("[Stripe Webhook] Failed to assign pro role to %s: %v", logtoSub, err)
+			}
 		} else {
 			// Standard Uplink subscribers get uplink role
 			if err := AssignUplinkRole(logtoSub); err != nil {
@@ -182,6 +187,10 @@ func handleSubscriptionUpdated(event stripe.Event) {
 				if err := AssignUnlimitedRole(logtoSub); err != nil {
 					log.Printf("[Stripe Webhook] Failed to assign uplink_unlimited role to %s: %v", logtoSub, err)
 				}
+			} else if isProPlan(plan) {
+				if err := AssignProRole(logtoSub); err != nil {
+					log.Printf("[Stripe Webhook] Failed to assign pro role to %s: %v", logtoSub, err)
+				}
 			} else {
 				if err := AssignUplinkRole(logtoSub); err != nil {
 					log.Printf("[Stripe Webhook] Failed to assign uplink role to %s: %v", logtoSub, err)
@@ -225,11 +234,14 @@ func handleSubscriptionDeleted(event stripe.Event) {
 		log.Printf("[Stripe Webhook] Failed to reset subscription for %s: %v", logtoSub, err)
 	}
 
-	// Remove both roles (only if not lifetime)
+	// Remove all paid roles (only if not lifetime)
 	if !isLifetime {
 		go func() {
 			if err := RemoveUplinkRole(logtoSub); err != nil {
 				log.Printf("[Stripe Webhook] Failed to remove uplink role from %s: %v", logtoSub, err)
+			}
+			if err := RemoveProRole(logtoSub); err != nil {
+				log.Printf("[Stripe Webhook] Failed to remove pro role from %s: %v", logtoSub, err)
 			}
 			if err := RemoveUnlimitedRole(logtoSub); err != nil {
 				log.Printf("[Stripe Webhook] Failed to remove uplink_unlimited role from %s: %v", logtoSub, err)
@@ -267,6 +279,10 @@ func handleInvoicePaid(event stripe.Event) {
 		if isUnlimitedPlan(currentPlan) {
 			if err := AssignUnlimitedRole(logtoSub); err != nil {
 				log.Printf("[Stripe Webhook] Failed to re-assign uplink_unlimited role to %s: %v", logtoSub, err)
+			}
+		} else if isProPlan(currentPlan) {
+			if err := AssignProRole(logtoSub); err != nil {
+				log.Printf("[Stripe Webhook] Failed to re-assign pro role to %s: %v", logtoSub, err)
 			}
 		} else {
 			if err := AssignUplinkRole(logtoSub); err != nil {

@@ -30,6 +30,7 @@ type logtoM2MConfig struct {
 	AppID           string
 	AppSecret       string
 	RoleID          string // "uplink" role
+	ProRoleID       string // "pro" role
 	UnlimitedRoleID string // "uplink_unlimited" role
 	Resource        string // https://default.logto.app/api
 }
@@ -52,6 +53,7 @@ func getM2MConfig() logtoM2MConfig {
 		AppID:           os.Getenv("LOGTO_M2M_APP_ID"),
 		AppSecret:       os.Getenv("LOGTO_M2M_APP_SECRET"),
 		RoleID:          os.Getenv("LOGTO_UPLINK_ROLE_ID"),
+		ProRoleID:       os.Getenv("LOGTO_PRO_ROLE_ID"),
 		UnlimitedRoleID: os.Getenv("LOGTO_UNLIMITED_ROLE_ID"),
 		Resource:        resource,
 	}
@@ -149,6 +151,83 @@ func AssignUplinkRole(logtoSub string) error {
 	}
 
 	log.Printf("[Logto M2M] Assigned uplink role to user %s", logtoSub)
+	return nil
+}
+
+// AssignProRole assigns the "pro" role to a Logto user via Management API.
+func AssignProRole(logtoSub string) error {
+	cfg := getM2MConfig()
+	if cfg.ProRoleID == "" {
+		return fmt.Errorf("LOGTO_PRO_ROLE_ID must be set")
+	}
+
+	token, err := getM2MToken()
+	if err != nil {
+		return err
+	}
+
+	payload, _ := json.Marshal(map[string][]string{
+		"roleIds": {cfg.ProRoleID},
+	})
+
+	reqURL := fmt.Sprintf("%s/api/users/%s/roles", cfg.Endpoint, logtoSub)
+	req, err := http.NewRequest("POST", reqURL, bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("create assign pro role request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: LogtoM2MTokenTimeout}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("assign pro role request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// 201 = assigned, 422 = already assigned (both are fine)
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusUnprocessableEntity {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("assign pro role returned %d: %s", resp.StatusCode, string(body))
+	}
+
+	log.Printf("[Logto M2M] Assigned pro role to user %s", logtoSub)
+	return nil
+}
+
+// RemoveProRole removes the "pro" role from a Logto user via Management API.
+func RemoveProRole(logtoSub string) error {
+	cfg := getM2MConfig()
+	if cfg.ProRoleID == "" {
+		return fmt.Errorf("LOGTO_PRO_ROLE_ID must be set")
+	}
+
+	token, err := getM2MToken()
+	if err != nil {
+		return err
+	}
+
+	reqURL := fmt.Sprintf("%s/api/users/%s/roles/%s", cfg.Endpoint, logtoSub, cfg.ProRoleID)
+	req, err := http.NewRequest("DELETE", reqURL, nil)
+	if err != nil {
+		return fmt.Errorf("create remove pro role request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	client := &http.Client{Timeout: LogtoM2MTokenTimeout}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("remove pro role request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// 204 = removed, 404 = not assigned (both are fine)
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotFound {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("remove pro role returned %d: %s", resp.StatusCode, string(body))
+	}
+
+	log.Printf("[Logto M2M] Removed pro role from user %s", logtoSub)
 	return nil
 }
 

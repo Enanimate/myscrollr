@@ -60,7 +60,7 @@ export interface UserPreferences {
   feed_enabled: boolean
   enabled_sites: Array<string>
   disabled_sites: Array<string>
-  subscription_tier: 'free' | 'uplink' | 'uplink_unlimited'
+  subscription_tier: 'free' | 'uplink' | 'pro' | 'uplink_unlimited'
   updated_at: string
 }
 
@@ -274,8 +274,9 @@ export interface SubscriptionStatus {
     | 'quarterly'
     | 'annual'
     | 'lifetime'
+    | 'pro_monthly'
+    | 'pro_annual'
     | 'unlimited_monthly'
-    | 'unlimited_quarterly'
     | 'unlimited_annual'
     | 'legacy_monthly'
     | 'legacy_quarterly'

@@ -34,14 +34,15 @@ func initStripe() {
 func planFromPriceID(priceID string) string {
 	priceMap := map[string]string{
 		// Uplink (mid-tier)
-		os.Getenv("STRIPE_PRICE_MONTHLY"):   "monthly",
-		os.Getenv("STRIPE_PRICE_QUARTERLY"):  "quarterly",
-		os.Getenv("STRIPE_PRICE_ANNUAL"):     "annual",
-		os.Getenv("STRIPE_PRICE_LIFETIME"):   "lifetime",
+		os.Getenv("STRIPE_PRICE_MONTHLY"): "monthly",
+		os.Getenv("STRIPE_PRICE_ANNUAL"):  "annual",
+		os.Getenv("STRIPE_PRICE_LIFETIME"): "lifetime",
+		// Pro (mid-high tier)
+		os.Getenv("STRIPE_PRICE_PRO_MONTHLY"): "pro_monthly",
+		os.Getenv("STRIPE_PRICE_PRO_ANNUAL"):  "pro_annual",
 		// Uplink Unlimited (top-tier)
-		os.Getenv("STRIPE_PRICE_UNLIMITED_MONTHLY"):  "unlimited_monthly",
-		os.Getenv("STRIPE_PRICE_UNLIMITED_QUARTERLY"): "unlimited_quarterly",
-		os.Getenv("STRIPE_PRICE_UNLIMITED_ANNUAL"):    "unlimited_annual",
+		os.Getenv("STRIPE_PRICE_UNLIMITED_MONTHLY"): "unlimited_monthly",
+		os.Getenv("STRIPE_PRICE_UNLIMITED_ANNUAL"):  "unlimited_annual",
 		// Grandfathered legacy prices (old Uplink subscribers → mapped to unlimited)
 		os.Getenv("STRIPE_PRICE_LEGACY_MONTHLY"):  "legacy_monthly",
 		os.Getenv("STRIPE_PRICE_LEGACY_QUARTERLY"): "legacy_quarterly",
@@ -57,11 +58,20 @@ func planFromPriceID(priceID string) string {
 	return "unknown"
 }
 
+// isProPlan returns true if the plan name corresponds to the Pro tier.
+func isProPlan(plan string) bool {
+	switch plan {
+	case "pro_monthly", "pro_annual":
+		return true
+	}
+	return false
+}
+
 // isUnlimitedPlan returns true if the plan name corresponds to the top-tier (Uplink Unlimited).
 // Grandfathered legacy subscribers are also treated as unlimited.
 func isUnlimitedPlan(plan string) bool {
 	switch plan {
-	case "unlimited_monthly", "unlimited_quarterly", "unlimited_annual",
+	case "unlimited_monthly", "unlimited_annual",
 		"legacy_monthly", "legacy_quarterly", "legacy_annual":
 		return true
 	}
@@ -126,7 +136,7 @@ func getFrontendURL(c *fiber.Ctx) string {
 }
 
 // HandleCreateCheckoutSession creates a Stripe Checkout Session (embedded UI mode)
-// for recurring subscriptions (monthly, quarterly, annual).
+// for recurring subscriptions (Uplink, Pro, or Unlimited — monthly or annual).
 func HandleCreateCheckoutSession(c *fiber.Ctx) error {
 	userID := GetUserID(c)
 	if userID == "" {

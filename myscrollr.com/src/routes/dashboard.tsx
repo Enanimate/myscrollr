@@ -447,18 +447,22 @@ function DashboardPage() {
                       ? status === 'connected'
                         ? 'Live SSE'
                         : 'Offline'
-                      : subscriptionTier === 'uplink'
-                        ? 'Poll 30s'
-                        : 'Poll 60s'
+                      : subscriptionTier === 'pro'
+                        ? 'Poll 10s'
+                        : subscriptionTier === 'uplink'
+                          ? 'Poll 30s'
+                          : 'Poll 60s'
                   }
                   color={
                     subscriptionTier === 'uplink_unlimited'
                       ? status === 'connected'
                         ? 'text-primary'
                         : 'text-base-content/40'
-                      : subscriptionTier === 'uplink'
-                        ? 'text-info'
-                        : 'text-base-content/60'
+                      : subscriptionTier === 'pro'
+                        ? 'text-warning'
+                        : subscriptionTier === 'uplink'
+                          ? 'text-info'
+                          : 'text-base-content/60'
                   }
                   glow={
                     subscriptionTier === 'uplink_unlimited' &&
