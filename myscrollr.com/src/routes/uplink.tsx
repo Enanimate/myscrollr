@@ -276,7 +276,7 @@ const TIER_SHOWCASES: Array<TierShowcase> = [
     tier: 'uplink',
     Icon: Rocket,
     name: 'Uplink',
-    tagline: 'For people who check their markets every morning',
+    tagline: 'Check in every morning. Miss nothing.',
     hex: '#00b8db',
     delivery: '30s polling',
     deliverySub: '2x faster than free',
@@ -295,7 +295,7 @@ const TIER_SHOWCASES: Array<TierShowcase> = [
     tier: 'pro',
     Icon: Gauge,
     name: 'Pro',
-    tagline: 'For people who need to be notified, not just informed',
+    tagline: 'Know the moment it happens',
     hex: '#a78bfa',
     delivery: '10s polling',
     deliverySub: '6x faster than free',
@@ -316,7 +316,7 @@ const TIER_SHOWCASES: Array<TierShowcase> = [
     tier: 'unlimited',
     Icon: Crown,
     name: 'Unlimited',
-    tagline: 'For people who want Scrollr in their stack',
+    tagline: 'Everything. Zero limits.',
     hex: '#34d399',
     delivery: 'Real-time SSE',
     deliverySub: 'Instant — zero delay',
@@ -1868,9 +1868,9 @@ function UplinkPage() {
                     className="group relative bg-base-200/20 border border-base-300/20 rounded-xl p-6 overflow-hidden flex flex-col"
                   >
                     <div className="relative z-10 flex flex-col flex-1">
-                      <div className="flex items-center gap-2.5 mb-3">
+                      <div className="flex items-start gap-2.5 mb-5">
                         <div
-                          className="h-9 w-9 rounded-lg flex items-center justify-center bg-base-300/30"
+                          className="h-9 w-9 rounded-lg flex items-center justify-center bg-base-300/30 shrink-0"
                           style={{
                             boxShadow: '0 0 0 1px rgba(255,255,255,0.04)',
                           }}
@@ -1880,13 +1880,15 @@ function UplinkPage() {
                             className="text-base-content/40"
                           />
                         </div>
-                        <h3 className="text-sm font-bold text-base-content/50">
-                          Free
-                        </h3>
+                        <div>
+                          <h3 className="text-sm font-bold text-base-content/50">
+                            Free
+                          </h3>
+                          <p className="text-[11px] text-base-content/30 leading-snug mt-0.5">
+                            Start here &mdash; it&apos;s free forever
+                          </p>
+                        </div>
                       </div>
-                      <p className="text-xs text-base-content/30 leading-relaxed mb-5">
-                        For people getting started with Scrollr
-                      </p>
 
                       {/* Price */}
                       <div className="mb-4">
@@ -1963,9 +1965,9 @@ function UplinkPage() {
                       className="absolute -bottom-4 -right-4 text-base-content/[0.02] pointer-events-none"
                     />
                     <div className="relative z-10 flex flex-col flex-1">
-                      <div className="flex items-center gap-2.5 mb-3">
+                      <div className="flex items-start gap-2.5 mb-5">
                         <div
-                          className="h-9 w-9 rounded-lg flex items-center justify-center"
+                          className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0"
                           style={{
                             background: '#00b8db15',
                             boxShadow:
@@ -1974,19 +1976,23 @@ function UplinkPage() {
                         >
                           <Rocket size={16} className="text-base-content/80" />
                         </div>
-                        <h3 className="text-sm font-bold text-base-content">
-                          Uplink
-                        </h3>
+                        <div>
+                          <h3 className="text-sm font-bold text-base-content">
+                            Uplink
+                          </h3>
+                          <p className="text-[11px] text-base-content/40 leading-snug mt-0.5">
+                            Check in every morning. Miss nothing.
+                          </p>
+                        </div>
                       </div>
-                      <p className="text-xs text-base-content/40 leading-relaxed mb-5">
-                        For people who check their markets every morning
-                      </p>
 
                       {/* Price — monthly-first for annual, per-digit slot animation */}
                       <div className="mb-4">
-                        <div className="flex items-baseline gap-1 mb-1">
-                          <span className="text-3xl font-black text-base-content tracking-tight font-mono tabular-nums">
+                        <div className="flex items-center mb-1">
+                          <span className="text-2xl font-black text-base-content tracking-tight font-mono tabular-nums">
                             $
+                          </span>
+                          <span className="text-3xl font-black text-base-content tracking-tight font-mono tabular-nums leading-none">
                             <AnimateNumber
                               transition={{
                                 y: {
@@ -2000,7 +2006,7 @@ function UplinkPage() {
                               {PRICING.uplink[billingPeriod].perMonth}
                             </AnimateNumber>
                           </span>
-                          <span className="text-xs font-mono text-base-content/25">
+                          <span className="text-xs font-mono text-base-content/25 ml-1 self-end mb-0.5">
                             /mo
                           </span>
                         </div>
@@ -2077,9 +2083,9 @@ function UplinkPage() {
                       className="absolute -bottom-4 -right-4 text-base-content/[0.02] pointer-events-none"
                     />
                     <div className="relative z-10 flex flex-col flex-1">
-                      <div className="flex items-center gap-2.5 mb-3">
+                      <div className="flex items-start gap-2.5 mb-5">
                         <div
-                          className="h-9 w-9 rounded-lg flex items-center justify-center"
+                          className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0"
                           style={{
                             background: '#a78bfa15',
                             boxShadow:
@@ -2088,19 +2094,23 @@ function UplinkPage() {
                         >
                           <Gauge size={16} className="text-base-content/80" />
                         </div>
-                        <h3 className="text-sm font-bold text-base-content">
-                          Pro
-                        </h3>
+                        <div>
+                          <h3 className="text-sm font-bold text-base-content">
+                            Pro
+                          </h3>
+                          <p className="text-[11px] text-base-content/40 leading-snug mt-0.5">
+                            Know the moment it happens
+                          </p>
+                        </div>
                       </div>
-                      <p className="text-xs text-base-content/40 leading-relaxed mb-5">
-                        For people who need to be notified, not just informed
-                      </p>
 
                       {/* Price — monthly-first for annual, per-digit slot animation */}
                       <div className="mb-4">
-                        <div className="flex items-baseline gap-1 mb-1">
-                          <span className="text-3xl font-black text-base-content tracking-tight font-mono tabular-nums">
+                        <div className="flex items-center mb-1">
+                          <span className="text-2xl font-black text-base-content tracking-tight font-mono tabular-nums">
                             $
+                          </span>
+                          <span className="text-3xl font-black text-base-content tracking-tight font-mono tabular-nums leading-none">
                             <AnimateNumber
                               transition={{
                                 y: {
@@ -2114,7 +2124,7 @@ function UplinkPage() {
                               {PRICING.pro[billingPeriod].perMonth}
                             </AnimateNumber>
                           </span>
-                          <span className="text-xs font-mono text-base-content/25">
+                          <span className="text-xs font-mono text-base-content/25 ml-1 self-end mb-0.5">
                             /mo
                           </span>
                         </div>
@@ -2344,9 +2354,9 @@ function UplinkPage() {
                       </div>
 
                       <div className="relative z-10 flex flex-col flex-1">
-                        <div className="flex items-center gap-2.5 mb-3">
+                        <div className="flex items-start gap-2.5 mb-5">
                           <div
-                            className="h-9 w-9 rounded-lg flex items-center justify-center"
+                            className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0"
                             style={{
                               background: '#34d39915',
                               boxShadow:
@@ -2355,19 +2365,23 @@ function UplinkPage() {
                           >
                             <Crown size={16} className="text-base-content/80" />
                           </div>
-                          <h3 className="text-sm font-bold text-base-content">
-                            Unlimited
-                          </h3>
+                          <div>
+                            <h3 className="text-sm font-bold text-base-content">
+                              Unlimited
+                            </h3>
+                            <p className="text-[11px] text-base-content/40 leading-snug mt-0.5">
+                              Everything. Zero limits.
+                            </p>
+                          </div>
                         </div>
-                        <p className="text-xs text-base-content/40 leading-relaxed mb-5">
-                          For people who want Scrollr in their stack
-                        </p>
 
                         {/* Price — monthly-first for annual, per-digit slot animation */}
                         <div className="mb-4">
-                          <div className="flex items-baseline gap-1 mb-1">
-                            <span className="text-3xl font-black text-base-content tracking-tight font-mono tabular-nums">
+                          <div className="flex items-center mb-1">
+                            <span className="text-2xl font-black text-base-content tracking-tight font-mono tabular-nums">
                               $
+                            </span>
+                            <span className="text-3xl font-black text-base-content tracking-tight font-mono tabular-nums leading-none">
                               <AnimateNumber
                                 transition={{
                                   y: {
@@ -2381,7 +2395,7 @@ function UplinkPage() {
                                 {PRICING.unlimited[billingPeriod].perMonth}
                               </AnimateNumber>
                             </span>
-                            <span className="text-xs font-mono text-base-content/25">
+                            <span className="text-xs font-mono text-base-content/25 ml-1 self-end mb-0.5">
                               /mo
                             </span>
                           </div>
