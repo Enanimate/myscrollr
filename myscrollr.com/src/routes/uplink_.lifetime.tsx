@@ -218,11 +218,11 @@ function LifetimePage() {
                 transition={{ duration: 0.6, ease: EASE }}
                 className="flex items-center gap-3 mb-8"
               >
-                <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-warning/8 text-warning text-[10px] font-semibold rounded-lg border border-warning/15 uppercase tracking-wide">
-                  <Sparkles size={12} />
-                  The First Byte
+                <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-primary/8 text-primary text-[10px] font-semibold rounded-lg border border-primary/15 uppercase tracking-wide">
+                  <Zap size={12} />
+                  Lifetime Upgrade
                 </span>
-                <span className="h-px w-12 bg-gradient-to-r from-warning/30 to-transparent" />
+                <span className="h-px w-12 bg-gradient-to-r from-primary/30 to-transparent" />
                 <span className="text-[10px] text-base-content/20 uppercase tracking-wide">
                   Founding Member
                 </span>
@@ -235,9 +235,11 @@ function LifetimePage() {
                 transition={{ duration: 0.7, delay: 0.1, ease: EASE }}
                 className="text-5xl md:text-7xl font-black tracking-tight leading-[0.9] mb-6"
               >
-                One Payment
+                50% Off
                 <br />
-                <span className="text-warning">Forever</span>
+                <span className="text-primary">Unlimited.</span>
+                <br />
+                <span className="text-warning">Forever.</span>
               </motion.h1>
 
               {/* Subtitle */}
@@ -247,10 +249,11 @@ function LifetimePage() {
                 transition={{ duration: 0.6, delay: 0.2, ease: EASE }}
                 className="text-sm text-base-content/40 leading-relaxed max-w-md mb-10"
               >
-                Lifetime Uplink is a one-time payment for permanent Uplink-tier
-                access. No renewals, no expiry. Only 128 founding member slots
-                will ever be created — 0x00 through 0x7F. Want real-time SSE?
-                Add Unlimited at 50% off.
+                Lifetime members get permanent Uplink-tier access with a single
+                payment — plus 50% off any Unlimited subscription. Real-time
+                SSE, unlimited symbols, webhooks, API access — all at half
+                price, for as long as you subscribe. Only 128 founding member
+                slots will ever exist.
               </motion.p>
 
               {/* Feature list */}
@@ -260,12 +263,12 @@ function LifetimePage() {
                 transition={{ duration: 0.6, delay: 0.3, ease: EASE }}
                 className="space-y-3 mb-10"
               >
+                <Feature>50% off any Unlimited subscription — from $25.00/mo</Feature>
+                <Feature>Real-time SSE, unlimited symbols, feeds & leagues</Feature>
                 <Feature>Permanent Uplink-tier access (30s polling)</Feature>
                 <Feature>25 symbols, 50 RSS feeds, 3 fantasy leagues</Feature>
-                <Feature>Pro + College sports, blacklist filtering</Feature>
-                <Feature>Early access to new features & channels</Feature>
                 <Feature>Founding member badge & priority support</Feature>
-                <Feature>50% off any Unlimited subscription</Feature>
+                <Feature>Early access to new features & channels</Feature>
               </motion.div>
             </div>
 
@@ -337,7 +340,7 @@ function LifetimePage() {
                   <div className="mb-2">
                     <div className="flex items-baseline gap-2">
                       <span className="text-5xl font-black text-base-content tracking-tight">
-                      $749
+                      $399
                     </span>
                       <span className="text-sm text-base-content/25">
                         one-time
@@ -345,7 +348,7 @@ function LifetimePage() {
                     </div>
                   </div>
                   <p className="text-[10px] text-warning/40 mb-4">
-                    Equivalent to ~4.8 years of Uplink Monthly at $12.99/mo
+                    Equivalent to ~3.3 years of Uplink Monthly at $9.99/mo
                   </p>
 
                   {/* Unlimited upgrade callout — with aura */}
@@ -391,12 +394,12 @@ function LifetimePage() {
                     />
                     <div className="relative z-10">
                       <p className="text-[10px] text-primary/70 font-semibold mb-1">
-                        Want real-time SSE?
+                        50% Off Unlimited — From $25.00/mo
                       </p>
                       <p className="text-[10px] text-base-content/35 leading-relaxed">
-                        Lifetime members get 50% off any Unlimited subscription.
-                        Add real-time delivery, unlimited limits, and extended
-                        retention starting at $27.50/mo.
+                        Lifetime members get half off any Unlimited subscription.
+                        Real-time SSE, unlimited symbols and feeds, webhooks,
+                        API access, and data export — all at half price.
                       </p>
                     </div>
                   </div>

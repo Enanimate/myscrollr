@@ -16,13 +16,17 @@ import {
   CheckCircle2,
   Clock,
   Code2,
+  CreditCard,
   Crown,
   Database,
+  Eye,
   Filter,
   Gauge,
+  Gift,
   Layers,
   LayoutDashboard,
   Loader2,
+  Lock,
   Minus,
   Rocket,
   Rss,
@@ -30,6 +34,7 @@ import {
   Sparkles,
   TrendingUp,
   Trophy,
+  Users,
   Zap,
 } from 'lucide-react'
 
@@ -48,23 +53,20 @@ const EASE = [0.22, 1, 0.36, 1] as const
 // ── Price IDs (from Stripe via env vars) ───────────────────────
 const UPLINK_PRICE_IDS = {
   monthly: import.meta.env.VITE_STRIPE_PRICE_MONTHLY || '',
-  quarterly: import.meta.env.VITE_STRIPE_PRICE_QUARTERLY || '',
   annual: import.meta.env.VITE_STRIPE_PRICE_ANNUAL || '',
 } as const
 
 const PRO_PRICE_IDS = {
   monthly: import.meta.env.VITE_STRIPE_PRICE_PRO_MONTHLY || '',
-  quarterly: import.meta.env.VITE_STRIPE_PRICE_PRO_QUARTERLY || '',
   annual: import.meta.env.VITE_STRIPE_PRICE_PRO_ANNUAL || '',
 } as const
 
 const UNLIMITED_PRICE_IDS = {
   monthly: import.meta.env.VITE_STRIPE_PRICE_UNLIMITED_MONTHLY || '',
-  quarterly: import.meta.env.VITE_STRIPE_PRICE_UNLIMITED_QUARTERLY || '',
   annual: import.meta.env.VITE_STRIPE_PRICE_UNLIMITED_ANNUAL || '',
 } as const
 
-type PlanKey = 'monthly' | 'quarterly' | 'annual'
+type PlanKey = 'monthly' | 'annual'
 type TierKey = 'uplink' | 'pro' | 'unlimited'
 
 export const Route = createFileRoute('/uplink')({
@@ -101,7 +103,7 @@ const COMPARISON: ComparisonRow[] = [
   },
   {
     label: 'Tracked Symbols',
-    free: '5 symbols',
+    free: '10 symbols',
     uplink: '25 symbols',
     pro: '75 symbols',
     unlimited: 'Unlimited',
@@ -111,7 +113,7 @@ const COMPARISON: ComparisonRow[] = [
   },
   {
     label: 'RSS Feeds',
-    free: '3 feeds',
+    free: '5 feeds',
     uplink: '50 feeds',
     pro: '150 feeds',
     unlimited: 'Unlimited',
@@ -273,7 +275,7 @@ const TIER_SHOWCASES: TierShowcase[] = [
     tier: 'uplink',
     Icon: Rocket,
     name: 'Uplink',
-    tagline: 'Your daily driver',
+    tagline: 'For people who check their markets every morning',
     hex: '#00b8db',
     delivery: '30s polling',
     deliverySub: '2x faster than free',
@@ -290,7 +292,7 @@ const TIER_SHOWCASES: TierShowcase[] = [
     tier: 'pro',
     Icon: Gauge,
     name: 'Pro',
-    tagline: 'Your command center',
+    tagline: 'For people who need to be notified, not just informed',
     hex: '#a78bfa',
     delivery: '10s polling',
     deliverySub: '6x faster than free',
@@ -309,7 +311,7 @@ const TIER_SHOWCASES: TierShowcase[] = [
     tier: 'unlimited',
     Icon: Crown,
     name: 'Unlimited',
-    tagline: 'Everything. In real time.',
+    tagline: 'For people who want Scrollr in their stack',
     hex: '#34d399',
     delivery: 'Real-time SSE',
     deliverySub: 'Instant — zero delay',
@@ -336,48 +338,30 @@ interface PricingPlan {
 
 const PRICING: Record<TierKey, Record<PlanKey, PricingPlan>> = {
   uplink: {
-    monthly: { price: 12.99, period: '/mo', perMonth: 12.99 },
-    quarterly: {
-      price: 31.99,
-      period: '/3mo',
-      perMonth: 10.66,
-      savings: 'Save 18%',
-    },
+    monthly: { price: 9.99, period: '/mo', perMonth: 9.99 },
     annual: {
-      price: 99.99,
+      price: 79.99,
       period: '/yr',
-      perMonth: 8.33,
-      savings: 'Save 36%',
+      perMonth: 6.67,
+      savings: 'Save 33%',
     },
   },
   pro: {
-    monthly: { price: 29.99, period: '/mo', perMonth: 29.99 },
-    quarterly: {
-      price: 74.99,
-      period: '/3mo',
-      perMonth: 25.0,
-      savings: 'Save 17%',
-    },
+    monthly: { price: 24.99, period: '/mo', perMonth: 24.99 },
     annual: {
-      price: 239.99,
+      price: 199.99,
       period: '/yr',
-      perMonth: 20.0,
+      perMonth: 16.67,
       savings: 'Save 33%',
     },
   },
   unlimited: {
-    monthly: { price: 54.99, period: '/mo', perMonth: 54.99 },
-    quarterly: {
-      price: 134.99,
-      period: '/3mo',
-      perMonth: 45.0,
-      savings: 'Save 18%',
-    },
+    monthly: { price: 49.99, period: '/mo', perMonth: 49.99 },
     annual: {
-      price: 449.99,
+      price: 399.99,
       period: '/yr',
-      perMonth: 37.5,
-      savings: 'Save 32%',
+      perMonth: 33.33,
+      savings: 'Save 33%',
     },
   },
 }
@@ -386,7 +370,6 @@ type BillingView = PlanKey | 'lifetime'
 
 const BILLING_LABELS: Record<BillingView, string> = {
   monthly: 'Monthly',
-  quarterly: 'Quarterly',
   annual: 'Annual',
   lifetime: 'Lifetime',
 }
@@ -419,18 +402,18 @@ const UPLINK_FAQ: FAQItem[] = [
     icon: BarChart3,
     question: 'How many symbols can I track?',
     highlight:
-      'Free gets 5, Uplink gets 25, Pro gets 75, and Unlimited has no cap at all.',
+      'Free gets 10, Uplink gets 25, Pro gets 75, and Unlimited has no cap at all.',
     answer:
-      'Tracked symbols are the stocks, ETFs, and crypto tickers that appear in your finance feed. Free accounts can follow up to 5 at a time. Uplink raises that to 25. Pro gives you 75 — enough for a serious portfolio. With Unlimited, there is no cap — add every ticker you care about and they all stream in real time.',
+      'Tracked symbols are the stocks, ETFs, and crypto tickers that appear in your finance feed. Free accounts can follow up to 10 at a time. Uplink raises that to 25. Pro gives you 75 — enough for a serious portfolio. With Unlimited, there is no cap — add every ticker you care about and they all stream in real time.',
     accent: 'cyan',
   },
   {
     icon: Rss,
     question: 'How many RSS feeds can I follow?',
     highlight:
-      'From 3 feeds on Free to completely unlimited on the top tier.',
+      'From 5 feeds on Free to completely unlimited on the top tier.',
     answer:
-      'RSS feeds power the news channel. Free accounts can subscribe to 3 feeds from the default catalog. Uplink expands that to 50, Pro to 150, giving you broad coverage across topics. Unlimited removes the limit entirely — subscribe to as many sources as you want.',
+      'RSS feeds power the news channel. Free accounts can subscribe to 5 feeds from the default catalog. Uplink expands that to 50, Pro to 150, giving you broad coverage across topics. Unlimited removes the limit entirely — subscribe to as many sources as you want.',
     accent: 'amber',
   },
   {
@@ -762,14 +745,14 @@ function BottomCTA({
                 onClick={() => handleSelectPlan('annual', 'unlimited')}
                 className="btn btn-pulse gap-2 text-base px-8 py-5 shadow-2xl"
               >
-                <Crown size={14} /> Get Unlimited — $37.50/mo
+                <Crown size={14} /> Get Unlimited — $33.33/mo
               </button>
               <button
                 type="button"
                 onClick={() => handleSelectPlan('annual', 'pro')}
                 className="btn btn-outline gap-2 px-6 py-4"
               >
-                <Gauge size={14} /> Pro — $20.00/mo
+                <Gauge size={14} /> Pro — $16.67/mo
               </button>
             </div>
           </motion.div>
@@ -900,7 +883,7 @@ function UplinkPage() {
   const [showCheckout, setShowCheckout] = useState(false)
   const [checkoutSuccess, setCheckoutSuccess] = useState(false)
   const [checkingSession, setCheckingSession] = useState(false)
-  const [billingView, setBillingView] = useState<BillingView>('monthly')
+  const [billingView, setBillingView] = useState<BillingView>('annual')
   const isLifetime = billingView === 'lifetime'
   const billingPeriod: PlanKey = isLifetime ? 'annual' : billingView
 
@@ -1138,7 +1121,7 @@ function UplinkPage() {
                 <div className="flex items-center gap-3">
                   <span className="h-px w-6 bg-base-300/50" />
                   <span className="text-[10px] font-mono text-base-content/20">
-                    From $8.33/mo &middot; Unlimited from $37.50/mo
+                    From $6.67/mo &middot; Unlimited from $33.33/mo
                   </span>
                 </div>
               </motion.div>
@@ -1405,7 +1388,7 @@ function UplinkPage() {
             className="flex items-center justify-center mb-10"
           >
             <div className="relative inline-flex items-center gap-1 p-1 rounded-xl bg-base-200/60 border border-base-300/30 backdrop-blur-sm">
-              {(['monthly', 'quarterly', 'annual', 'lifetime'] as const).map(
+              {(['monthly', 'annual', 'lifetime'] as const).map(
                 (period) => (
                   <button
                     key={period}
@@ -1724,7 +1707,7 @@ function UplinkPage() {
                       <div className="text-center mb-6">
                         <div className="flex items-baseline justify-center gap-2 mb-1">
                           <span className="text-5xl font-black text-base-content tracking-tight">
-                            $749
+                            $399
                           </span>
                           <span className="text-sm text-base-content/25">
                             one-time
@@ -1792,13 +1775,13 @@ function UplinkPage() {
                       >
                         <div className="relative z-10">
                           <p className="text-[10px] text-primary/70 font-semibold mb-1">
-                            Want real-time SSE?
+                            50% Off Unlimited — From $25.00/mo
                           </p>
                           <p className="text-[10px] text-base-content/35 leading-relaxed">
-                            Lifetime members get 50% off any Unlimited
-                            subscription. Add real-time delivery, webhooks,
-                            API access, and unlimited limits starting at
-                            $27.50/mo.
+                            Lifetime members get half off any Unlimited
+                            subscription. Real-time SSE, unlimited symbols
+                            and feeds, webhooks, API access, and data export
+                            — all at half price.
                           </p>
                         </div>
                       </div>
@@ -1863,7 +1846,7 @@ function UplinkPage() {
                 className="absolute -bottom-4 -right-4 text-base-content/[0.02] pointer-events-none"
               />
               <div className="relative z-10">
-                <div className="flex items-center gap-2.5 mb-5">
+                <div className="flex items-center gap-2.5 mb-3">
                   <div
                     className="h-9 w-9 rounded-lg flex items-center justify-center"
                     style={{
@@ -1874,15 +1857,13 @@ function UplinkPage() {
                   >
                     <Rocket size={16} className="text-base-content/80" />
                   </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-base-content">
-                      Uplink
-                    </h3>
-                    <p className="text-[9px] text-info/50">
-                      30s polling &middot; daily driver
-                    </p>
-                  </div>
+                  <h3 className="text-sm font-bold text-base-content">
+                    Uplink
+                  </h3>
                 </div>
+                <p className="text-xs text-base-content/40 leading-relaxed mb-5">
+                  For people who check their markets every morning
+                </p>
 
                 {/* Price — per-digit slot animation */}
                 <div className="mb-4">
@@ -1956,7 +1937,7 @@ function UplinkPage() {
               </div>
             </motion.div>
 
-            {/* ─── PRO — COMMAND CENTER ─── */}
+            {/* ─── PRO ─── */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -1991,7 +1972,7 @@ function UplinkPage() {
                 className="absolute -bottom-4 -right-4 text-base-content/[0.02] pointer-events-none"
               />
               <div className="relative z-10">
-                <div className="flex items-center gap-2.5 mb-5">
+                <div className="flex items-center gap-2.5 mb-3">
                   <div
                     className="h-9 w-9 rounded-lg flex items-center justify-center"
                     style={{
@@ -2002,15 +1983,13 @@ function UplinkPage() {
                   >
                     <Gauge size={16} className="text-base-content/80" />
                   </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-base-content">
-                      Pro
-                    </h3>
-                    <p className="text-[9px] text-[#a78bfa]/50">
-                      10s polling &middot; command center
-                    </p>
-                  </div>
+                  <h3 className="text-sm font-bold text-base-content">
+                    Pro
+                  </h3>
                 </div>
+                <p className="text-xs text-base-content/40 leading-relaxed mb-5">
+                  For people who need to be notified, not just informed
+                </p>
 
                 {/* Price — per-digit slot animation */}
                 <div className="mb-4">
@@ -2084,7 +2063,7 @@ function UplinkPage() {
               </div>
             </motion.div>
 
-            {/* ─── UNLIMITED — THE ONE ─── */}
+            {/* ─── UNLIMITED ─── */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -2261,7 +2240,7 @@ function UplinkPage() {
                 </div>
 
                 <div className="relative z-10">
-                  <div className="flex items-center gap-2.5 mb-5">
+                  <div className="flex items-center gap-2.5 mb-3">
                     <div
                       className="h-9 w-9 rounded-lg flex items-center justify-center"
                       style={{
@@ -2275,15 +2254,13 @@ function UplinkPage() {
                         className="text-base-content/80"
                       />
                     </div>
-                    <div>
-                      <h3 className="text-sm font-bold text-base-content">
-                        Unlimited
-                      </h3>
-                      <p className="text-[9px] text-primary/50">
-                        Real-time SSE &middot; no limits
-                      </p>
-                    </div>
+                    <h3 className="text-sm font-bold text-base-content">
+                      Unlimited
+                    </h3>
                   </div>
+                  <p className="text-xs text-base-content/40 leading-relaxed mb-5">
+                    For people who want Scrollr in their stack
+                  </p>
 
                   {/* Price — per-digit slot animation */}
                   <div className="mb-4">
@@ -3157,10 +3134,10 @@ function UplinkPage() {
                         }`}
                       >
                         {tier.tier === 'unlimited'
-                          ? 'Get Unlimited — from $37.50/mo'
+                          ? 'Get Unlimited — from $33.33/mo'
                           : tier.tier === 'pro'
-                            ? 'Get Pro — from $20.00/mo'
-                            : 'Get Uplink — from $8.33/mo'}
+                            ? 'Get Pro — from $16.67/mo'
+                            : 'Get Uplink — from $6.67/mo'}
                       </button>
                     </div>
                   </div>
@@ -3169,6 +3146,279 @@ function UplinkPage() {
             ))}
           </div>
         </div>
+      </section>
+
+      {/* ================================================================
+          HOW IT WORKS — CONVERSION
+          ================================================================ */}
+      <section className="relative overflow-hidden">
+        {/* Top border accent */}
+        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/15 to-transparent" />
+
+        <div className="container">
+          {/* Section header */}
+          <motion.div
+            style={{ opacity: 0 }}
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6, ease: EASE }}
+            className="text-center mb-14"
+          >
+            <h2 className="text-4xl sm:text-5xl font-black tracking-tight leading-[0.95] mb-4">
+              How It{' '}
+              <span className="text-gradient-primary">Works</span>
+            </h2>
+            <p className="text-sm text-base-content/40 max-w-lg mx-auto leading-relaxed">
+              Start free, try everything for a week, and upgrade only if it
+              fits. No surprises.
+            </p>
+          </motion.div>
+
+          {/* 4-card grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 max-w-4xl mx-auto">
+            {/* Free Trial */}
+            <motion.div
+              style={{ opacity: 0 }}
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.5, delay: 0.05, ease: EASE }}
+              className="relative bg-base-200/40 border border-base-300/30 rounded-xl p-6 overflow-hidden"
+            >
+              {/* Top accent line */}
+              <div
+                className="absolute top-0 left-0 right-0 h-px"
+                style={{
+                  background:
+                    'linear-gradient(90deg, transparent, #34d399 50%, transparent)',
+                }}
+              />
+              {/* Corner dot grid */}
+              <div
+                className="absolute top-0 right-0 w-20 h-20 opacity-[0.03] text-base-content"
+                style={{
+                  backgroundImage:
+                    'radial-gradient(circle, currentColor 1px, transparent 1px)',
+                  backgroundSize: '8px 8px',
+                }}
+              />
+              {/* Watermark icon */}
+              <CreditCard
+                size={100}
+                strokeWidth={0.3}
+                className="absolute -bottom-3 -right-3 text-base-content/[0.02] pointer-events-none"
+              />
+              <div className="relative z-10">
+                <div className="flex items-center gap-3 mb-4">
+                  <div
+                    className="h-9 w-9 rounded-lg flex items-center justify-center"
+                    style={{
+                      background: '#34d39915',
+                      boxShadow: '0 0 20px #34d39915, 0 0 0 1px #34d39920',
+                    }}
+                  >
+                    <CreditCard
+                      size={16}
+                      className="text-base-content/80"
+                    />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-base-content">
+                      7-Day Free Trial
+                    </h3>
+                    <p className="text-[10px] text-base-content/35">
+                      Card required, cancel anytime
+                    </p>
+                  </div>
+                </div>
+                <p className="text-xs text-base-content/45 leading-relaxed">
+                  Every paid tier starts with a 7-day free trial. Add a card
+                  during onboarding, try the full feature set, and only pay if
+                  you stay. Cancel before the trial ends and you won't be
+                  charged.
+                </p>
+              </div>
+            </motion.div>
+
+            {/* Referral Program */}
+            <motion.div
+              style={{ opacity: 0 }}
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.5, delay: 0.1, ease: EASE }}
+              className="relative bg-base-200/40 border border-base-300/30 rounded-xl p-6 overflow-hidden"
+            >
+              <div
+                className="absolute top-0 left-0 right-0 h-px"
+                style={{
+                  background:
+                    'linear-gradient(90deg, transparent, #a78bfa 50%, transparent)',
+                }}
+              />
+              <div
+                className="absolute top-0 right-0 w-20 h-20 opacity-[0.03] text-base-content"
+                style={{
+                  backgroundImage:
+                    'radial-gradient(circle, currentColor 1px, transparent 1px)',
+                  backgroundSize: '8px 8px',
+                }}
+              />
+              <Gift
+                size={100}
+                strokeWidth={0.3}
+                className="absolute -bottom-3 -right-3 text-base-content/[0.02] pointer-events-none"
+              />
+              <div className="relative z-10">
+                <div className="flex items-center gap-3 mb-4">
+                  <div
+                    className="h-9 w-9 rounded-lg flex items-center justify-center"
+                    style={{
+                      background: '#a78bfa15',
+                      boxShadow: '0 0 20px #a78bfa15, 0 0 0 1px #a78bfa20',
+                    }}
+                  >
+                    <Users size={16} className="text-base-content/80" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-base-content">
+                      Refer &amp; Earn
+                    </h3>
+                    <p className="text-[10px] text-base-content/35">
+                      7 days Unlimited per referral
+                    </p>
+                  </div>
+                </div>
+                <p className="text-xs text-base-content/45 leading-relaxed">
+                  Share your referral link and both you and your friend get 7
+                  days of Unlimited. Stack up to 5 referrals for 35 days of
+                  real-time SSE, unlimited symbols, and every premium feature
+                  unlocked.
+                </p>
+              </div>
+            </motion.div>
+
+            {/* Soft Limits */}
+            <motion.div
+              style={{ opacity: 0 }}
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.5, delay: 0.15, ease: EASE }}
+              className="relative bg-base-200/40 border border-base-300/30 rounded-xl p-6 overflow-hidden"
+            >
+              <div
+                className="absolute top-0 left-0 right-0 h-px"
+                style={{
+                  background:
+                    'linear-gradient(90deg, transparent, #00b8db 50%, transparent)',
+                }}
+              />
+              <div
+                className="absolute top-0 right-0 w-20 h-20 opacity-[0.03] text-base-content"
+                style={{
+                  backgroundImage:
+                    'radial-gradient(circle, currentColor 1px, transparent 1px)',
+                  backgroundSize: '8px 8px',
+                }}
+              />
+              <Bell
+                size={100}
+                strokeWidth={0.3}
+                className="absolute -bottom-3 -right-3 text-base-content/[0.02] pointer-events-none"
+              />
+              <div className="relative z-10">
+                <div className="flex items-center gap-3 mb-4">
+                  <div
+                    className="h-9 w-9 rounded-lg flex items-center justify-center"
+                    style={{
+                      background: '#00b8db15',
+                      boxShadow: '0 0 20px #00b8db15, 0 0 0 1px #00b8db20',
+                    }}
+                  >
+                    <Bell size={16} className="text-base-content/80" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-base-content">
+                      Gentle Nudges
+                    </h3>
+                    <p className="text-[10px] text-base-content/35">
+                      In-extension prompts at your limits
+                    </p>
+                  </div>
+                </div>
+                <p className="text-xs text-base-content/45 leading-relaxed">
+                  When you hit a free tier cap — like trying to add an 11th
+                  symbol or 6th RSS feed — the extension shows a quiet prompt
+                  with what the next tier unlocks. No pop-ups, no dark
+                  patterns. Just context when it matters.
+                </p>
+              </div>
+            </motion.div>
+
+            {/* Locked Features Visible */}
+            <motion.div
+              style={{ opacity: 0 }}
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.5, delay: 0.2, ease: EASE }}
+              className="relative bg-base-200/40 border border-base-300/30 rounded-xl p-6 overflow-hidden"
+            >
+              <div
+                className="absolute top-0 left-0 right-0 h-px"
+                style={{
+                  background:
+                    'linear-gradient(90deg, transparent, #f59e0b 50%, transparent)',
+                }}
+              />
+              <div
+                className="absolute top-0 right-0 w-20 h-20 opacity-[0.03] text-base-content"
+                style={{
+                  backgroundImage:
+                    'radial-gradient(circle, currentColor 1px, transparent 1px)',
+                  backgroundSize: '8px 8px',
+                }}
+              />
+              <Eye
+                size={100}
+                strokeWidth={0.3}
+                className="absolute -bottom-3 -right-3 text-base-content/[0.02] pointer-events-none"
+              />
+              <div className="relative z-10">
+                <div className="flex items-center gap-3 mb-4">
+                  <div
+                    className="h-9 w-9 rounded-lg flex items-center justify-center"
+                    style={{
+                      background: '#f59e0b15',
+                      boxShadow: '0 0 20px #f59e0b15, 0 0 0 1px #f59e0b20',
+                    }}
+                  >
+                    <Lock size={16} className="text-base-content/80" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-base-content">
+                      See What You're Missing
+                    </h3>
+                    <p className="text-[10px] text-base-content/35">
+                      Premium features ghosted on Free
+                    </p>
+                  </div>
+                </div>
+                <p className="text-xs text-base-content/45 leading-relaxed">
+                  Locked features aren't hidden — they're visible but ghosted
+                  in the UI. Custom alerts, feed profiles, webhooks, and export
+                  all appear in their natural positions so you can see exactly
+                  what upgrading unlocks before you decide.
+                </p>
+              </div>
+            </motion.div>
+          </div>
+        </div>
+
+        {/* Bottom border */}
+        <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-base-300/50 to-transparent" />
       </section>
 
       {/* ================================================================
