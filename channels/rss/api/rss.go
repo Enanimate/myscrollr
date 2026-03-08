@@ -11,6 +11,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
+	"golang.org/x/sync/singleflight"
 )
 
 // =============================================================================
@@ -51,6 +52,7 @@ type App struct {
 	db         *pgxpool.Pool
 	rdb        *redis.Client
 	httpClient *http.Client
+	sfGroup    singleflight.Group
 }
 
 // =============================================================================
@@ -68,9 +70,27 @@ func (a *App) getRSSFeedCatalog(c *fiber.Ctx) error {
 		return c.JSON(catalog)
 	}
 
-	rows, err := a.db.Query(ctx,
-		"SELECT url, name, category, is_default, consecutive_failures, last_error, last_success_at FROM tracked_feeds WHERE is_enabled = true AND consecutive_failures < $1 ORDER BY category, name",
-		MaxConsecutiveFailures)
+	// Singleflight: collapse concurrent cache-miss requests into one DB query
+	result, err, _ := a.sfGroup.Do(CacheKeyRSSCatalog, func() (interface{}, error) {
+		rows, err := a.db.Query(ctx,
+			"SELECT url, name, category, is_default, consecutive_failures, last_error, last_success_at FROM tracked_feeds WHERE is_enabled = true AND consecutive_failures < $1 ORDER BY category, name",
+			MaxConsecutiveFailures)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+
+		var feeds []TrackedFeed
+		for rows.Next() {
+			var f TrackedFeed
+			if err := rows.Scan(&f.URL, &f.Name, &f.Category, &f.IsDefault, &f.ConsecutiveFailures, &f.LastError, &f.LastSuccessAt); err != nil {
+				log.Printf("[RSS] Catalog scan error: %v", err)
+				continue
+			}
+			feeds = append(feeds, f)
+		}
+		return feeds, nil
+	})
 	if err != nil {
 		log.Printf("[RSS] Catalog query failed: %v", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
@@ -78,16 +98,9 @@ func (a *App) getRSSFeedCatalog(c *fiber.Ctx) error {
 			Error:  "Failed to fetch feed catalog",
 		})
 	}
-	defer rows.Close()
-
-	catalog = make([]TrackedFeed, 0)
-	for rows.Next() {
-		var f TrackedFeed
-		if err := rows.Scan(&f.URL, &f.Name, &f.Category, &f.IsDefault, &f.ConsecutiveFailures, &f.LastError, &f.LastSuccessAt); err != nil {
-			log.Printf("[RSS] Catalog scan error: %v", err)
-			continue
-		}
-		catalog = append(catalog, f)
+	catalog = result.([]TrackedFeed)
+	if catalog == nil {
+		catalog = make([]TrackedFeed, 0)
 	}
 
 	SetCache(a.rdb, ctx, CacheKeyRSSCatalog, catalog, RSSCatalogCacheTTL)
@@ -434,6 +447,12 @@ func (a *App) queryRSSItems(ctx context.Context, feedURLs []string) []RssItem {
 // into the tracked_feeds table so the RSS ingestion service discovers and
 // fetches them.
 func (a *App) syncRSSFeedsToTracked(userSub string, config map[string]interface{}) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[RSS] PANIC in syncRSSFeedsToTracked for user %s: %v", userSub, r)
+		}
+	}()
+
 	// Use a dedicated timeout context since this runs in a background goroutine
 	// (not tied to any HTTP request lifecycle).
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -483,16 +502,33 @@ func (a *App) syncRSSFeedsToTracked(userSub string, config map[string]interface{
 // Config Parsing Helpers
 // =============================================================================
 
-// extractFeedURLsFromChannelConfig extracts feed URLs from a channel's config map.
+// extractFeedURLsFromChannelConfig extracts feed URLs from a channel's config
+// map by walking it directly (avoids a marshal→unmarshal round-trip).
 func extractFeedURLsFromChannelConfig(config map[string]interface{}) []string {
 	if config == nil {
 		return nil
 	}
-	configJSON, err := json.Marshal(config)
-	if err != nil {
+
+	feedsRaw, ok := config["feeds"]
+	if !ok {
 		return nil
 	}
-	return extractFeedURLsFromConfig(configJSON)
+	feedsSlice, ok := feedsRaw.([]interface{})
+	if !ok {
+		return nil
+	}
+
+	urls := make([]string, 0, len(feedsSlice))
+	for _, item := range feedsSlice {
+		feedMap, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if u, ok := feedMap["url"].(string); ok && u != "" {
+			urls = append(urls, u)
+		}
+	}
+	return urls
 }
 
 // extractFeedURLsFromConfig parses a config JSONB blob and returns feed URLs.

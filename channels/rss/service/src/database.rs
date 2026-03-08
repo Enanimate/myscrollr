@@ -115,6 +115,8 @@ pub async fn create_tables(pool: &Arc<PgPool>) -> Result<()> {
         "ALTER TABLE tracked_feeds ADD COLUMN IF NOT EXISTS last_success_at TIMESTAMPTZ",
         // Track who added custom feeds for authorization on delete
         "ALTER TABLE tracked_feeds ADD COLUMN IF NOT EXISTS added_by TEXT",
+        // Index for cleanup queries and ORDER BY published_at in dashboard queries
+        "CREATE INDEX IF NOT EXISTS idx_rss_items_published_at ON rss_items (published_at DESC NULLS LAST)",
     ];
     for migration in &migrations {
         query(migration).execute(&mut *connection).await?;
@@ -198,43 +200,55 @@ pub async fn get_quarantined_feeds(pool: Arc<PgPool>) -> Vec<TrackedFeed> {
     }
 }
 
-// ── Record feed poll success ────────────────────────────────────
+// ── Batch record feed poll successes ─────────────────────────────
 
-pub async fn record_feed_success(pool: &Arc<PgPool>, feed_url: &str) {
+pub async fn batch_record_feed_successes(pool: &Arc<PgPool>, feed_urls: &[String]) {
+    if feed_urls.is_empty() {
+        return;
+    }
     let statement = "
         UPDATE tracked_feeds
         SET consecutive_failures = 0, last_success_at = NOW()
-        WHERE url = $1
+        WHERE url = ANY($1)
     ";
     let res: Result<(), sqlx::Error> = async {
         let mut connection = pool.acquire().await?;
-        query(statement).bind(feed_url).execute(&mut *connection).await?;
+        query(statement).bind(feed_urls).execute(&mut *connection).await?;
         Ok(())
     }.await;
 
     if let Err(e) = res {
-        log::error!("Failed to record feed success for {}: {}", feed_url, e);
+        log::error!("Failed to batch record feed successes: {}", e);
     }
 }
 
-// ── Record feed poll failure ────────────────────────────────────
+// ── Batch record feed poll failures ─────────────────────────────
 
-pub async fn record_feed_failure(pool: &Arc<PgPool>, feed_url: &str, error: &str) {
+pub async fn batch_record_feed_failures(pool: &Arc<PgPool>, feed_urls: &[String], errors: &[String]) {
+    if feed_urls.is_empty() {
+        return;
+    }
+    // Each feed gets its own error message, and we increment consecutive_failures
     let statement = "
-        UPDATE tracked_feeds
-        SET consecutive_failures = consecutive_failures + 1,
-            last_error = $2,
+        UPDATE tracked_feeds AS tf
+        SET consecutive_failures = tf.consecutive_failures + 1,
+            last_error = u.error_msg,
             last_error_at = NOW()
-        WHERE url = $1
+        FROM UNNEST($1::text[], $2::text[]) AS u(url, error_msg)
+        WHERE tf.url = u.url
     ";
     let res: Result<(), sqlx::Error> = async {
         let mut connection = pool.acquire().await?;
-        query(statement).bind(feed_url).bind(error).execute(&mut *connection).await?;
+        query(statement)
+            .bind(feed_urls)
+            .bind(errors)
+            .execute(&mut *connection)
+            .await?;
         Ok(())
     }.await;
 
     if let Err(e) = res {
-        log::error!("Failed to record feed failure for {}: {}", feed_url, e);
+        log::error!("Failed to batch record feed failures: {}", e);
     }
 }
 
@@ -291,11 +305,26 @@ pub async fn batch_upsert_rss_items(pool: &Arc<PgPool>, articles: Vec<ParsedArti
     Ok(())
 }
 
-// ── Cleanup old articles ─────────────────────────────────────────
+// ── Cleanup old articles (batched to keep transactions small) ────
 
 pub async fn cleanup_old_articles(pool: &Arc<PgPool>) -> Result<u64> {
-    let statement = "DELETE FROM rss_items WHERE published_at < now() - interval '7 days'";
+    let statement = "
+        DELETE FROM rss_items
+        WHERE id IN (
+            SELECT id FROM rss_items
+            WHERE published_at < now() - interval '7 days'
+            LIMIT 1000
+        )
+    ";
+    let mut total: u64 = 0;
     let mut connection = pool.acquire().await?;
-    let result = query(statement).execute(&mut *connection).await?;
-    Ok(result.rows_affected())
+    loop {
+        let result = query(statement).execute(&mut *connection).await?;
+        let deleted = result.rows_affected();
+        total += deleted;
+        if deleted < 1000 {
+            break;
+        }
+    }
+    Ok(total)
 }

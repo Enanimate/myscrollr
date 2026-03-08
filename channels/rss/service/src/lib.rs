@@ -4,7 +4,8 @@ use tokio::sync::Mutex;
 use crate::log::{error, info, warn};
 use crate::database::{
     PgPool, get_tracked_feeds, get_quarantined_feeds, seed_tracked_feeds,
-    batch_upsert_rss_items, cleanup_old_articles, record_feed_success, record_feed_failure,
+    batch_upsert_rss_items, cleanup_old_articles,
+    batch_record_feed_successes, batch_record_feed_failures,
     FeedConfig, TrackedFeed, ParsedArticle,
 };
 pub use crate::types::RssHealth;
@@ -72,10 +73,15 @@ pub async fn start_rss_service(pool: Arc<PgPool>, health_state: Arc<Mutex<RssHea
         });
     }
 
+    // Collect results, then batch-update the DB in two queries instead of 97
+    let mut success_urls: Vec<String> = Vec::new();
+    let mut failure_urls: Vec<String> = Vec::new();
+    let mut failure_errors: Vec<String> = Vec::new();
+
     while let Some(join_result) = join_set.join_next().await {
         match join_result {
             Ok((feed_name, feed_url, prev_failures, Ok(count))) => {
-                record_feed_success(&pool, &feed_url).await;
+                success_urls.push(feed_url.clone());
                 if prev_failures >= 3 {
                     info!("Feed {} ({}) recovered after {} consecutive failures", feed_name, feed_url, prev_failures);
                 }
@@ -83,7 +89,8 @@ pub async fn start_rss_service(pool: Arc<PgPool>, health_state: Arc<Mutex<RssHea
             }
             Ok((feed_name, feed_url, prev_failures, Err(e))) => {
                 let err_msg = format!("{}", e);
-                record_feed_failure(&pool, &feed_url, &err_msg).await;
+                failure_urls.push(feed_url.clone());
+                failure_errors.push(err_msg);
                 let new_failures = prev_failures + 1;
                 if new_failures == 3 {
                     warn!("Feed {} ({}) hidden from catalog after 3 consecutive failures", feed_name, feed_url);
@@ -99,6 +106,10 @@ pub async fn start_rss_service(pool: Arc<PgPool>, health_state: Arc<Mutex<RssHea
             }
         }
     }
+
+    // Batch-update feed statuses (2 queries instead of ~97 sequential ones)
+    batch_record_feed_successes(&pool, &success_urls).await;
+    batch_record_feed_failures(&pool, &failure_urls, &failure_errors).await;
 
     // Cleanup old articles (older than 7 days)
     match cleanup_old_articles(&pool).await {
