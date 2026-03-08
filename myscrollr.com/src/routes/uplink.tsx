@@ -1859,15 +1859,15 @@ function UplinkPage() {
                 exit={{ opacity: 0, scale: 0.97, y: 6 }}
                 transition={{ duration: 0.35, ease: EASE }}
               >
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-stretch">
                   {/* ─── FREE ─── */}
                   <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.03, duration: 0.5, ease: EASE }}
-                    className="group relative bg-base-200/20 border border-base-300/20 rounded-xl p-6 overflow-hidden"
+                    className="group relative bg-base-200/20 border border-base-300/20 rounded-xl p-6 overflow-hidden flex flex-col"
                   >
-                    <div className="relative z-10">
+                    <div className="relative z-10 flex flex-col flex-1">
                       <div className="flex items-center gap-2.5 mb-3">
                         <div
                           className="h-9 w-9 rounded-lg flex items-center justify-center bg-base-300/30"
@@ -1914,12 +1914,17 @@ function UplinkPage() {
                         <PricingFeature>Full dashboard access</PricingFeature>
                       </div>
 
-                      <Link
-                        to="/dashboard"
-                        className="block w-full py-2.5 text-center text-[10px] font-semibold border border-base-300/30 text-base-content/35 rounded-lg hover:border-base-300/50 hover:text-base-content/50 transition-colors"
-                      >
-                        Get Started Free
-                      </Link>
+                      <div className="mt-auto pt-2 flex flex-col items-center gap-1.5">
+                        <Link
+                          to="/dashboard"
+                          className="block w-full py-2.5 text-center text-[10px] font-semibold border border-base-300/30 text-base-content/35 rounded-lg hover:border-base-300/50 hover:text-base-content/50 transition-colors"
+                        >
+                          Get Started Free
+                        </Link>
+                        <span className="text-[9px] text-base-content/20">
+                          No card required
+                        </span>
+                      </div>
                     </div>
                   </motion.div>
 
@@ -1942,7 +1947,7 @@ function UplinkPage() {
                         handleSelectPlan(billingPeriod, 'uplink')
                       }
                     }}
-                    className="group relative bg-base-200/40 border border-info/15 rounded-xl p-6 hover:border-info/30 transition-colors overflow-hidden cursor-pointer"
+                    className="group relative bg-base-200/40 border border-info/15 rounded-xl p-6 hover:border-info/30 transition-colors overflow-hidden cursor-pointer flex flex-col"
                   >
                     <div
                       className="absolute top-0 left-0 right-0 h-px"
@@ -1957,7 +1962,7 @@ function UplinkPage() {
                       strokeWidth={0.4}
                       className="absolute -bottom-4 -right-4 text-base-content/[0.02] pointer-events-none"
                     />
-                    <div className="relative z-10">
+                    <div className="relative z-10 flex flex-col flex-1">
                       <div className="flex items-center gap-2.5 mb-3">
                         <div
                           className="h-9 w-9 rounded-lg flex items-center justify-center"
@@ -2000,45 +2005,17 @@ function UplinkPage() {
                           </span>
                         </div>
                         <div className="flex items-center gap-2 h-5">
-                          <AnimatePresence mode="wait">
-                            {billingPeriod === 'annual' ? (
-                              <motion.span
-                                key="annual-billed"
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                exit={{ opacity: 0 }}
-                                transition={{ duration: 0.15 }}
-                                className="text-[10px] font-mono text-base-content/25 tabular-nums"
-                              >
-                                Billed ${PRICING.uplink.annual.price}/yr
-                              </motion.span>
-                            ) : (
-                              <motion.span
-                                key="monthly-billed"
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                exit={{ opacity: 0 }}
-                                transition={{ duration: 0.15 }}
-                                className="text-[10px] font-mono text-base-content/25 tabular-nums"
-                              >
-                                Billed monthly
-                              </motion.span>
-                            )}
-                          </AnimatePresence>
-                          <AnimatePresence mode="wait">
-                            {PRICING.uplink[billingPeriod].savings && (
-                              <motion.span
-                                key={PRICING.uplink[billingPeriod].savings}
-                                initial={{ opacity: 0, scale: 0.9 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                exit={{ opacity: 0, scale: 0.9 }}
-                                transition={{ duration: 0.2, ease: EASE }}
-                                className="text-[8px] font-bold text-info/60 bg-info/8 px-1.5 py-0.5 rounded"
-                              >
-                                {PRICING.uplink[billingPeriod].savings}
-                              </motion.span>
-                            )}
-                          </AnimatePresence>
+                          <span className="inline-grid text-[10px] font-mono text-base-content/25 tabular-nums">
+                            <span className="col-start-1 row-start-1 transition-opacity duration-200" style={{ opacity: billingPeriod === 'annual' ? 1 : 0 }}>
+                              Billed ${PRICING.uplink.annual.price}/yr
+                            </span>
+                            <span className="col-start-1 row-start-1 transition-opacity duration-200" style={{ opacity: billingPeriod === 'monthly' ? 1 : 0 }}>
+                              Billed monthly
+                            </span>
+                          </span>
+                          <span className="text-[8px] font-bold text-info/60 bg-info/8 px-1.5 py-0.5 rounded transition-opacity duration-200" style={{ opacity: PRICING.uplink[billingPeriod].savings ? 1 : 0 }}>
+                            {PRICING.uplink[billingPeriod].savings ?? PRICING.uplink.annual.savings}
+                          </span>
                         </div>
                       </div>
 
@@ -2053,7 +2030,7 @@ function UplinkPage() {
                         <PricingFeature>Early access</PricingFeature>
                       </div>
 
-                      <div className="flex flex-col items-center gap-1.5">
+                      <div className="mt-auto pt-2 flex flex-col items-center gap-1.5">
                         <div className="w-full py-2.5 text-center text-[10px] font-semibold border border-info/20 text-info/60 rounded-lg group-hover:border-info/40 group-hover:text-info/80 transition-colors">
                           Start Free Trial
                         </div>
@@ -2084,7 +2061,7 @@ function UplinkPage() {
                         handleSelectPlan(billingPeriod, 'pro')
                       }
                     }}
-                    className="group relative bg-base-200/40 border border-[#a78bfa]/15 rounded-xl p-6 hover:border-[#a78bfa]/30 transition-colors overflow-hidden cursor-pointer"
+                    className="group relative bg-base-200/40 border border-[#a78bfa]/15 rounded-xl p-6 hover:border-[#a78bfa]/30 transition-colors overflow-hidden cursor-pointer flex flex-col"
                   >
                     <div
                       className="absolute top-0 left-0 right-0 h-px"
@@ -2099,7 +2076,7 @@ function UplinkPage() {
                       strokeWidth={0.4}
                       className="absolute -bottom-4 -right-4 text-base-content/[0.02] pointer-events-none"
                     />
-                    <div className="relative z-10">
+                    <div className="relative z-10 flex flex-col flex-1">
                       <div className="flex items-center gap-2.5 mb-3">
                         <div
                           className="h-9 w-9 rounded-lg flex items-center justify-center"
@@ -2142,45 +2119,17 @@ function UplinkPage() {
                           </span>
                         </div>
                         <div className="flex items-center gap-2 h-5">
-                          <AnimatePresence mode="wait">
-                            {billingPeriod === 'annual' ? (
-                              <motion.span
-                                key="annual-billed"
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                exit={{ opacity: 0 }}
-                                transition={{ duration: 0.15 }}
-                                className="text-[10px] font-mono text-base-content/25 tabular-nums"
-                              >
-                                Billed ${PRICING.pro.annual.price}/yr
-                              </motion.span>
-                            ) : (
-                              <motion.span
-                                key="monthly-billed"
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                exit={{ opacity: 0 }}
-                                transition={{ duration: 0.15 }}
-                                className="text-[10px] font-mono text-base-content/25 tabular-nums"
-                              >
-                                Billed monthly
-                              </motion.span>
-                            )}
-                          </AnimatePresence>
-                          <AnimatePresence mode="wait">
-                            {PRICING.pro[billingPeriod].savings && (
-                              <motion.span
-                                key={PRICING.pro[billingPeriod].savings}
-                                initial={{ opacity: 0, scale: 0.9 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                exit={{ opacity: 0, scale: 0.9 }}
-                                transition={{ duration: 0.2, ease: EASE }}
-                                className="text-[8px] font-bold text-[#a78bfa]/60 bg-[#a78bfa]/8 px-1.5 py-0.5 rounded"
-                              >
-                                {PRICING.pro[billingPeriod].savings}
-                              </motion.span>
-                            )}
-                          </AnimatePresence>
+                          <span className="inline-grid text-[10px] font-mono text-base-content/25 tabular-nums">
+                            <span className="col-start-1 row-start-1 transition-opacity duration-200" style={{ opacity: billingPeriod === 'annual' ? 1 : 0 }}>
+                              Billed ${PRICING.pro.annual.price}/yr
+                            </span>
+                            <span className="col-start-1 row-start-1 transition-opacity duration-200" style={{ opacity: billingPeriod === 'monthly' ? 1 : 0 }}>
+                              Billed monthly
+                            </span>
+                          </span>
+                          <span className="text-[8px] font-bold text-[#a78bfa]/60 bg-[#a78bfa]/8 px-1.5 py-0.5 rounded transition-opacity duration-200" style={{ opacity: PRICING.pro[billingPeriod].savings ? 1 : 0 }}>
+                            {PRICING.pro[billingPeriod].savings ?? PRICING.pro.annual.savings}
+                          </span>
                         </div>
                       </div>
 
@@ -2205,7 +2154,7 @@ function UplinkPage() {
                         </PricingFeature>
                       </div>
 
-                      <div className="flex flex-col items-center gap-1.5">
+                      <div className="mt-auto pt-2 flex flex-col items-center gap-1.5">
                         <div className="w-full py-2.5 text-center text-[10px] font-semibold border border-[#a78bfa]/20 text-[#a78bfa]/60 rounded-lg group-hover:border-[#a78bfa]/40 group-hover:text-[#a78bfa]/80 transition-colors">
                           Start Free Trial
                         </div>
@@ -2236,7 +2185,7 @@ function UplinkPage() {
                         handleSelectPlan(billingPeriod, 'unlimited')
                       }
                     }}
-                    className="group relative rounded-xl overflow-hidden cursor-pointer lg:scale-[1.03] lg:-my-2 lg:origin-top"
+                    className="group relative rounded-xl overflow-hidden cursor-pointer flex flex-col"
                   >
                     {/* Pulsing border glow */}
                     <motion.div
@@ -2248,7 +2197,7 @@ function UplinkPage() {
                         ease: 'easeInOut',
                       }}
                     />
-                    <div className="relative p-6 border border-primary/20 rounded-xl">
+                    <div className="relative p-6 border border-primary/20 rounded-xl flex flex-col flex-1">
                       {/* Background layer — below smoke. No backdrop-blur: it causes a
                      compositing snap when the parent's whileInView opacity animation
                      completes and the WAAPI layer is torn down. */}
@@ -2394,7 +2343,7 @@ function UplinkPage() {
                         />
                       </div>
 
-                      <div className="relative z-10">
+                      <div className="relative z-10 flex flex-col flex-1">
                         <div className="flex items-center gap-2.5 mb-3">
                           <div
                             className="h-9 w-9 rounded-lg flex items-center justify-center"
@@ -2436,46 +2385,18 @@ function UplinkPage() {
                               /mo
                             </span>
                           </div>
-                          <div className="flex items-center gap-2 h-5">
-                            <AnimatePresence mode="wait">
-                              {billingPeriod === 'annual' ? (
-                                <motion.span
-                                  key="annual-billed"
-                                  initial={{ opacity: 0 }}
-                                  animate={{ opacity: 1 }}
-                                  exit={{ opacity: 0 }}
-                                  transition={{ duration: 0.15 }}
-                                  className="text-[10px] font-mono text-primary/40 tabular-nums"
-                                >
-                                  Billed ${PRICING.unlimited.annual.price}/yr
-                                </motion.span>
-                              ) : (
-                                <motion.span
-                                  key="monthly-billed"
-                                  initial={{ opacity: 0 }}
-                                  animate={{ opacity: 1 }}
-                                  exit={{ opacity: 0 }}
-                                  transition={{ duration: 0.15 }}
-                                  className="text-[10px] font-mono text-primary/40 tabular-nums"
-                                >
-                                  Billed monthly
-                                </motion.span>
-                              )}
-                            </AnimatePresence>
-                            <AnimatePresence mode="wait">
-                              {PRICING.unlimited[billingPeriod].savings && (
-                                <motion.span
-                                  key={PRICING.unlimited[billingPeriod].savings}
-                                  initial={{ opacity: 0, scale: 0.9 }}
-                                  animate={{ opacity: 1, scale: 1 }}
-                                  exit={{ opacity: 0, scale: 0.9 }}
-                                  transition={{ duration: 0.2, ease: EASE }}
-                                  className="text-[8px] font-bold text-primary/70 bg-primary/10 px-1.5 py-0.5 rounded"
-                                >
-                                  {PRICING.unlimited[billingPeriod].savings}
-                                </motion.span>
-                              )}
-                            </AnimatePresence>
+                        <div className="flex items-center gap-2 h-5">
+                          <span className="inline-grid text-[10px] font-mono text-primary/40 tabular-nums">
+                            <span className="col-start-1 row-start-1 transition-opacity duration-200" style={{ opacity: billingPeriod === 'annual' ? 1 : 0 }}>
+                              Billed ${PRICING.unlimited.annual.price}/yr
+                            </span>
+                            <span className="col-start-1 row-start-1 transition-opacity duration-200" style={{ opacity: billingPeriod === 'monthly' ? 1 : 0 }}>
+                              Billed monthly
+                            </span>
+                          </span>
+                          <span className="text-[8px] font-bold text-primary/70 bg-primary/10 px-1.5 py-0.5 rounded transition-opacity duration-200" style={{ opacity: PRICING.unlimited[billingPeriod].savings ? 1 : 0 }}>
+                            {PRICING.unlimited[billingPeriod].savings ?? PRICING.unlimited.annual.savings}
+                          </span>
                           </div>
                         </div>
 
@@ -2500,7 +2421,7 @@ function UplinkPage() {
                           </PricingFeature>
                         </div>
 
-                        <div className="flex flex-col items-center gap-1.5">
+                        <div className="mt-auto pt-2 flex flex-col items-center gap-1.5">
                           <div className="w-full py-2.5 text-center text-[10px] font-semibold bg-primary/10 border border-primary/30 text-primary rounded-lg group-hover:bg-primary/20 group-hover:border-primary/50 transition-colors">
                             Start Free Trial
                           </div>
@@ -2817,18 +2738,18 @@ function UplinkPage() {
                 </span>
               </div>
               <div className="p-5 text-center border-l border-base-300/20">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-base-content/35">
+                <span className="text-xs font-bold uppercase tracking-wider text-base-content/35">
                   Free
                 </span>
               </div>
               <div className="p-5 text-center border-l border-info/15 bg-info/[0.03]">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-info flex items-center justify-center gap-1.5">
-                  <Rocket size={11} /> Uplink
+                <span className="text-xs font-bold uppercase tracking-wider text-info inline-flex items-center gap-1.5">
+                  <Rocket size={12} /> Uplink
                 </span>
               </div>
               <div className="p-5 text-center border-l border-[#a78bfa]/15 bg-[#a78bfa]/[0.03]">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-[#a78bfa] flex items-center justify-center gap-1.5">
-                  <Gauge size={11} /> Pro
+                <span className="text-xs font-bold uppercase tracking-wider text-[#a78bfa] inline-flex items-center gap-1.5">
+                  <Gauge size={12} /> Pro
                 </span>
               </div>
               <div className="relative p-5 text-center border-l border-primary/15 bg-primary/[0.04] rounded-tr-2xl">
@@ -2844,8 +2765,8 @@ function UplinkPage() {
                     Popular
                   </span>
                 </motion.div>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-primary flex items-center justify-center gap-1.5">
-                  <Crown size={11} /> Unlimited
+                <span className="text-xs font-bold uppercase tracking-wider text-primary inline-flex items-center gap-1.5">
+                  <Crown size={12} /> Unlimited
                 </span>
               </div>
             </div>
