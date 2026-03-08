@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/oauth2"
+	"golang.org/x/sync/singleflight"
 )
 
 // =============================================================================
@@ -44,6 +45,10 @@ type App struct {
 	db          *pgxpool.Pool
 	rdb         *redis.Client
 	yahooConfig *oauth2.Config
+	syncState   *syncHealth
+
+	// leagueFlight collapses concurrent cache-miss requests for the same user.
+	leagueFlight singleflight.Group
 }
 
 // resolveFrontendURL returns the URL to use for postMessage targetOrigin.
@@ -186,7 +191,8 @@ func (a *App) fetchLeagueBundle(ctx context.Context, guid string) ([]LeagueRespo
 	return leagues, nil
 }
 
-// fetchLeagueBundleCached wraps fetchLeagueBundle with a Redis cache layer.
+// fetchLeagueBundleCached wraps fetchLeagueBundle with a Redis cache layer
+// and singleflight to collapse concurrent cache-miss requests for the same user.
 // Fantasy data only changes every ~120s (sync interval), so caching the
 // assembled response eliminates redundant DB queries for concurrent requests.
 func (a *App) fetchLeagueBundleCached(ctx context.Context, guid string) ([]LeagueResponse, error) {
@@ -201,18 +207,27 @@ func (a *App) fetchLeagueBundleCached(ctx context.Context, guid string) ([]Leagu
 		}
 	}
 
-	// Cache miss — fetch from DB
-	leagues, err := a.fetchLeagueBundle(ctx, guid)
+	// Cache miss — use singleflight to collapse concurrent requests for same guid.
+	// If 100 requests hit this simultaneously for the same user, only 1 runs the
+	// 4-query DB sequence; the other 99 wait and share the result.
+	result, err, _ := a.leagueFlight.Do(guid, func() (any, error) {
+		leagues, err := a.fetchLeagueBundle(ctx, guid)
+		if err != nil {
+			return nil, err
+		}
+
+		// Store in cache (best-effort)
+		if data, marshalErr := json.Marshal(leagues); marshalErr == nil {
+			a.rdb.Set(ctx, cacheKey, data, LeagueCacheTTL)
+		}
+
+		return leagues, nil
+	})
+
 	if err != nil {
 		return nil, err
 	}
-
-	// Store in cache (best-effort)
-	if data, marshalErr := json.Marshal(leagues); marshalErr == nil {
-		a.rdb.Set(ctx, cacheKey, data, LeagueCacheTTL)
-	}
-
-	return leagues, nil
+	return result.([]LeagueResponse), nil
 }
 
 // invalidateLeagueCache removes the cached league data for a user.
@@ -322,7 +337,158 @@ func (a *App) handleInternalDashboard(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"fantasy": MyLeaguesResponse{Leagues: leagues}})
 }
 
-// healthHandler proxies a health check to the internal Python yahoo service.
+// healthHandler returns the health status of the Fantasy API including sync state.
 func (a *App) healthHandler(c *fiber.Ctx) error {
-	return ProxyInternalHealth(c, os.Getenv("INTERNAL_YAHOO_URL"))
+	health := fiber.Map{
+		"status": "healthy",
+	}
+	if a.syncState != nil {
+		for k, v := range a.syncState.snapshot() {
+			health[k] = v
+		}
+	}
+	return c.JSON(health)
+}
+
+// =============================================================================
+// Database Table Creation / Migration
+// =============================================================================
+
+// createTables ensures all required tables exist (idempotent).
+// Ported from the Python service's database.py.
+func createTables(ctx context.Context, pool *pgxpool.Pool) error {
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire connection: %w", err)
+	}
+	defer conn.Release()
+
+	// Run migrations first (idempotent — each uses IF EXISTS / IF NOT EXISTS)
+	for _, stmt := range migrationStatements {
+		if _, err := conn.Exec(ctx, stmt); err != nil {
+			log.Printf("[DB] Migration warning: %v", err)
+		}
+	}
+
+	// Create tables (IF NOT EXISTS)
+	if _, err := conn.Exec(ctx, createTablesSQL); err != nil {
+		return fmt.Errorf("create tables: %w", err)
+	}
+
+	log.Println("[DB] Tables verified/created (v2 schema)")
+	return nil
+}
+
+const createTablesSQL = `
+CREATE TABLE IF NOT EXISTS yahoo_users (
+    guid VARCHAR(100) PRIMARY KEY,
+    logto_sub VARCHAR(255) UNIQUE,
+    refresh_token TEXT NOT NULL,
+    last_sync TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS yahoo_leagues (
+    league_key VARCHAR(50) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    game_code VARCHAR(10) NOT NULL,
+    season VARCHAR(10) NOT NULL,
+    data JSONB NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS yahoo_standings (
+    league_key VARCHAR(50) PRIMARY KEY REFERENCES yahoo_leagues(league_key) ON DELETE CASCADE,
+    data JSONB NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS yahoo_rosters (
+    team_key VARCHAR(50) PRIMARY KEY,
+    league_key VARCHAR(50) NOT NULL REFERENCES yahoo_leagues(league_key) ON DELETE CASCADE,
+    data JSONB NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS yahoo_matchups (
+    league_key VARCHAR(50) NOT NULL REFERENCES yahoo_leagues(league_key) ON DELETE CASCADE,
+    week SMALLINT NOT NULL,
+    data JSONB NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (league_key, week)
+);
+
+CREATE TABLE IF NOT EXISTS yahoo_user_leagues (
+    guid VARCHAR(100) NOT NULL REFERENCES yahoo_users(guid) ON DELETE CASCADE,
+    league_key VARCHAR(50) NOT NULL REFERENCES yahoo_leagues(league_key) ON DELETE CASCADE,
+    team_key VARCHAR(50),
+    team_name VARCHAR(255),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (guid, league_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_yahoo_user_leagues_guid ON yahoo_user_leagues(guid);
+CREATE INDEX IF NOT EXISTS idx_yahoo_user_leagues_league_key ON yahoo_user_leagues(league_key);
+CREATE INDEX IF NOT EXISTS idx_yahoo_rosters_league_key ON yahoo_rosters(league_key);
+CREATE INDEX IF NOT EXISTS idx_yahoo_matchups_league_key_week ON yahoo_matchups(league_key, week DESC);
+`
+
+var migrationStatements = []string{
+	// Add team_key column to yahoo_user_leagues if it doesn't exist
+	` DO $$ BEGIN
+		IF NOT EXISTS (
+			SELECT 1 FROM information_schema.columns
+			WHERE table_name = 'yahoo_user_leagues' AND column_name = 'team_key'
+		) THEN
+			ALTER TABLE yahoo_user_leagues ADD COLUMN team_key VARCHAR(50);
+		END IF;
+	END $$; `,
+	// Add team_name column to yahoo_user_leagues if it doesn't exist
+	` DO $$ BEGIN
+		IF NOT EXISTS (
+			SELECT 1 FROM information_schema.columns
+			WHERE table_name = 'yahoo_user_leagues' AND column_name = 'team_name'
+		) THEN
+			ALTER TABLE yahoo_user_leagues ADD COLUMN team_name VARCHAR(255);
+		END IF;
+	END $$; `,
+	// Migrate yahoo_matchups from old schema (PK=team_key) to new (PK=league_key,week)
+	` DO $$ BEGIN
+		IF EXISTS (
+			SELECT 1 FROM information_schema.columns
+			WHERE table_name = 'yahoo_matchups' AND column_name = 'team_key'
+			AND table_schema = 'public'
+		) AND NOT EXISTS (
+			SELECT 1 FROM information_schema.columns
+			WHERE table_name = 'yahoo_matchups' AND column_name = 'week'
+			AND table_schema = 'public'
+		) THEN
+			DROP TABLE yahoo_matchups;
+		END IF;
+	END $$; `,
+	// Remove the guid column from yahoo_leagues
+	` DO $$ BEGIN
+		IF EXISTS (
+			SELECT 1 FROM information_schema.columns
+			WHERE table_name = 'yahoo_leagues' AND column_name = 'guid'
+			AND table_schema = 'public'
+		) THEN
+			ALTER TABLE yahoo_leagues DROP COLUMN guid;
+		END IF;
+	END $$; `,
+	// Enforce UNIQUE on yahoo_users.logto_sub
+	` DO $$ BEGIN
+		IF NOT EXISTS (
+			SELECT 1 FROM pg_constraint
+			WHERE conrelid = 'yahoo_users'::regclass
+			AND contype = 'u'
+			AND conname LIKE '%logto_sub%'
+		) THEN
+			DELETE FROM yahoo_users a USING yahoo_users b
+			WHERE a.logto_sub = b.logto_sub
+			  AND a.logto_sub IS NOT NULL
+			  AND a.created_at < b.created_at;
+			ALTER TABLE yahoo_users ADD CONSTRAINT yahoo_users_logto_sub_key UNIQUE (logto_sub);
+		END IF;
+	END $$; `,
 }
