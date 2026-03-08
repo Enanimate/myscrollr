@@ -57,13 +57,16 @@ func (s *Server) setupMiddleware() {
 		c.Set("Strict-Transport-Security", fmt.Sprintf("max-age=%d; includeSubDomains", HSTSMaxAge))
 		c.Set("X-DNS-Prefetch-Control", "off")
 		if strings.HasPrefix(c.Path(), "/swagger") {
-			c.Set("Content-Security-Policy", "default-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.com; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; frame-ancestors 'self' https://relentnet.com")
+			// c.Set("Content-Security-Policy", "default-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.com; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; frame-ancestors 'self' https://relentnet.com")
+			c.Set("Content-Security-Policy", "default-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.com; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; frame-ancestors 'self' https://enanimate.dev")
 		} else if c.Path() == "/yahoo/callback" {
 			// Yahoo OAuth callback returns HTML with inline <script> (postMessage + window.close)
 			// and inline style attributes. Allow those while keeping everything else locked down.
-			c.Set("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; frame-ancestors 'self' https://relentnet.com")
+			// c.Set("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; frame-ancestors 'self' https://relentnet.com")
+			c.Set("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; frame-ancestors 'self' https://enanimate.dev")
 		} else {
-			c.Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'self' https://relentnet.com")
+			// c.Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'self' https://relentnet.com")
+			c.Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'self' https://enanimate.dev")
 		}
 		return c.Next()
 	})
