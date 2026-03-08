@@ -1,10 +1,11 @@
-use std::{sync::Arc, fs, time::Duration};
+use std::{sync::Arc, fs};
 use reqwest::Client;
 use tokio::sync::Mutex;
 use crate::log::{error, info, warn};
 use crate::database::{
-    PgPool, create_tables, get_tracked_feeds, get_quarantined_feeds, seed_tracked_feeds,
-    upsert_rss_item, cleanup_old_articles, record_feed_success, record_feed_failure,
+    PgPool, get_tracked_feeds, get_quarantined_feeds, seed_tracked_feeds,
+    batch_upsert_rss_items, cleanup_old_articles,
+    batch_record_feed_successes, batch_record_feed_failures,
     FeedConfig, TrackedFeed, ParsedArticle,
 };
 pub use crate::types::RssHealth;
@@ -13,15 +14,10 @@ pub mod log;
 pub mod database;
 pub mod types;
 
-pub async fn start_rss_service(pool: Arc<PgPool>, health_state: Arc<Mutex<RssHealth>>, cycle: u64) {
+pub async fn start_rss_service(pool: Arc<PgPool>, health_state: Arc<Mutex<RssHealth>>, client: &Client, cycle: u64) {
     info!("Starting RSS service (cycle {})...", cycle);
 
-    if let Err(e) = create_tables(&pool).await {
-        error!("Failed to create database tables: {}", e);
-        return;
-    }
-
-    // Always upsert default feeds from config on startup (ON CONFLICT updates
+    // Seed default feeds from config on first cycle (ON CONFLICT updates
     // category and name so renames propagate; user customizations are unaffected)
     if cycle == 0 {
         match fs::read_to_string("./configs/feeds.json") {
@@ -57,39 +53,44 @@ pub async fn start_rss_service(pool: Arc<PgPool>, health_state: Arc<Mutex<RssHea
     // Reset per-cycle counters
     health_state.lock().await.reset_cycle();
 
-    info!("Polling {} RSS feeds...", feeds.len());
-    let client = Client::builder()
-        .timeout(Duration::from_secs(15))
-        .user_agent("MyScrollr RSS Bot/1.0")
-        .build()
-        .unwrap_or_else(|_| Client::new());
+    info!("Polling {} RSS feeds concurrently...", feeds.len());
+
+    // Limit concurrency to avoid overwhelming the network/DB connection pool
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(20));
+    let mut join_set = tokio::task::JoinSet::new();
 
     for feed in feeds {
         let client = client.clone();
         let pool = pool.clone();
-        let health = health_state.clone();
+        let sem = semaphore.clone();
         let feed_name = feed.name.clone();
         let feed_url = feed.url.clone();
-        let prev_failures = feed.consecutive_failures;
 
-        // Spawn each feed poll as its own task so that a panic in one feed
-        // (e.g. from an unexpected parser issue) cannot kill the entire cycle
-        let pool_outer = pool.clone();
-        let handle = tokio::task::spawn(async move {
-            poll_feed(&client, &pool, &feed).await
+        join_set.spawn(async move {
+            let _permit = sem.acquire().await.expect("semaphore closed");
+            let result = poll_feed(&client, &pool, &feed).await;
+            (feed_name, feed_url, feed.consecutive_failures, result)
         });
+    }
 
-        match handle.await {
-            Ok(Ok(count)) => {
-                record_feed_success(&pool_outer, &feed_url).await;
+    // Collect results, then batch-update the DB in two queries instead of 97
+    let mut success_urls: Vec<String> = Vec::new();
+    let mut failure_urls: Vec<String> = Vec::new();
+    let mut failure_errors: Vec<String> = Vec::new();
+
+    while let Some(join_result) = join_set.join_next().await {
+        match join_result {
+            Ok((feed_name, feed_url, prev_failures, Ok(count))) => {
+                success_urls.push(feed_url.clone());
                 if prev_failures >= 3 {
                     info!("Feed {} ({}) recovered after {} consecutive failures", feed_name, feed_url, prev_failures);
                 }
-                health.lock().await.record_success(count as u64);
+                health_state.lock().await.record_success(count as u64);
             }
-            Ok(Err(e)) => {
+            Ok((feed_name, feed_url, prev_failures, Err(e))) => {
                 let err_msg = format!("{}", e);
-                record_feed_failure(&pool_outer, &feed_url, &err_msg).await;
+                failure_urls.push(feed_url.clone());
+                failure_errors.push(err_msg);
                 let new_failures = prev_failures + 1;
                 if new_failures == 3 {
                     warn!("Feed {} ({}) hidden from catalog after 3 consecutive failures", feed_name, feed_url);
@@ -97,16 +98,18 @@ pub async fn start_rss_service(pool: Arc<PgPool>, health_state: Arc<Mutex<RssHea
                     warn!("Feed {} ({}) quarantined after 288 consecutive failures (24h)", feed_name, feed_url);
                 }
                 error!("Error polling feed {} ({}): {}", feed_name, feed_url, e);
-                health.lock().await.record_error(format!("{}: {}", feed_name, e));
+                health_state.lock().await.record_error(format!("{}: {}", feed_name, e));
             }
             Err(panic_err) => {
-                let err_msg = format!("PANIC: {}", panic_err);
-                record_feed_failure(&pool_outer, &feed_url, &err_msg).await;
-                error!("PANIC polling feed {} ({}): {}", feed_name, feed_url, panic_err);
-                health.lock().await.record_error(format!("PANIC: {}", feed_name));
+                error!("PANIC in feed poll task: {}", panic_err);
+                health_state.lock().await.record_error(format!("PANIC: {}", panic_err));
             }
         }
     }
+
+    // Batch-update feed statuses (2 queries instead of ~97 sequential ones)
+    batch_record_feed_successes(&pool, &success_urls).await;
+    batch_record_feed_failures(&pool, &failure_urls, &failure_errors).await;
 
     // Cleanup old articles (older than 7 days)
     match cleanup_old_articles(&pool).await {
@@ -132,10 +135,17 @@ async fn poll_feed(client: &Client, pool: &Arc<PgPool>, feed: &TrackedFeed) -> a
 
     let parsed = feed_rs::parser::parse(&bytes[..])?;
 
-    let mut count = 0;
+    // Hoist source_name derivation outside the entry loop (avoids cloning per entry)
+    let source_name = parsed.title
+        .as_ref()
+        .map(|t| t.content.clone())
+        .unwrap_or_else(|| feed.name.clone());
+
+    let cutoff = chrono::Utc::now() - chrono::Duration::days(7);
+    let mut articles = Vec::with_capacity(parsed.entries.len());
+
     for entry in parsed.entries {
         let guid = entry.id.clone();
-        // Skip entries with empty GUIDs
         if guid.is_empty() {
             continue;
         }
@@ -144,7 +154,6 @@ async fn poll_feed(client: &Client, pool: &Arc<PgPool>, feed: &TrackedFeed) -> a
             .map(|t| t.content)
             .unwrap_or_default();
 
-        // Skip entries with no title
         if title.is_empty() {
             continue;
         }
@@ -169,7 +178,6 @@ async fn poll_feed(client: &Client, pool: &Arc<PgPool>, feed: &TrackedFeed) -> a
             description
         };
 
-        // Strip HTML tags from description (basic approach)
         let description = strip_html_tags(&description);
 
         let published_at = entry.published
@@ -180,32 +188,30 @@ async fn poll_feed(client: &Client, pool: &Arc<PgPool>, feed: &TrackedFeed) -> a
         // re-insert rows that cleanup already deleted — avoids a CDC
         // INSERT→DELETE storm every poll cycle.
         if let Some(pub_date) = &published_at {
-            if *pub_date < chrono::Utc::now() - chrono::Duration::days(7) {
+            if *pub_date < cutoff {
                 continue;
             }
         }
 
-        let source_name = parsed.title
-            .as_ref()
-            .map(|t| t.content.clone())
-            .unwrap_or_else(|| feed.name.clone());
-
-        let article = ParsedArticle {
+        articles.push(ParsedArticle {
             feed_url: feed.url.clone(),
             guid,
             title,
             link,
             description,
-            source_name,
+            source_name: source_name.clone(),
             published_at,
-        };
+        });
+    }
 
-        if let Err(e) = upsert_rss_item(pool.clone(), article).await {
-            warn!("Failed to upsert RSS item from {}: {}", feed.name, e);
-            continue;
-        }
+    if articles.is_empty() {
+        return Ok(0);
+    }
 
-        count += 1;
+    let count = articles.len();
+    if let Err(e) = batch_upsert_rss_items(pool, articles).await {
+        warn!("Failed to batch upsert RSS items from {}: {}", feed.name, e);
+        return Ok(0);
     }
 
     Ok(count)

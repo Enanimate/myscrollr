@@ -115,6 +115,8 @@ pub async fn create_tables(pool: &Arc<PgPool>) -> Result<()> {
         "ALTER TABLE tracked_feeds ADD COLUMN IF NOT EXISTS last_success_at TIMESTAMPTZ",
         // Track who added custom feeds for authorization on delete
         "ALTER TABLE tracked_feeds ADD COLUMN IF NOT EXISTS added_by TEXT",
+        // Index for cleanup queries and ORDER BY published_at in dashboard queries
+        "CREATE INDEX IF NOT EXISTS idx_rss_items_published_at ON rss_items (published_at DESC NULLS LAST)",
     ];
     for migration in &migrations {
         query(migration).execute(&mut *connection).await?;
@@ -123,23 +125,32 @@ pub async fn create_tables(pool: &Arc<PgPool>) -> Result<()> {
     Ok(())
 }
 
-// ── Seed default feeds from config file ──────────────────────────
+// ── Seed default feeds from config file (batched) ───────────────
 
 pub async fn seed_tracked_feeds(pool: Arc<PgPool>, feeds: Vec<FeedConfig>) -> Result<()> {
+    if feeds.is_empty() {
+        return Ok(());
+    }
+
+    let urls: Vec<&str> = feeds.iter().map(|f| f.url.as_str()).collect();
+    let names: Vec<&str> = feeds.iter().map(|f| f.name.as_str()).collect();
+    let categories: Vec<&str> = feeds.iter().map(|f| f.category.as_str()).collect();
+
     let statement = "
         INSERT INTO tracked_feeds (url, name, category, is_default, is_enabled)
-        VALUES ($1, $2, $3, true, true)
+        SELECT * FROM UNNEST($1::text[], $2::text[], $3::text[])
+            AS t(url, name, category),
+            LATERAL (SELECT true AS is_default, true AS is_enabled) defaults
         ON CONFLICT (url) DO UPDATE SET category = EXCLUDED.category, name = EXCLUDED.name
     ";
     let mut connection = pool.acquire().await?;
-    for feed in feeds {
-        query(statement)
-            .bind(&feed.url)
-            .bind(&feed.name)
-            .bind(&feed.category)
-            .execute(&mut *connection)
-            .await?;
-    }
+    query(statement)
+        .bind(&urls)
+        .bind(&names)
+        .bind(&categories)
+        .execute(&mut *connection)
+        .await
+        .context("Failed to batch seed tracked feeds")?;
     Ok(())
 }
 
@@ -189,54 +200,81 @@ pub async fn get_quarantined_feeds(pool: Arc<PgPool>) -> Vec<TrackedFeed> {
     }
 }
 
-// ── Record feed poll success ────────────────────────────────────
+// ── Batch record feed poll successes ─────────────────────────────
 
-pub async fn record_feed_success(pool: &Arc<PgPool>, feed_url: &str) {
+pub async fn batch_record_feed_successes(pool: &Arc<PgPool>, feed_urls: &[String]) {
+    if feed_urls.is_empty() {
+        return;
+    }
     let statement = "
         UPDATE tracked_feeds
         SET consecutive_failures = 0, last_success_at = NOW()
-        WHERE url = $1
+        WHERE url = ANY($1)
     ";
     let res: Result<(), sqlx::Error> = async {
         let mut connection = pool.acquire().await?;
-        query(statement).bind(feed_url).execute(&mut *connection).await?;
+        query(statement).bind(feed_urls).execute(&mut *connection).await?;
         Ok(())
     }.await;
 
     if let Err(e) = res {
-        log::error!("Failed to record feed success for {}: {}", feed_url, e);
+        log::error!("Failed to batch record feed successes: {}", e);
     }
 }
 
-// ── Record feed poll failure ────────────────────────────────────
+// ── Batch record feed poll failures ─────────────────────────────
 
-pub async fn record_feed_failure(pool: &Arc<PgPool>, feed_url: &str, error: &str) {
+pub async fn batch_record_feed_failures(pool: &Arc<PgPool>, feed_urls: &[String], errors: &[String]) {
+    if feed_urls.is_empty() {
+        return;
+    }
+    // Each feed gets its own error message, and we increment consecutive_failures
     let statement = "
-        UPDATE tracked_feeds
-        SET consecutive_failures = consecutive_failures + 1,
-            last_error = $2,
+        UPDATE tracked_feeds AS tf
+        SET consecutive_failures = tf.consecutive_failures + 1,
+            last_error = u.error_msg,
             last_error_at = NOW()
-        WHERE url = $1
+        FROM UNNEST($1::text[], $2::text[]) AS u(url, error_msg)
+        WHERE tf.url = u.url
     ";
     let res: Result<(), sqlx::Error> = async {
         let mut connection = pool.acquire().await?;
-        query(statement).bind(feed_url).bind(error).execute(&mut *connection).await?;
+        query(statement)
+            .bind(feed_urls)
+            .bind(errors)
+            .execute(&mut *connection)
+            .await?;
         Ok(())
     }.await;
 
     if let Err(e) = res {
-        log::error!("Failed to record feed failure for {}: {}", feed_url, e);
+        log::error!("Failed to batch record feed failures: {}", e);
     }
 }
 
-// ── Upsert a single RSS item ────────────────────────────────────
+// ── Batch upsert RSS items ──────────────────────────────────────
 
-pub async fn upsert_rss_item(pool: Arc<PgPool>, article: ParsedArticle) -> Result<()> {
+pub async fn batch_upsert_rss_items(pool: &Arc<PgPool>, articles: Vec<ParsedArticle>) -> Result<()> {
+    if articles.is_empty() {
+        return Ok(());
+    }
+
+    let feed_urls: Vec<&str> = articles.iter().map(|a| a.feed_url.as_str()).collect();
+    let guids: Vec<&str> = articles.iter().map(|a| a.guid.as_str()).collect();
+    let titles: Vec<&str> = articles.iter().map(|a| a.title.as_str()).collect();
+    let links: Vec<&str> = articles.iter().map(|a| a.link.as_str()).collect();
+    let descriptions: Vec<&str> = articles.iter().map(|a| a.description.as_str()).collect();
+    let source_names: Vec<&str> = articles.iter().map(|a| a.source_name.as_str()).collect();
+    let published_ats: Vec<Option<DateTime<Utc>>> = articles.iter().map(|a| a.published_at).collect();
+
     // Only touch the row when content actually changed — unchanged articles
     // are skipped so Sequin CDC won't fire redundant UPDATE events on repoll.
     let statement = "
         INSERT INTO rss_items (feed_url, guid, title, link, description, source_name, published_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        SELECT * FROM UNNEST(
+            $1::text[], $2::text[], $3::text[], $4::text[],
+            $5::text[], $6::text[], $7::timestamptz[]
+        ) AS t(feed_url, guid, title, link, description, source_name, published_at)
         ON CONFLICT (feed_url, guid)
         DO UPDATE SET
             title = EXCLUDED.title,
@@ -246,31 +284,47 @@ pub async fn upsert_rss_item(pool: Arc<PgPool>, article: ParsedArticle) -> Resul
             published_at = EXCLUDED.published_at,
             updated_at = CURRENT_TIMESTAMP
         WHERE
-            rss_items.title       IS DISTINCT FROM EXCLUDED.title
-            OR rss_items.link        IS DISTINCT FROM EXCLUDED.link
-            OR rss_items.description IS DISTINCT FROM EXCLUDED.description
-            OR rss_items.source_name IS DISTINCT FROM EXCLUDED.source_name
-            OR rss_items.published_at IS DISTINCT FROM EXCLUDED.published_at;
+            rss_items.title        IS DISTINCT FROM EXCLUDED.title
+            OR rss_items.link         IS DISTINCT FROM EXCLUDED.link
+            OR rss_items.description  IS DISTINCT FROM EXCLUDED.description
+            OR rss_items.source_name  IS DISTINCT FROM EXCLUDED.source_name
+            OR rss_items.published_at IS DISTINCT FROM EXCLUDED.published_at
     ";
     let mut connection = pool.acquire().await?;
     query(statement)
-        .bind(&article.feed_url)
-        .bind(&article.guid)
-        .bind(&article.title)
-        .bind(&article.link)
-        .bind(&article.description)
-        .bind(&article.source_name)
-        .bind(article.published_at)
+        .bind(&feed_urls)
+        .bind(&guids)
+        .bind(&titles)
+        .bind(&links)
+        .bind(&descriptions)
+        .bind(&source_names)
+        .bind(&published_ats)
         .execute(&mut *connection)
-        .await?;
+        .await
+        .context("Failed to batch upsert RSS items")?;
     Ok(())
 }
 
-// ── Cleanup old articles ─────────────────────────────────────────
+// ── Cleanup old articles (batched to keep transactions small) ────
 
 pub async fn cleanup_old_articles(pool: &Arc<PgPool>) -> Result<u64> {
-    let statement = "DELETE FROM rss_items WHERE published_at < now() - interval '7 days'";
+    let statement = "
+        DELETE FROM rss_items
+        WHERE id IN (
+            SELECT id FROM rss_items
+            WHERE published_at < now() - interval '7 days'
+            LIMIT 1000
+        )
+    ";
+    let mut total: u64 = 0;
     let mut connection = pool.acquire().await?;
-    let result = query(statement).execute(&mut *connection).await?;
-    Ok(result.rows_affected())
+    loop {
+        let result = query(statement).execute(&mut *connection).await?;
+        let deleted = result.rows_affected();
+        total += deleted;
+        if deleted < 1000 {
+            break;
+        }
+    }
+    Ok(total)
 }

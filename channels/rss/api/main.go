@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -109,10 +110,17 @@ func main() {
 	// -------------------------------------------------------------------------
 	fiberApp := fiber.New(fiber.Config{
 		AppName:               "Scrollr RSS API",
+		ReadTimeout:           10 * time.Second,
+		WriteTimeout:          10 * time.Second,
+		IdleTimeout:           30 * time.Second,
 		DisableStartupMessage: false,
 	})
 
-	app := &App{db: dbPool, rdb: rdb}
+	app := &App{
+		db:         dbPool,
+		rdb:        rdb,
+		httpClient: &http.Client{Timeout: HealthProxyTimeout},
+	}
 
 	// Internal routes (called by core gateway only)
 	fiberApp.Post("/internal/cdc", app.handleInternalCDC)

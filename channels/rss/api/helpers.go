@@ -18,8 +18,8 @@ const HealthProxyTimeout = 5 * time.Second
 
 // GetCache attempts to retrieve and deserialize a value from Redis.
 // Returns true if the cache hit was successful.
-func GetCache(rdb *redis.Client, key string, target interface{}) bool {
-	val, err := rdb.Get(context.Background(), key).Result()
+func GetCache(rdb *redis.Client, ctx context.Context, key string, target interface{}) bool {
+	val, err := rdb.Get(ctx, key).Result()
 	if err != nil {
 		return false
 	}
@@ -29,14 +29,14 @@ func GetCache(rdb *redis.Client, key string, target interface{}) bool {
 }
 
 // SetCache serializes and stores a value in Redis with an expiration.
-func SetCache(rdb *redis.Client, key string, value interface{}, expiration time.Duration) {
+func SetCache(rdb *redis.Client, ctx context.Context, key string, value interface{}, expiration time.Duration) {
 	data, err := json.Marshal(value)
 	if err != nil {
 		log.Printf("[Redis Error] Failed to marshal cache data for %s: %v", key, err)
 		return
 	}
 
-	err = rdb.Set(context.Background(), key, data, expiration).Err()
+	err = rdb.Set(ctx, key, data, expiration).Err()
 	if err != nil {
 		log.Printf("[Redis Error] Failed to set cache for %s: %v", key, err)
 	}
@@ -66,8 +66,11 @@ func buildHealthURL(baseURL string) string {
 	return url
 }
 
+// maxHealthResponseBytes limits the body size read from internal health endpoints.
+const maxHealthResponseBytes = 1 << 20 // 1 MB
+
 // ProxyInternalHealth proxies a health check to an internal service URL.
-func ProxyInternalHealth(c *fiber.Ctx, internalURL string) error {
+func ProxyInternalHealth(c *fiber.Ctx, httpClient *http.Client, internalURL string) error {
 	if internalURL == "" {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(ErrorResponse{
 			Status: "unknown",
@@ -76,7 +79,6 @@ func ProxyInternalHealth(c *fiber.Ctx, internalURL string) error {
 	}
 
 	targetURL := buildHealthURL(internalURL)
-	httpClient := &http.Client{Timeout: HealthProxyTimeout}
 	resp, err := httpClient.Get(targetURL)
 	if err != nil {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(ErrorResponse{
@@ -86,7 +88,10 @@ func ProxyInternalHealth(c *fiber.Ctx, internalURL string) error {
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxHealthResponseBytes))
+	if err != nil {
+		log.Printf("[RSS] Failed to read health response body: %v", err)
+	}
 	c.Set("Content-Type", "application/json")
 	return c.Status(resp.StatusCode).Send(body)
 }

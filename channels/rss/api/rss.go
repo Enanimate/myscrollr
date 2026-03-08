@@ -3,14 +3,15 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
+	"golang.org/x/sync/singleflight"
 )
 
 // =============================================================================
@@ -48,8 +49,10 @@ const (
 
 // App holds the shared dependencies for all handlers.
 type App struct {
-	db  *pgxpool.Pool
-	rdb *redis.Client
+	db         *pgxpool.Pool
+	rdb        *redis.Client
+	httpClient *http.Client
+	sfGroup    singleflight.Group
 }
 
 // =============================================================================
@@ -59,14 +62,35 @@ type App struct {
 // getRSSFeedCatalog returns all enabled tracked feeds for the dashboard
 // catalog browser.
 func (a *App) getRSSFeedCatalog(c *fiber.Ctx) error {
+	ctx := c.Context()
+
 	var catalog []TrackedFeed
-	if GetCache(a.rdb, CacheKeyRSSCatalog, &catalog) {
+	if GetCache(a.rdb, ctx, CacheKeyRSSCatalog, &catalog) {
 		c.Set("X-Cache", "HIT")
 		return c.JSON(catalog)
 	}
 
-	rows, err := a.db.Query(context.Background(),
-		fmt.Sprintf("SELECT url, name, category, is_default, consecutive_failures, last_error, last_success_at FROM tracked_feeds WHERE is_enabled = true AND consecutive_failures < %d ORDER BY category, name", MaxConsecutiveFailures))
+	// Singleflight: collapse concurrent cache-miss requests into one DB query
+	result, err, _ := a.sfGroup.Do(CacheKeyRSSCatalog, func() (interface{}, error) {
+		rows, err := a.db.Query(ctx,
+			"SELECT url, name, category, is_default, consecutive_failures, last_error, last_success_at FROM tracked_feeds WHERE is_enabled = true AND consecutive_failures < $1 ORDER BY category, name",
+			MaxConsecutiveFailures)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+
+		var feeds []TrackedFeed
+		for rows.Next() {
+			var f TrackedFeed
+			if err := rows.Scan(&f.URL, &f.Name, &f.Category, &f.IsDefault, &f.ConsecutiveFailures, &f.LastError, &f.LastSuccessAt); err != nil {
+				log.Printf("[RSS] Catalog scan error: %v", err)
+				continue
+			}
+			feeds = append(feeds, f)
+		}
+		return feeds, nil
+	})
 	if err != nil {
 		log.Printf("[RSS] Catalog query failed: %v", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
@@ -74,19 +98,12 @@ func (a *App) getRSSFeedCatalog(c *fiber.Ctx) error {
 			Error:  "Failed to fetch feed catalog",
 		})
 	}
-	defer rows.Close()
-
-	catalog = make([]TrackedFeed, 0)
-	for rows.Next() {
-		var f TrackedFeed
-		if err := rows.Scan(&f.URL, &f.Name, &f.Category, &f.IsDefault, &f.ConsecutiveFailures, &f.LastError, &f.LastSuccessAt); err != nil {
-			log.Printf("[RSS] Catalog scan error: %v", err)
-			continue
-		}
-		catalog = append(catalog, f)
+	catalog = result.([]TrackedFeed)
+	if catalog == nil {
+		catalog = make([]TrackedFeed, 0)
 	}
 
-	SetCache(a.rdb, CacheKeyRSSCatalog, catalog, RSSCatalogCacheTTL)
+	SetCache(a.rdb, ctx, CacheKeyRSSCatalog, catalog, RSSCatalogCacheTTL)
 	c.Set("X-Cache", "MISS")
 	return c.JSON(catalog)
 }
@@ -95,6 +112,8 @@ func (a *App) getRSSFeedCatalog(c *fiber.Ctx) error {
 // The core gateway sets X-User-Sub header for authenticated requests.
 // Only the user who added the feed (added_by) can delete it.
 func (a *App) deleteCustomFeed(c *fiber.Ctx) error {
+	ctx := c.Context()
+
 	userSub := c.Get("X-User-Sub")
 	if userSub == "" {
 		return c.Status(fiber.StatusUnauthorized).JSON(ErrorResponse{
@@ -115,7 +134,7 @@ func (a *App) deleteCustomFeed(c *fiber.Ctx) error {
 
 	var isDefault bool
 	var addedBy *string
-	err := a.db.QueryRow(context.Background(),
+	err := a.db.QueryRow(ctx,
 		"SELECT is_default, added_by FROM tracked_feeds WHERE url = $1", req.URL).Scan(&isDefault, &addedBy)
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(ErrorResponse{
@@ -137,9 +156,16 @@ func (a *App) deleteCustomFeed(c *fiber.Ctx) error {
 		})
 	}
 
-	_, _ = a.db.Exec(context.Background(), "DELETE FROM rss_items WHERE feed_url = $1", req.URL)
-	_, err = a.db.Exec(context.Background(), "DELETE FROM tracked_feeds WHERE url = $1 AND is_default = false", req.URL)
-	if err != nil {
+	// Delete items first — if this fails, abort before deleting the feed
+	if _, err := a.db.Exec(ctx, "DELETE FROM rss_items WHERE feed_url = $1", req.URL); err != nil {
+		log.Printf("[RSS] Failed to delete items for feed %s: %v", req.URL, err)
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
+			Status: "error",
+			Error:  "Failed to delete feed items",
+		})
+	}
+
+	if _, err := a.db.Exec(ctx, "DELETE FROM tracked_feeds WHERE url = $1 AND is_default = false", req.URL); err != nil {
 		log.Printf("[RSS] Failed to delete custom feed %s: %v", req.URL, err)
 		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
 			Status: "error",
@@ -147,8 +173,8 @@ func (a *App) deleteCustomFeed(c *fiber.Ctx) error {
 		})
 	}
 
-	a.rdb.Del(context.Background(), RedisRSSSubscribersPrefix+req.URL)
-	a.rdb.Del(context.Background(), CacheKeyRSSCatalog)
+	a.rdb.Del(ctx, RedisRSSSubscribersPrefix+req.URL)
+	a.rdb.Del(ctx, CacheKeyRSSCatalog)
 
 	log.Printf("[RSS] User %s deleted custom feed: %s", userSub, req.URL)
 	return c.JSON(fiber.Map{"status": "ok", "message": "Custom feed deleted"})
@@ -156,7 +182,7 @@ func (a *App) deleteCustomFeed(c *fiber.Ctx) error {
 
 // healthHandler proxies a health check to the internal Rust RSS ingestion service.
 func (a *App) healthHandler(c *fiber.Ctx) error {
-	return ProxyInternalHealth(c, os.Getenv("INTERNAL_RSS_URL"))
+	return ProxyInternalHealth(c, a.httpClient, os.Getenv("INTERNAL_RSS_URL"))
 }
 
 // =============================================================================
@@ -181,15 +207,35 @@ func (a *App) handleInternalCDC(c *fiber.Ctx) error {
 		})
 	}
 
-	ctx := context.Background()
-	userSet := make(map[string]bool)
+	ctx := c.Context()
 
+	// Collect unique feed URLs first
+	urlSet := make(map[string]struct{})
 	for _, rec := range req.Records {
 		feedURL, ok := rec.Record["feed_url"].(string)
 		if !ok || feedURL == "" {
 			continue
 		}
-		subs, err := GetSubscribers(a.rdb, ctx, RedisRSSSubscribersPrefix+feedURL)
+		urlSet[feedURL] = struct{}{}
+	}
+
+	if len(urlSet) == 0 {
+		return c.JSON(fiber.Map{"users": []string{}})
+	}
+
+	// Pipeline all SMEMBERS calls into a single Redis round-trip
+	pipe := a.rdb.Pipeline()
+	cmds := make(map[string]*redis.StringSliceCmd, len(urlSet))
+	for feedURL := range urlSet {
+		cmds[feedURL] = pipe.SMembers(ctx, RedisRSSSubscribersPrefix+feedURL)
+	}
+	if _, err := pipe.Exec(ctx); err != nil && err != redis.Nil {
+		log.Printf("[RSS CDC] Redis pipeline failed: %v", err)
+	}
+
+	userSet := make(map[string]bool)
+	for feedURL, cmd := range cmds {
+		subs, err := cmd.Result()
 		if err != nil {
 			log.Printf("[RSS CDC] Failed to get subscribers for %s: %v", feedURL, err)
 			continue
@@ -210,6 +256,8 @@ func (a *App) handleInternalCDC(c *fiber.Ctx) error {
 // handleInternalDashboard returns RSS items for a user's dashboard.
 // Query param: user={logto_sub}
 func (a *App) handleInternalDashboard(c *fiber.Ctx) error {
+	ctx := c.Context()
+
 	userSub := c.Query("user")
 	if userSub == "" {
 		return c.JSON(fiber.Map{"rss": []RssItem{}})
@@ -218,22 +266,22 @@ func (a *App) handleInternalDashboard(c *fiber.Ctx) error {
 	// Check per-user cache first
 	cacheKey := CacheKeyRSSPrefix + userSub
 	var items []RssItem
-	if GetCache(a.rdb, cacheKey, &items) {
+	if GetCache(a.rdb, ctx, cacheKey, &items) {
 		return c.JSON(fiber.Map{"rss": items})
 	}
 
 	// Get user's RSS feed URLs from their channel config
-	feedURLs := a.getUserRSSFeedURLs(userSub)
+	feedURLs := a.getUserRSSFeedURLs(ctx, userSub)
 	if len(feedURLs) == 0 {
 		return c.JSON(fiber.Map{"rss": []RssItem{}})
 	}
 
-	items = a.queryRSSItems(feedURLs)
+	items = a.queryRSSItems(ctx, feedURLs)
 	if items == nil {
 		items = make([]RssItem, 0)
 	}
 
-	SetCache(a.rdb, cacheKey, items, RSSItemsCacheTTL)
+	SetCache(a.rdb, ctx, cacheKey, items, RSSItemsCacheTTL)
 	return c.JSON(fiber.Map{"rss": items})
 }
 
@@ -263,7 +311,7 @@ func (a *App) handleChannelLifecycle(c *fiber.Ctx) error {
 		})
 	}
 
-	ctx := context.Background()
+	ctx := c.Context()
 
 	switch req.Event {
 	case "created":
@@ -348,9 +396,9 @@ func (a *App) onSyncSubscriptions(ctx context.Context, userSub string, config ma
 // =============================================================================
 
 // getUserRSSFeedURLs extracts the feed URLs from a user's RSS channel config.
-func (a *App) getUserRSSFeedURLs(logtoSub string) []string {
+func (a *App) getUserRSSFeedURLs(ctx context.Context, logtoSub string) []string {
 	var configJSON []byte
-	err := a.db.QueryRow(context.Background(), `
+	err := a.db.QueryRow(ctx, `
 		SELECT config FROM user_channels
 		WHERE logto_sub = $1 AND channel_type = 'rss'
 	`, logtoSub).Scan(&configJSON)
@@ -361,12 +409,12 @@ func (a *App) getUserRSSFeedURLs(logtoSub string) []string {
 }
 
 // queryRSSItems fetches the latest RSS items for the given feed URLs.
-func (a *App) queryRSSItems(feedURLs []string) []RssItem {
+func (a *App) queryRSSItems(ctx context.Context, feedURLs []string) []RssItem {
 	if len(feedURLs) == 0 {
 		return nil
 	}
 
-	rows, err := a.db.Query(context.Background(), `
+	rows, err := a.db.Query(ctx, `
 		SELECT id, feed_url, guid, title, link, description, source_name, published_at, created_at, updated_at
 		FROM rss_items
 		WHERE feed_url = ANY($1)
@@ -379,7 +427,7 @@ func (a *App) queryRSSItems(feedURLs []string) []RssItem {
 	}
 	defer rows.Close()
 
-	items := make([]RssItem, 0)
+	items := make([]RssItem, 0, DefaultRSSItemsLimit)
 	for rows.Next() {
 		var item RssItem
 		if err := rows.Scan(
@@ -399,6 +447,17 @@ func (a *App) queryRSSItems(feedURLs []string) []RssItem {
 // into the tracked_feeds table so the RSS ingestion service discovers and
 // fetches them.
 func (a *App) syncRSSFeedsToTracked(userSub string, config map[string]interface{}) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[RSS] PANIC in syncRSSFeedsToTracked for user %s: %v", userSub, r)
+		}
+	}()
+
+	// Use a dedicated timeout context since this runs in a background goroutine
+	// (not tied to any HTTP request lifecycle).
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	configJSON, err := json.Marshal(config)
 	if err != nil {
 		log.Printf("[RSS] Failed to marshal config for sync: %v", err)
@@ -425,7 +484,7 @@ func (a *App) syncRSSFeedsToTracked(userSub string, config map[string]interface{
 			name = feed.URL
 		}
 
-		_, err := a.db.Exec(context.Background(), `
+		_, err := a.db.Exec(ctx, `
 			INSERT INTO tracked_feeds (url, name, category, is_default, is_enabled, added_by)
 			VALUES ($1, $2, 'Custom', false, true, $3)
 			ON CONFLICT (url) DO NOTHING
@@ -436,23 +495,40 @@ func (a *App) syncRSSFeedsToTracked(userSub string, config map[string]interface{
 	}
 
 	// Invalidate the catalog cache so new custom feeds appear
-	a.rdb.Del(context.Background(), CacheKeyRSSCatalog)
+	a.rdb.Del(ctx, CacheKeyRSSCatalog)
 }
 
 // =============================================================================
 // Config Parsing Helpers
 // =============================================================================
 
-// extractFeedURLsFromChannelConfig extracts feed URLs from a channel's config map.
+// extractFeedURLsFromChannelConfig extracts feed URLs from a channel's config
+// map by walking it directly (avoids a marshal→unmarshal round-trip).
 func extractFeedURLsFromChannelConfig(config map[string]interface{}) []string {
 	if config == nil {
 		return nil
 	}
-	configJSON, err := json.Marshal(config)
-	if err != nil {
+
+	feedsRaw, ok := config["feeds"]
+	if !ok {
 		return nil
 	}
-	return extractFeedURLsFromConfig(configJSON)
+	feedsSlice, ok := feedsRaw.([]interface{})
+	if !ok {
+		return nil
+	}
+
+	urls := make([]string, 0, len(feedsSlice))
+	for _, item := range feedsSlice {
+		feedMap, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if u, ok := feedMap["url"].(string); ok && u != "" {
+			urls = append(urls, u)
+		}
+	}
+	return urls
 }
 
 // extractFeedURLsFromConfig parses a config JSONB blob and returns feed URLs.
