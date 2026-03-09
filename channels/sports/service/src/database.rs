@@ -173,6 +173,8 @@ pub async fn run_migrations(pool: &Arc<PgPool>) -> Result<()> {
         "ALTER TABLE games ADD COLUMN IF NOT EXISTS timer VARCHAR(20)",
         "ALTER TABLE games ADD COLUMN IF NOT EXISTS venue VARCHAR(200)",
         "ALTER TABLE games ADD COLUMN IF NOT EXISTS season VARCHAR(20)",
+        // tracked_leagues table — make old slug column nullable so new seeds work
+        "ALTER TABLE tracked_leagues ALTER COLUMN slug DROP NOT NULL",
         // tracked_leagues table — new columns (replacing old slug-only schema)
         "ALTER TABLE tracked_leagues ADD COLUMN IF NOT EXISTS sport_api VARCHAR(50) NOT NULL DEFAULT ''",
         "ALTER TABLE tracked_leagues ADD COLUMN IF NOT EXISTS api_host VARCHAR(200) NOT NULL DEFAULT ''",
