@@ -312,7 +312,7 @@ The Go API exposes a `GET /channels` endpoint that returns all registered channe
 **Request:**
 
 ```
-GET https://api.myscrollr.enanimate.dev/channels
+GET https://api.myscrollr.relentnet.dev/channels
 ```
 
 **Response:**
