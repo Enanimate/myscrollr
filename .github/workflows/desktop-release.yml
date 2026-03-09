@@ -2,6 +2,17 @@ name: Desktop Release
 
 on:
   workflow_dispatch:
+    inputs:
+      platform:
+        description: "Target platform(s)"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - all
+          - windows
+          - macos
+          - linux
   push:
     tags:
       - "desktop-v*"
@@ -10,17 +21,38 @@ permissions:
   contents: write
 
 jobs:
+  # ── Resolve the build matrix based on the selected platform ────
+  # Tag pushes and "all" both build every target. Selecting a single
+  # platform produces a one-entry matrix so only that runner spins up.
+  matrix-setup:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+    steps:
+      - id: set
+        run: |
+          PLATFORM="${{ inputs.platform || 'all' }}"
+          case "$PLATFORM" in
+            windows)
+              echo 'matrix={"include":[{"platform":"windows-latest","rust_target":"x86_64-pc-windows-msvc"}]}' >> "$GITHUB_OUTPUT"
+              ;;
+            macos)
+              echo 'matrix={"include":[{"platform":"macos-latest","rust_target":"aarch64-apple-darwin"}]}' >> "$GITHUB_OUTPUT"
+              ;;
+            linux)
+              echo 'matrix={"include":[{"platform":"ubuntu-22.04","rust_target":"x86_64-unknown-linux-gnu"}]}' >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo 'matrix={"include":[{"platform":"ubuntu-22.04","rust_target":"x86_64-unknown-linux-gnu"},{"platform":"windows-latest","rust_target":"x86_64-pc-windows-msvc"},{"platform":"macos-latest","rust_target":"aarch64-apple-darwin"}]}' >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+  # ── Build ──────────────────────────────────────────────────────
   build:
+    needs: matrix-setup
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - platform: ubuntu-22.04
-            rust_target: x86_64-unknown-linux-gnu
-          - platform: windows-latest
-            rust_target: x86_64-pc-windows-msvc
-          - platform: macos-latest
-            rust_target: aarch64-apple-darwin
+      matrix: ${{ fromJson(needs.matrix-setup.outputs.matrix) }}
 
     runs-on: ${{ matrix.platform }}
     defaults:
@@ -84,11 +116,74 @@ jobs:
             desktop/src-tauri/target/release/bundle/dmg/*.dmg
           if-no-files-found: ignore
 
+  # ── Release (tag pushes only) ──────────────────────────────────
   release:
     needs: build
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history for git log
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+
+          # Find the previous desktop-v* tag (skip the current one)
+          PREV_TAG=$(git tag --list 'desktop-v*' --sort=-version:refname \
+            | grep -v "^${TAG}$" | head -1)
+
+          if [ -n "$PREV_TAG" ]; then
+            RANGE="${PREV_TAG}..${TAG}"
+            COMPARE_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/${PREV_TAG}...${TAG}"
+          else
+            # First release — use full history
+            RANGE="${TAG}"
+            COMPARE_URL=""
+          fi
+
+          # Collect commits that touched desktop/ or extension/ (shared components)
+          FIXES=""
+          FEATURES=""
+          OTHER=""
+
+          while IFS='|' read -r HASH SUBJECT; do
+            [ -z "$HASH" ] && continue
+            LINE="- ${SUBJECT} (\`${HASH}\`)"
+            case "$SUBJECT" in
+              fix*)     FIXES="${FIXES}${LINE}"$'\n' ;;
+              feat*)    FEATURES="${FEATURES}${LINE}"$'\n' ;;
+              *)        OTHER="${OTHER}${LINE}"$'\n' ;;
+            esac
+          done < <(git log "$RANGE" --pretty=format:"%h|%s" -- desktop/ extension/)
+
+          # Assemble the body
+          BODY="## What's Changed"$'\n\n'
+
+          if [ -n "$FEATURES" ]; then
+            BODY="${BODY}### Features"$'\n'"${FEATURES}"$'\n'
+          fi
+          if [ -n "$FIXES" ]; then
+            BODY="${BODY}### Fixes"$'\n'"${FIXES}"$'\n'
+          fi
+          if [ -n "$OTHER" ]; then
+            BODY="${BODY}### Other"$'\n'"${OTHER}"$'\n'
+          fi
+
+          if [ -z "$FEATURES" ] && [ -z "$FIXES" ] && [ -z "$OTHER" ]; then
+            BODY="${BODY}_No desktop-specific changes found._"$'\n'
+          fi
+
+          if [ -n "$COMPARE_URL" ]; then
+            BODY="${BODY}"$'\n'"**Full diff**: ${COMPARE_URL}"
+          fi
+
+          # Write to file (avoids escaping issues with multiline strings)
+          echo "$BODY" > /tmp/release-notes.md
+          cat /tmp/release-notes.md
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -106,5 +201,5 @@ jobs:
           name: Scrollr ${{ github.ref_name }}
           draft: false
           prerelease: true
-          generate_release_notes: true
+          body_path: /tmp/release-notes.md
           files: release/*
