@@ -196,7 +196,7 @@ export default function ScrollrTicker({
         hoverFactor={pauseOnHover ? hoverSpeed : 1}
         gap={gap}
         fade={40}
-        style={{ width: "100%", minWidth: 0 }}
+        style={{ width: "100%", minWidth: 0, maxWidth: "100%" }}
       />
     </div>
   );

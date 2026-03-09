@@ -209,6 +209,15 @@ body {
   flex-shrink: 0;
 }
 
+/* Hard-constrain the Ticker element to the container width.
+   Chromium (WebView2) + overflow-x: clip on a flex child does NOT
+   establish a formatting context, so width: 100% alone can be
+   overridden by content. max-width is a hard upper bound. */
+.ticker-container > * {
+  max-width: 100% !important;
+  min-width: 0 !important;
+}
+
 /* Ensure ticker chips have consistent gap spacing */
 .ticker-container [data-motion-ticker] {
   gap: 8px;
