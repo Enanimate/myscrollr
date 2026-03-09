@@ -3,12 +3,19 @@ use dotenv::dotenv;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
-use sports_service::{start_sports_service, SportsHealth, RateLimitTracker, log::init_async_logger, database::initialize_pool};
+use sports_service::{
+    init_sports_service, poll_live, poll_schedule,
+    SportsHealth, RateLimitTracker,
+    log::init_async_logger, database::initialize_pool,
+};
 
 #[derive(Clone)]
 struct AppState {
     health: Arc<Mutex<SportsHealth>>,
 }
+
+/// Interval for the schedule poll (upcoming games + cleanup).
+const SCHEDULE_POLL_SECS: u64 = 30 * 60; // 30 minutes
 
 #[tokio::main]
 async fn main() {
@@ -31,31 +38,54 @@ async fn main() {
     };
     let health = Arc::new(Mutex::new(SportsHealth::new()));
 
-    // Pro plan: 7,500 requests/day. Start with that as the initial budget.
+    // Pro plan: 7,500 requests/day per sport API. Start with that as the initial budget.
     let rate_limiter = Arc::new(RateLimitTracker::new(7500));
 
     // Cancellation token for coordinated shutdown
     let cancel = CancellationToken::new();
 
-    // Start the background service (periodic ingest with adaptive intervals)
-    let pool_clone = pool.clone();
-    let health_clone = health.clone();
-    let rate_limiter_clone = rate_limiter.clone();
-    let cancel_clone = cancel.clone();
+    // ── Initialize service (tables, migrations, seeding) ─────────────
+    let (client, leagues) = match init_sports_service(&pool).await {
+        Some(result) => result,
+        None => {
+            println!("Sports service initialization failed. Serving health endpoint only.");
+            // Still start the HTTP server so health checks work
+            let state = AppState { health };
+            let app = Router::new()
+                .route("/health", get(health_handler))
+                .with_state(state);
+            let port = std::env::var("PORT").unwrap_or_else(|_| "3002".to_string());
+            let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port)).await.unwrap();
+            println!("Sports Service listening on 0.0.0.0:{}", port);
+            axum::serve(listener, app).await.unwrap();
+            return;
+        }
+    };
+
+    let client = Arc::new(client);
+    let leagues = Arc::new(leagues);
+
+    // ── Fast poll: live scores (today only, 30s live / 3min idle) ─────
+    let pool_live = pool.clone();
+    let client_live = client.clone();
+    let leagues_live = leagues.clone();
+    let health_live = health.clone();
+    let rl_live = rate_limiter.clone();
+    let cancel_live = cancel.clone();
     tokio::spawn(async move {
-        println!("Starting periodic sports ingest loop (adaptive intervals)...");
+        println!("Starting live poll loop (adaptive intervals)...");
         loop {
             tokio::select! {
-                _ = cancel_clone.cancelled() => {
-                    println!("Sports ingest loop shutting down...");
+                _ = cancel_live.cancelled() => {
+                    println!("Live poll loop shutting down...");
                     break;
                 }
                 _ = async {
-                    start_sports_service(pool_clone.clone(), health_clone.clone(), rate_limiter_clone.clone()).await;
+                    poll_live(&pool_live, &client_live, &leagues_live, &health_live, &rl_live).await;
 
                     // Adaptive interval: poll more frequently when there are live games
                     let interval = {
-                        let h = health_clone.lock().await;
+                        let h = health_live.lock().await;
                         if h.leagues_live > 0 {
                             30  // 30s when live games are happening
                         } else {
@@ -64,6 +94,30 @@ async fn main() {
                     };
 
                     tokio::time::sleep(std::time::Duration::from_secs(interval)).await;
+                } => {}
+            }
+        }
+    });
+
+    // ── Slow poll: schedule + cleanup (yesterday + 7 days, every 30 min) ──
+    let pool_sched = pool.clone();
+    let client_sched = client.clone();
+    let leagues_sched = leagues.clone();
+    let rl_sched = rate_limiter.clone();
+    let cancel_sched = cancel.clone();
+    tokio::spawn(async move {
+        println!("Starting schedule poll loop (every {} min)...", SCHEDULE_POLL_SECS / 60);
+        // Run immediately on startup to populate the schedule
+        poll_schedule(&pool_sched, &client_sched, &leagues_sched, &rl_sched).await;
+        loop {
+            tokio::select! {
+                _ = cancel_sched.cancelled() => {
+                    println!("Schedule poll loop shutting down...");
+                    break;
+                }
+                _ = async {
+                    tokio::time::sleep(std::time::Duration::from_secs(SCHEDULE_POLL_SECS)).await;
+                    poll_schedule(&pool_sched, &client_sched, &leagues_sched, &rl_sched).await;
                 } => {}
             }
         }

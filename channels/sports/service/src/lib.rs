@@ -1,12 +1,12 @@
 use std::{env, fs, sync::Arc};
 use reqwest::{Client, header};
 use tokio::sync::Mutex;
-use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
+use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, Utc};
 use crate::log::{error, info, warn};
 use crate::database::{
     PgPool, create_tables, run_migrations, truncate_games,
     get_tracked_leagues, seed_tracked_leagues, disable_stale_leagues,
-    LeagueConfig, TrackedLeague, upsert_game, CleanedData, Team,
+    cleanup_old_games, LeagueConfig, TrackedLeague, upsert_game, CleanedData, Team,
 };
 pub use crate::types::{SportsHealth, RateLimitTracker};
 
@@ -14,21 +14,27 @@ pub mod log;
 pub mod database;
 pub mod types;
 
+/// Number of days ahead to poll in the schedule task.
+const SCHEDULE_DAYS_AHEAD: i64 = 7;
+
 // =============================================================================
-// Service entrypoint
+// Service initialization (runs once on startup)
 // =============================================================================
 
-pub async fn start_sports_service(pool: Arc<PgPool>, health_state: Arc<Mutex<SportsHealth>>, rate_limiter: Arc<RateLimitTracker>) {
+/// Initialize the sports service: create tables, run migrations, seed leagues,
+/// and handle any data source migration. Returns the API client and tracked
+/// leagues, or None if initialization failed.
+pub async fn init_sports_service(pool: &Arc<PgPool>) -> Option<(Client, Vec<TrackedLeague>)> {
     info!("Starting sports service...");
 
     // Create tables (idempotent)
-    if let Err(e) = create_tables(&pool).await {
+    if let Err(e) = create_tables(pool).await {
         error!("Failed to create database tables: {}", e);
-        return;
+        return None;
     }
 
     // Run additive migrations for existing tables
-    if let Err(e) = run_migrations(&pool).await {
+    if let Err(e) = run_migrations(pool).await {
         warn!("Migration warnings: {}", e);
     }
 
@@ -42,7 +48,7 @@ pub async fn start_sports_service(pool: Arc<PgPool>, health_state: Arc<Mutex<Spo
                     error!("Failed to seed tracked leagues: {}", e);
                 }
                 // Disable any old leagues not in the current config (e.g. ESPN-era names)
-                if let Err(e) = disable_stale_leagues(&pool, &active_names).await {
+                if let Err(e) = disable_stale_leagues(pool, &active_names).await {
                     warn!("Failed to disable stale leagues: {}", e);
                 }
             }
@@ -65,7 +71,7 @@ pub async fn start_sports_service(pool: Arc<PgPool>, health_state: Arc<Mutex<Spo
     if let Some(future) = migration_flag {
         if future.await {
             info!("Detected old ESPN data (games without sport field). Truncating for migration...");
-            if let Err(e) = truncate_games(&pool).await {
+            if let Err(e) = truncate_games(pool).await {
                 error!("Failed to truncate games: {}", e);
             }
         }
@@ -74,56 +80,55 @@ pub async fn start_sports_service(pool: Arc<PgPool>, health_state: Arc<Mutex<Spo
     let leagues = get_tracked_leagues(pool.clone()).await;
     if leagues.is_empty() {
         error!("No leagues to track. Sports service idling.");
-        return;
+        return None;
     }
-
-    info!("Polling sports data for {} leagues via api-sports.io...", leagues.len());
 
     let api_key = env::var("API_SPORTS_KEY").unwrap_or_default();
     if api_key.is_empty() {
         error!("API_SPORTS_KEY not set. Cannot poll api-sports.io.");
-        return;
+        return None;
     }
 
     let client = build_client(&api_key);
+    info!("Initialized with {} leagues", leagues.len());
+    Some((client, leagues))
+}
+
+// =============================================================================
+// Live polling (fast — today only, every 30s-3min)
+// =============================================================================
+
+/// Poll today's games for live score updates. Called on the fast interval.
+pub async fn poll_live(
+    pool: &Arc<PgPool>,
+    client: &Client,
+    leagues: &[TrackedLeague],
+    health_state: &Arc<Mutex<SportsHealth>>,
+    rate_limiter: &Arc<RateLimitTracker>,
+) {
     let today = Utc::now().format("%Y-%m-%d").to_string();
 
     let mut total_upserted = 0u32;
     let mut total_failed = 0u32;
     let mut leagues_with_live = 0u32;
 
-    for league in &leagues {
+    for league in leagues {
         if !rate_limiter.has_budget() {
-            warn!("[{}] Skipping poll — rate limit budget low ({})", league.name, rate_limiter.remaining());
+            warn!("[{}] Skipping live poll — rate limit budget low ({})", league.name, rate_limiter.remaining());
             continue;
         }
 
-        match poll_league(&client, league, &today, &rate_limiter).await {
+        match poll_league(client, league, &today, rate_limiter).await {
             Ok(games) => {
-                let total = games.len();
-                let has_live = games.iter().any(|g| g.state == "in");
+                let (upserted, failed, has_live) = upsert_games(pool, league, games).await;
                 if has_live {
                     leagues_with_live += 1;
                 }
-
-                let mut upserted = 0;
-                let mut failed = 0;
-                for game in games {
-                    let game_id = game.external_game_id.clone();
-                    match upsert_game(pool.clone(), game).await {
-                        Ok(_) => upserted += 1,
-                        Err(e) => {
-                            error!("[{}] Failed to upsert game {}: {}", league.name, game_id, e);
-                            failed += 1;
-                        }
-                    }
-                }
-                info!("[{}] Poll complete: {} games found, {} upserted, {} failed", league.name, total, upserted, failed);
                 total_upserted += upserted;
                 total_failed += failed;
             }
             Err(e) => {
-                error!("Error polling league {}: {}", league.name, e);
+                error!("[{}] Live poll error: {}", league.name, e);
                 health_state.lock().await.record_error(e.to_string());
             }
         }
@@ -134,8 +139,106 @@ pub async fn start_sports_service(pool: Arc<PgPool>, health_state: Arc<Mutex<Spo
     health.set_rate_limit(rate_limiter.remaining());
 
     if total_failed > 0 {
-        info!("Poll cycle complete: {} upserted, {} failed across {} leagues", total_upserted, total_failed, leagues.len());
+        info!("Live poll complete: {} upserted, {} failed across {} leagues", total_upserted, total_failed, leagues.len());
     }
+}
+
+// =============================================================================
+// Schedule polling (slow — yesterday + today + 7 days ahead, every 30 min)
+// =============================================================================
+
+/// Poll yesterday through 7 days ahead to populate the upcoming schedule.
+/// Also cleans up finished games older than 24 hours.
+pub async fn poll_schedule(
+    pool: &Arc<PgPool>,
+    client: &Client,
+    leagues: &[TrackedLeague],
+    rate_limiter: &Arc<RateLimitTracker>,
+) {
+    let now = Utc::now();
+    let yesterday = (now - Duration::days(1)).format("%Y-%m-%d").to_string();
+
+    // Build list of dates: yesterday, today, +1 ... +7
+    let mut dates = vec![yesterday];
+    for offset in 0..=SCHEDULE_DAYS_AHEAD {
+        dates.push((now + Duration::days(offset)).format("%Y-%m-%d").to_string());
+    }
+
+    info!("Schedule poll: fetching {} days ({} to {}) for {} leagues",
+        dates.len(), dates.first().unwrap(), dates.last().unwrap(), leagues.len());
+
+    let mut total_upserted = 0u32;
+    let mut total_failed = 0u32;
+
+    for league in leagues {
+        // Formula 1 fetches the whole season (no date param), skip per-date polling
+        if league.sport_api == "formula-1" {
+            continue;
+        }
+
+        for date in &dates {
+            if !rate_limiter.has_budget() {
+                warn!("[{}] Skipping schedule poll — rate limit budget low ({})", league.name, rate_limiter.remaining());
+                break;
+            }
+
+            match poll_league(client, league, date, rate_limiter).await {
+                Ok(games) => {
+                    let (upserted, failed, _) = upsert_games(pool, league, games).await;
+                    total_upserted += upserted;
+                    total_failed += failed;
+                }
+                Err(e) => {
+                    error!("[{}] Schedule poll error for {}: {}", league.name, date, e);
+                }
+            }
+        }
+    }
+
+    info!("Schedule poll complete: {} upserted, {} failed", total_upserted, total_failed);
+
+    // Clean up old finished games
+    match cleanup_old_games(pool).await {
+        Ok(count) => {
+            if count > 0 {
+                info!("Cleaned up {} old finished games", count);
+            }
+        }
+        Err(e) => warn!("Failed to clean up old games: {}", e),
+    }
+}
+
+// =============================================================================
+// Shared upsert helper
+// =============================================================================
+
+/// Upsert a batch of games and return (upserted, failed, has_live).
+async fn upsert_games(
+    pool: &Arc<PgPool>,
+    league: &TrackedLeague,
+    games: Vec<CleanedData>,
+) -> (u32, u32, bool) {
+    let total = games.len();
+    let has_live = games.iter().any(|g| g.state == "in");
+
+    let mut upserted = 0u32;
+    let mut failed = 0u32;
+    for game in games {
+        let game_id = game.external_game_id.clone();
+        match upsert_game(pool.clone(), game).await {
+            Ok(_) => upserted += 1,
+            Err(e) => {
+                error!("[{}] Failed to upsert game {}: {}", league.name, game_id, e);
+                failed += 1;
+            }
+        }
+    }
+
+    if total > 0 {
+        info!("[{}] {} games found, {} upserted, {} failed", league.name, total, upserted, failed);
+    }
+
+    (upserted, failed, has_live)
 }
 
 // =============================================================================

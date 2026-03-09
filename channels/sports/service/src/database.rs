@@ -274,6 +274,17 @@ pub async fn truncate_games(pool: &Arc<PgPool>) -> Result<()> {
     Ok(())
 }
 
+/// Delete finished games older than 24 hours. Returns the number of rows deleted.
+pub async fn cleanup_old_games(pool: &Arc<PgPool>) -> Result<u64> {
+    let mut connection = pool.acquire().await?;
+    let result = query(
+        "DELETE FROM games WHERE state IN ('final', 'post') AND start_time < NOW() - INTERVAL '24 hours'"
+    )
+    .execute(&mut *connection)
+    .await?;
+    Ok(result.rows_affected())
+}
+
 // =============================================================================
 // Game upsert
 // =============================================================================
