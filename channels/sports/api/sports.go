@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -17,15 +18,20 @@ import (
 // =============================================================================
 
 const (
-	// CacheKeySports is the Redis key for cached game data.
+	// CacheKeySports is the Redis key for cached game data (all games, public).
 	CacheKeySports = "cache:sports"
+
+	// CacheKeySportsPrefix is the Redis key prefix for per-user game caches.
+	CacheKeySportsPrefix = "cache:sports:"
+
+	// CacheKeySportsCatalog is the Redis key for the cached league catalog.
+	CacheKeySportsCatalog = "cache:sports:catalog"
 
 	// SportsCacheTTL is how long game data is cached.
 	SportsCacheTTL = 30 * time.Second
 
-	// SportsSubscribersKey is the legacy Redis set tracking ALL sports subscribers.
-	// Kept for backward compatibility: used as fallback when per-league sets are empty.
-	SportsSubscribersKey = "channel:subscribers:sports"
+	// SportsCatalogCacheTTL is how long the league catalog is cached.
+	SportsCatalogCacheTTL = 5 * time.Minute
 
 	// SportsLeagueSubscribersPrefix is the per-league subscriber set prefix.
 	// Keys: sports:subscribers:league:{NFL}, sports:subscribers:league:{NBA}, etc.
@@ -37,14 +43,6 @@ const (
 	// DashboardSportsLimit caps the number of games returned for dashboard.
 	DashboardSportsLimit = 20
 )
-
-// ValidLeagues is the set of league identifiers used in the games table.
-// Must match the `league` column values written by the Rust ingestion service.
-var ValidLeagues = map[string]bool{
-	"NFL": true, "NBA": true, "NHL": true, "MLB": true,
-	"COLLEGE-FOOTBALL": true, "MENS-COLLEGE-BASKETBALL": true,
-	"WOMENS-COLLEGE-BASKETBALL": true, "COLLEGE-BASEBALL": true,
-}
 
 // =============================================================================
 // App
@@ -61,8 +59,17 @@ type App struct {
 // =============================================================================
 
 // getSports retrieves the latest sports games.
-// The core gateway adds X-User-Sub header for authenticated requests.
+// If X-User-Sub is set (authenticated), returns per-user filtered games.
+// Otherwise returns all games (public).
 func (a *App) getSports(c *fiber.Ctx) error {
+	userSub := c.Get("X-User-Sub")
+
+	// Authenticated: return per-user filtered games
+	if userSub != "" {
+		return a.getUserGames(c, userSub, DefaultSportsLimit)
+	}
+
+	// Public: return all games
 	var games []Game
 	if GetCache(a.rdb, CacheKeySports, &games) {
 		c.Set("X-Cache", "HIT")
@@ -83,6 +90,42 @@ func (a *App) getSports(c *fiber.Ctx) error {
 	return c.JSON(games)
 }
 
+// getLeagueCatalog returns all enabled tracked leagues for the dashboard
+// league browser.
+func (a *App) getLeagueCatalog(c *fiber.Ctx) error {
+	var catalog []TrackedLeague
+	if GetCache(a.rdb, CacheKeySportsCatalog, &catalog) {
+		c.Set("X-Cache", "HIT")
+		return c.JSON(catalog)
+	}
+
+	rows, err := a.db.Query(context.Background(),
+		`SELECT name, COALESCE(sport_api, ''), COALESCE(category, 'Other'), COALESCE(country, ''), COALESCE(logo_url, '')
+		 FROM tracked_leagues WHERE is_enabled = true ORDER BY category, name`)
+	if err != nil {
+		log.Printf("[Sports] Catalog query failed: %v", err)
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
+			Status: "error",
+			Error:  "Failed to fetch league catalog",
+		})
+	}
+	defer rows.Close()
+
+	catalog = make([]TrackedLeague, 0)
+	for rows.Next() {
+		var l TrackedLeague
+		if err := rows.Scan(&l.Name, &l.SportAPI, &l.Category, &l.Country, &l.LogoURL); err != nil {
+			log.Printf("[Sports] Catalog scan error: %v", err)
+			continue
+		}
+		catalog = append(catalog, l)
+	}
+
+	SetCache(a.rdb, CacheKeySportsCatalog, catalog, SportsCatalogCacheTTL)
+	c.Set("X-Cache", "MISS")
+	return c.JSON(catalog)
+}
+
 // healthHandler proxies a health check to the internal Rust sports service.
 func (a *App) healthHandler(c *fiber.Ctx) error {
 	return ProxyInternalHealth(c, os.Getenv("INTERNAL_SPORTS_URL"))
@@ -96,10 +139,8 @@ func (a *App) healthHandler(c *fiber.Ctx) error {
 // list of users who should receive these records.
 //
 // Per-league routing: each CDC record contains a "league" field (e.g. "NFL",
-// "NBA"). The handler looks up per-league subscriber sets first, falling back
-// to the global set if per-league sets are empty (migration period). This
-// reduces fan-out by ~70% since users only receive updates for leagues they
-// follow (currently all leagues, but per-league filtering can be added later).
+// "NBA"). The handler looks up per-league subscriber sets to determine which
+// users follow that league.
 func (a *App) handleInternalCDC(c *fiber.Ctx) error {
 	var req struct {
 		Records []CDCRecord `json:"records"`
@@ -120,21 +161,10 @@ func (a *App) handleInternalCDC(c *fiber.Ctx) error {
 			continue
 		}
 
-		// Try per-league subscriber set first
 		subs, err := GetSubscribers(a.rdb, ctx, SportsLeagueSubscribersPrefix+league)
 		if err != nil {
 			log.Printf("[Sports CDC] Failed to get league subscribers for %s: %v", league, err)
 			continue
-		}
-
-		// Fallback: if no per-league sets exist yet (migration period),
-		// fall back to the global set
-		if len(subs) == 0 {
-			subs, err = GetSubscribers(a.rdb, ctx, SportsSubscribersKey)
-			if err != nil {
-				log.Printf("[Sports CDC] Failed to get global subscribers: %v", err)
-				continue
-			}
 		}
 
 		for _, sub := range subs {
@@ -153,20 +183,31 @@ func (a *App) handleInternalCDC(c *fiber.Ctx) error {
 // handleInternalDashboard returns sports data for a user's dashboard.
 // Query param: user={logto_sub}
 func (a *App) handleInternalDashboard(c *fiber.Ctx) error {
-	// The user query param is available but sports data is the same for all
-	// users — it's a shared sports scores feed. We still respect the cache.
+	userSub := c.Query("user")
+	if userSub == "" {
+		return c.JSON(fiber.Map{"sports": []Game{}})
+	}
+
+	// Check per-user cache first
+	cacheKey := CacheKeySportsPrefix + userSub
 	var games []Game
-	if GetCache(a.rdb, CacheKeySports, &games) {
+	if GetCache(a.rdb, cacheKey, &games) {
 		return c.JSON(fiber.Map{"sports": games})
 	}
 
-	games, err := a.queryGames(context.Background(), DashboardSportsLimit)
+	// Get user's selected leagues from their channel config
+	leagues := a.getUserSportsLeagues(userSub)
+	if len(leagues) == 0 {
+		return c.JSON(fiber.Map{"sports": []Game{}})
+	}
+
+	games, err := a.queryGamesByLeagues(context.Background(), leagues, DashboardSportsLimit)
 	if err != nil {
 		log.Printf("[Sports] Dashboard query failed: %v", err)
 		return c.JSON(fiber.Map{"sports": []Game{}})
 	}
 
-	SetCache(a.rdb, CacheKeySports, games, SportsCacheTTL)
+	SetCache(a.rdb, cacheKey, games, SportsCacheTTL)
 	return c.JSON(fiber.Map{"sports": games})
 }
 
@@ -176,12 +217,106 @@ func (a *App) handleInternalHealth(c *fiber.Ctx) error {
 }
 
 // =============================================================================
+// Channel Lifecycle
+// =============================================================================
+
+// handleChannelLifecycle handles channel lifecycle events dispatched by the core
+// gateway. Events: created, updated, deleted, sync.
+func (a *App) handleChannelLifecycle(c *fiber.Ctx) error {
+	var req struct {
+		Event     string                 `json:"event"`
+		User      string                 `json:"user"`
+		Config    map[string]interface{} `json:"config"`
+		OldConfig map[string]interface{} `json:"old_config"`
+		Enabled   bool                   `json:"enabled"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
+			Status: "error",
+			Error:  "Invalid request body",
+		})
+	}
+
+	ctx := context.Background()
+
+	switch req.Event {
+	case "created":
+		log.Printf("[Sports Lifecycle] Channel created for user %s", req.User)
+
+	case "updated":
+		a.onChannelUpdated(ctx, req.User, req.OldConfig, req.Config)
+
+	case "deleted":
+		a.onChannelDeleted(ctx, req.User, req.Config)
+
+	case "sync":
+		a.onSyncSubscriptions(ctx, req.User, req.Config, req.Enabled)
+
+	default:
+		log.Printf("[Sports Lifecycle] Unknown event: %s", req.Event)
+	}
+
+	return c.JSON(fiber.Map{"ok": true})
+}
+
+// onChannelUpdated handles league list changes when a channel is updated.
+func (a *App) onChannelUpdated(ctx context.Context, userSub string, oldConfig, newConfig map[string]interface{}) {
+	if newConfig == nil {
+		return
+	}
+
+	oldLeagues := extractLeaguesFromChannelConfig(oldConfig)
+	newLeagues := extractLeaguesFromChannelConfig(newConfig)
+	newSet := make(map[string]bool, len(newLeagues))
+	for _, l := range newLeagues {
+		newSet[l] = true
+	}
+	for _, l := range oldLeagues {
+		if !newSet[l] {
+			RemoveSubscriber(a.rdb, ctx, SportsLeagueSubscribersPrefix+l, userSub)
+		}
+	}
+
+	// Invalidate per-user cache
+	DeleteCache(a.rdb, CacheKeySportsPrefix+userSub)
+}
+
+// onChannelDeleted removes the user from all league subscriber sets.
+func (a *App) onChannelDeleted(ctx context.Context, userSub string, config map[string]interface{}) {
+	leagues := extractLeaguesFromChannelConfig(config)
+	for _, l := range leagues {
+		RemoveSubscriber(a.rdb, ctx, SportsLeagueSubscribersPrefix+l, userSub)
+	}
+	DeleteCache(a.rdb, CacheKeySportsPrefix+userSub)
+}
+
+// onSyncSubscriptions adds or removes the user from per-league subscriber
+// sets based on the enabled flag.
+func (a *App) onSyncSubscriptions(ctx context.Context, userSub string, config map[string]interface{}, enabled bool) {
+	leagues := extractLeaguesFromChannelConfig(config)
+	for _, l := range leagues {
+		if enabled {
+			AddSubscriber(a.rdb, ctx, SportsLeagueSubscribersPrefix+l, userSub)
+		} else {
+			RemoveSubscriber(a.rdb, ctx, SportsLeagueSubscribersPrefix+l, userSub)
+		}
+	}
+}
+
+// =============================================================================
 // Database Helpers
 // =============================================================================
 
 // queryGames fetches games from PostgreSQL ordered by start_time descending.
 func (a *App) queryGames(ctx context.Context, limit int) ([]Game, error) {
-	rows, err := a.db.Query(ctx, fmt.Sprintf("SELECT id, league, external_game_id, link, home_team_name, home_team_logo, home_team_score, away_team_name, away_team_logo, away_team_score, start_time, short_detail, state FROM games ORDER BY start_time DESC LIMIT %d", limit))
+	rows, err := a.db.Query(ctx, fmt.Sprintf(`
+		SELECT id, league, COALESCE(sport, ''), external_game_id, COALESCE(link, ''),
+			home_team_name, COALESCE(home_team_logo, ''), COALESCE(home_team_score::text, ''),
+			away_team_name, COALESCE(away_team_logo, ''), COALESCE(away_team_score::text, ''),
+			start_time, COALESCE(short_detail, ''), state,
+			COALESCE(status_short, ''), COALESCE(status_long, ''),
+			COALESCE(timer, ''), COALESCE(venue, ''), COALESCE(season, '')
+		FROM games ORDER BY start_time DESC LIMIT %d`, limit))
 	if err != nil {
 		return nil, fmt.Errorf("sports query failed: %w", err)
 	}
@@ -190,7 +325,13 @@ func (a *App) queryGames(ctx context.Context, limit int) ([]Game, error) {
 	games := make([]Game, 0)
 	for rows.Next() {
 		var g Game
-		if err := rows.Scan(&g.ID, &g.League, &g.ExternalGameID, &g.Link, &g.HomeTeamName, &g.HomeTeamLogo, &g.HomeTeamScore, &g.AwayTeamName, &g.AwayTeamLogo, &g.AwayTeamScore, &g.StartTime, &g.ShortDetail, &g.State); err != nil {
+		if err := rows.Scan(
+			&g.ID, &g.League, &g.Sport, &g.ExternalGameID, &g.Link,
+			&g.HomeTeamName, &g.HomeTeamLogo, &g.HomeTeamScore,
+			&g.AwayTeamName, &g.AwayTeamLogo, &g.AwayTeamScore,
+			&g.StartTime, &g.ShortDetail, &g.State,
+			&g.StatusShort, &g.StatusLong, &g.Timer, &g.Venue, &g.Season,
+		); err != nil {
 			log.Printf("[Sports] Row scan failed: %v", err)
 			continue
 		}
@@ -198,4 +339,119 @@ func (a *App) queryGames(ctx context.Context, limit int) ([]Game, error) {
 	}
 
 	return games, nil
+}
+
+// queryGamesByLeagues fetches games for specific leagues.
+func (a *App) queryGamesByLeagues(ctx context.Context, leagues []string, limit int) ([]Game, error) {
+	if len(leagues) == 0 {
+		return make([]Game, 0), nil
+	}
+
+	rows, err := a.db.Query(ctx, fmt.Sprintf(`
+		SELECT id, league, COALESCE(sport, ''), external_game_id, COALESCE(link, ''),
+			home_team_name, COALESCE(home_team_logo, ''), COALESCE(home_team_score::text, ''),
+			away_team_name, COALESCE(away_team_logo, ''), COALESCE(away_team_score::text, ''),
+			start_time, COALESCE(short_detail, ''), state,
+			COALESCE(status_short, ''), COALESCE(status_long, ''),
+			COALESCE(timer, ''), COALESCE(venue, ''), COALESCE(season, '')
+		FROM games
+		WHERE league = ANY($1)
+		ORDER BY start_time DESC LIMIT %d`, limit), leagues)
+	if err != nil {
+		return nil, fmt.Errorf("sports league query failed: %w", err)
+	}
+	defer rows.Close()
+
+	games := make([]Game, 0)
+	for rows.Next() {
+		var g Game
+		if err := rows.Scan(
+			&g.ID, &g.League, &g.Sport, &g.ExternalGameID, &g.Link,
+			&g.HomeTeamName, &g.HomeTeamLogo, &g.HomeTeamScore,
+			&g.AwayTeamName, &g.AwayTeamLogo, &g.AwayTeamScore,
+			&g.StartTime, &g.ShortDetail, &g.State,
+			&g.StatusShort, &g.StatusLong, &g.Timer, &g.Venue, &g.Season,
+		); err != nil {
+			log.Printf("[Sports] Row scan failed: %v", err)
+			continue
+		}
+		games = append(games, g)
+	}
+
+	return games, nil
+}
+
+// getUserGames returns per-user filtered games (used by authenticated getSports).
+func (a *App) getUserGames(c *fiber.Ctx, userSub string, limit int) error {
+	cacheKey := CacheKeySportsPrefix + userSub
+	var games []Game
+	if GetCache(a.rdb, cacheKey, &games) {
+		c.Set("X-Cache", "HIT")
+		return c.JSON(games)
+	}
+
+	leagues := a.getUserSportsLeagues(userSub)
+	if len(leagues) == 0 {
+		return c.JSON([]Game{})
+	}
+
+	games, err := a.queryGamesByLeagues(context.Background(), leagues, limit)
+	if err != nil {
+		log.Printf("[Sports] getUserGames query failed: %v", err)
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
+			Status: "error",
+			Error:  "Internal server error",
+		})
+	}
+
+	SetCache(a.rdb, cacheKey, games, SportsCacheTTL)
+	c.Set("X-Cache", "MISS")
+	return c.JSON(games)
+}
+
+// getUserSportsLeagues extracts the league list from a user's sports channel config.
+func (a *App) getUserSportsLeagues(logtoSub string) []string {
+	var configJSON []byte
+	err := a.db.QueryRow(context.Background(), `
+		SELECT config FROM user_channels
+		WHERE logto_sub = $1 AND channel_type = 'sports'
+	`, logtoSub).Scan(&configJSON)
+	if err != nil {
+		return nil
+	}
+	return extractLeaguesFromConfig(configJSON)
+}
+
+// =============================================================================
+// Config Parsing Helpers
+// =============================================================================
+
+// extractLeaguesFromChannelConfig extracts leagues from a channel's config map.
+func extractLeaguesFromChannelConfig(config map[string]interface{}) []string {
+	if config == nil {
+		return nil
+	}
+	configJSON, err := json.Marshal(config)
+	if err != nil {
+		return nil
+	}
+	return extractLeaguesFromConfig(configJSON)
+}
+
+// extractLeaguesFromConfig parses a config JSONB blob and returns league name strings.
+func extractLeaguesFromConfig(configJSON []byte) []string {
+	var config struct {
+		Leagues []string `json:"leagues"`
+	}
+	if err := json.Unmarshal(configJSON, &config); err != nil {
+		return nil
+	}
+
+	leagues := make([]string, 0, len(config.Leagues))
+	for _, l := range config.Leagues {
+		if l != "" {
+			leagues = append(leagues, l)
+		}
+	}
+	return leagues
 }

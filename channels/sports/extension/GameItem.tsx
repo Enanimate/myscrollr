@@ -11,10 +11,29 @@ function formatScore(score: number | string): string {
 }
 
 function statusLabel(game: Game): string {
+  // Live games: prefer timer (e.g. "Q3 5:42"), then status_long, then short_detail
+  if (isLive(game)) {
+    if (game.timer) return game.timer;
+    if (game.status_long) return game.status_long;
+    if (game.short_detail) return game.short_detail;
+    return 'Live';
+  }
+  // Finished games: prefer status_long (e.g. "Game Finished"), then short_detail
+  if (game.state === 'final' || game.state === 'post') {
+    if (game.status_long) return game.status_long;
+    if (game.short_detail) return game.short_detail;
+    return 'Final';
+  }
+  // Upcoming: prefer status_long (e.g. "Not Started"), then short_detail
+  if (game.state === 'pre') {
+    if (game.status_long) return game.status_long;
+    if (game.short_detail) return game.short_detail;
+    return 'Upcoming';
+  }
+  // Postponed/cancelled/other states
+  if (game.status_long) return game.status_long;
   if (game.short_detail) return game.short_detail;
-  if (game.state === 'final') return 'Final';
-  if (game.state === 'pre') return 'Upcoming';
-  if (game.state === 'in_progress' || game.state === 'in') return 'Live';
+  if (game.status_short) return game.status_short;
   return '';
 }
 

@@ -122,10 +122,12 @@ func main() {
 	fiberApp.Post("/internal/cdc", app.handleInternalCDC)
 	fiberApp.Get("/internal/dashboard", app.handleInternalDashboard)
 	fiberApp.Get("/internal/health", app.handleInternalHealth)
+	fiberApp.Post("/internal/channel-lifecycle", app.handleChannelLifecycle)
 
 	// Public routes (proxied by core gateway)
 	fiberApp.Get("/sports", app.getSports)
-	fiberApp.Get("/sports/public", app.getSports) // Unauthenticated: returns all games (same handler, same cache)
+	fiberApp.Get("/sports/public", app.getSports) // Unauthenticated: returns all games (same handler, public path)
+	fiberApp.Get("/sports/leagues", app.getLeagueCatalog)
 	fiberApp.Get("/sports/health", app.healthHandler)
 
 	// -------------------------------------------------------------------------
@@ -174,11 +176,12 @@ func startRegistration(ctx context.Context, rdb *redis.Client) {
 		Name:         "sports",
 		DisplayName:  "Sports",
 		InternalURL:  channelURL,
-		Capabilities: []string{"cdc_handler", "dashboard_provider", "health_checker"},
+		Capabilities: []string{"cdc_handler", "dashboard_provider", "health_checker", "channel_lifecycle"},
 		CDCTables:    []string{"games"},
 		Routes: []registrationRoute{
 			{Method: "GET", Path: "/sports", Auth: true},
 			{Method: "GET", Path: "/sports/public", Auth: false},
+			{Method: "GET", Path: "/sports/leagues", Auth: false},
 			{Method: "GET", Path: "/sports/health", Auth: false},
 		},
 	}

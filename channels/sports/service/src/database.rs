@@ -42,15 +42,46 @@ pub async fn initialize_pool() -> Result<PgPool> {
     Ok(pool)
 }
 
+// =============================================================================
+// League Config — loaded from configs/leagues.json and stored in tracked_leagues
+// =============================================================================
+
 #[derive(Deserialize, Clone, Debug, FromRow)]
-pub struct LeagueConfigs {
+pub struct LeagueConfig {
     pub name: String,
-    pub slug: String,
+    pub sport_api: String,
+    pub api_host: String,
+    pub league_id: i32,
+    pub category: String,
+    #[serde(default)]
+    pub country: Option<String>,
+    #[serde(default)]
+    pub logo_url: Option<String>,
+    #[serde(default)]
+    pub season: Option<String>,
 }
+
+/// Stored league row read back from the database.
+#[derive(Debug, Clone, FromRow)]
+pub struct TrackedLeague {
+    pub name: String,
+    pub sport_api: String,
+    pub api_host: String,
+    pub league_id: i32,
+    pub category: String,
+    pub country: Option<String>,
+    pub logo_url: Option<String>,
+    pub season: Option<String>,
+}
+
+// =============================================================================
+// Game data — normalized from all api-sports.io sport APIs
+// =============================================================================
 
 #[derive(Debug)]
 pub struct CleanedData {
     pub league: String,
+    pub sport: String,
     pub external_game_id: String,
     pub link: Option<String>,
     pub home_team: Team,
@@ -58,6 +89,11 @@ pub struct CleanedData {
     pub start_time: chrono::DateTime<Utc>,
     pub short_detail: Option<String>,
     pub state: String,
+    pub status_short: Option<String>,
+    pub status_long: Option<String>,
+    pub timer: Option<String>,
+    pub venue: Option<String>,
+    pub season: Option<String>,
 }
 
 #[derive(Debug)]
@@ -67,11 +103,16 @@ pub struct Team {
     pub score: Option<i32>,
 }
 
+// =============================================================================
+// Table creation
+// =============================================================================
+
 pub async fn create_tables(pool: &Arc<PgPool>) -> Result<()> {
     let games_statement = "
         CREATE TABLE IF NOT EXISTS games (
             id SERIAL PRIMARY KEY,
             league VARCHAR(50) NOT NULL,
+            sport VARCHAR(50) NOT NULL DEFAULT '',
             external_game_id VARCHAR(100) NOT NULL,
             link VARCHAR(500),
             home_team_name VARCHAR(100) NOT NULL,
@@ -83,6 +124,11 @@ pub async fn create_tables(pool: &Arc<PgPool>) -> Result<()> {
             start_time TIMESTAMP WITH TIME ZONE NOT NULL,
             short_detail VARCHAR(200),
             state VARCHAR(50) NOT NULL,
+            status_short VARCHAR(20),
+            status_long VARCHAR(100),
+            timer VARCHAR(20),
+            venue VARCHAR(200),
+            season VARCHAR(20),
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(league, external_game_id)
@@ -93,7 +139,13 @@ pub async fn create_tables(pool: &Arc<PgPool>) -> Result<()> {
         CREATE TABLE IF NOT EXISTS tracked_leagues (
             id SERIAL PRIMARY KEY,
             name VARCHAR(50) UNIQUE NOT NULL,
-            slug VARCHAR(100) NOT NULL,
+            sport_api VARCHAR(50) NOT NULL,
+            api_host VARCHAR(200) NOT NULL,
+            league_id INTEGER NOT NULL,
+            category VARCHAR(50) NOT NULL DEFAULT 'Other',
+            country VARCHAR(100),
+            logo_url VARCHAR(500),
+            season VARCHAR(20),
             is_enabled BOOLEAN DEFAULT TRUE,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
@@ -105,9 +157,54 @@ pub async fn create_tables(pool: &Arc<PgPool>) -> Result<()> {
     Ok(())
 }
 
-pub async fn get_tracked_leagues(pool: Arc<PgPool>) -> Vec<LeagueConfigs> {
-    let statement = "SELECT name, slug FROM tracked_leagues WHERE is_enabled = TRUE";
-    let res: Result<Vec<LeagueConfigs>, sqlx::Error> = async {
+// =============================================================================
+// Migrations — add new columns to existing tables
+// =============================================================================
+
+/// Run safe additive migrations for tables that may already exist from the
+/// previous ESPN-based schema. Each ALTER uses IF NOT EXISTS / catches
+/// duplicate-column errors so it is idempotent.
+pub async fn run_migrations(pool: &Arc<PgPool>) -> Result<()> {
+    let migrations = vec![
+        // games table — new columns
+        "ALTER TABLE games ADD COLUMN IF NOT EXISTS sport VARCHAR(50) NOT NULL DEFAULT ''",
+        "ALTER TABLE games ADD COLUMN IF NOT EXISTS status_short VARCHAR(20)",
+        "ALTER TABLE games ADD COLUMN IF NOT EXISTS status_long VARCHAR(100)",
+        "ALTER TABLE games ADD COLUMN IF NOT EXISTS timer VARCHAR(20)",
+        "ALTER TABLE games ADD COLUMN IF NOT EXISTS venue VARCHAR(200)",
+        "ALTER TABLE games ADD COLUMN IF NOT EXISTS season VARCHAR(20)",
+        // tracked_leagues table — new columns (replacing old slug-only schema)
+        "ALTER TABLE tracked_leagues ADD COLUMN IF NOT EXISTS sport_api VARCHAR(50) NOT NULL DEFAULT ''",
+        "ALTER TABLE tracked_leagues ADD COLUMN IF NOT EXISTS api_host VARCHAR(200) NOT NULL DEFAULT ''",
+        "ALTER TABLE tracked_leagues ADD COLUMN IF NOT EXISTS league_id INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE tracked_leagues ADD COLUMN IF NOT EXISTS category VARCHAR(50) NOT NULL DEFAULT 'Other'",
+        "ALTER TABLE tracked_leagues ADD COLUMN IF NOT EXISTS country VARCHAR(100)",
+        "ALTER TABLE tracked_leagues ADD COLUMN IF NOT EXISTS logo_url VARCHAR(500)",
+        "ALTER TABLE tracked_leagues ADD COLUMN IF NOT EXISTS season VARCHAR(20)",
+    ];
+
+    let mut connection = pool.acquire().await?;
+    for migration in migrations {
+        if let Err(e) = query(migration).execute(&mut *connection).await {
+            // Log but don't fail — some migrations may error if the old table
+            // has incompatible constraints. The TRUNCATE + re-seed will fix it.
+            log::warn!("Migration warning (non-fatal): {}: {}", migration, e);
+        }
+    }
+    Ok(())
+}
+
+// =============================================================================
+// Tracked league queries
+// =============================================================================
+
+pub async fn get_tracked_leagues(pool: Arc<PgPool>) -> Vec<TrackedLeague> {
+    let statement = "
+        SELECT name, sport_api, api_host, league_id, category, country, logo_url, season
+        FROM tracked_leagues
+        WHERE is_enabled = TRUE
+    ";
+    let res: Result<Vec<TrackedLeague>, sqlx::Error> = async {
         let mut connection = pool.acquire().await?;
         let data = query_as(statement).fetch_all(&mut *connection).await?;
         Ok(data)
@@ -122,25 +219,82 @@ pub async fn get_tracked_leagues(pool: Arc<PgPool>) -> Vec<LeagueConfigs> {
     }
 }
 
-pub async fn seed_tracked_leagues(pool: Arc<PgPool>, leagues: Vec<LeagueConfigs>) -> Result<()> {
-    let statement = "INSERT INTO tracked_leagues (name, slug) VALUES ($1, $2) ON CONFLICT (name) DO NOTHING";
+pub async fn seed_tracked_leagues(pool: Arc<PgPool>, leagues: Vec<LeagueConfig>) -> Result<()> {
+    let statement = "
+        INSERT INTO tracked_leagues (name, sport_api, api_host, league_id, category, country, logo_url, season)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT (name) DO UPDATE SET
+            sport_api = EXCLUDED.sport_api,
+            api_host = EXCLUDED.api_host,
+            league_id = EXCLUDED.league_id,
+            category = EXCLUDED.category,
+            country = EXCLUDED.country,
+            logo_url = EXCLUDED.logo_url,
+            season = EXCLUDED.season
+    ";
     let mut connection = pool.acquire().await?;
     for league in leagues {
-        query(statement).bind(league.name).bind(league.slug).execute(&mut *connection).await?;
+        query(statement)
+            .bind(&league.name)
+            .bind(&league.sport_api)
+            .bind(&league.api_host)
+            .bind(league.league_id)
+            .bind(&league.category)
+            .bind(&league.country)
+            .bind(&league.logo_url)
+            .bind(&league.season)
+            .execute(&mut *connection)
+            .await?;
     }
     Ok(())
 }
 
+/// Wipe all games data. Called during the ESPN -> api-sports.io migration.
+pub async fn truncate_games(pool: &Arc<PgPool>) -> Result<()> {
+    let mut connection = pool.acquire().await?;
+    query("TRUNCATE TABLE games").execute(&mut *connection).await?;
+    log::info!("Truncated games table for data source migration");
+    Ok(())
+}
+
+// =============================================================================
+// Game upsert
+// =============================================================================
+
 pub async fn upsert_game(pool: Arc<PgPool>, game: CleanedData) -> Result<()> {
     let statement = "
-        INSERT INTO games (league, external_game_id, link, home_team_name, home_team_logo, home_team_score, away_team_name, away_team_logo, away_team_score, start_time, short_detail, state)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        INSERT INTO games (
+            league, sport, external_game_id, link,
+            home_team_name, home_team_logo, home_team_score,
+            away_team_name, away_team_logo, away_team_score,
+            start_time, short_detail, state,
+            status_short, status_long, timer, venue, season
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
         ON CONFLICT (league, external_game_id)
-        DO UPDATE SET link = EXCLUDED.link, home_team_name = EXCLUDED.home_team_name, home_team_logo = EXCLUDED.home_team_logo, home_team_score = EXCLUDED.home_team_score, away_team_name = EXCLUDED.away_team_name, away_team_logo = EXCLUDED.away_team_logo, away_team_score = EXCLUDED.away_team_score, start_time = EXCLUDED.start_time, short_detail = EXCLUDED.short_detail, state = EXCLUDED.state, updated_at = CURRENT_TIMESTAMP;
+        DO UPDATE SET
+            sport = EXCLUDED.sport,
+            link = EXCLUDED.link,
+            home_team_name = EXCLUDED.home_team_name,
+            home_team_logo = EXCLUDED.home_team_logo,
+            home_team_score = EXCLUDED.home_team_score,
+            away_team_name = EXCLUDED.away_team_name,
+            away_team_logo = EXCLUDED.away_team_logo,
+            away_team_score = EXCLUDED.away_team_score,
+            start_time = EXCLUDED.start_time,
+            short_detail = EXCLUDED.short_detail,
+            state = EXCLUDED.state,
+            status_short = EXCLUDED.status_short,
+            status_long = EXCLUDED.status_long,
+            timer = EXCLUDED.timer,
+            venue = EXCLUDED.venue,
+            season = EXCLUDED.season,
+            updated_at = CURRENT_TIMESTAMP;
     ";
     let mut connection = pool.acquire().await?;
     query(statement)
         .bind(&game.league)
+        .bind(&game.sport)
         .bind(game.external_game_id)
         .bind(game.link)
         .bind(game.home_team.name)
@@ -152,9 +306,12 @@ pub async fn upsert_game(pool: Arc<PgPool>, game: CleanedData) -> Result<()> {
         .bind(game.start_time)
         .bind(game.short_detail)
         .bind(game.state)
+        .bind(game.status_short)
+        .bind(game.status_long)
+        .bind(game.timer)
+        .bind(game.venue)
+        .bind(game.season)
         .execute(&mut *connection)
         .await?;
     Ok(())
 }
-
-

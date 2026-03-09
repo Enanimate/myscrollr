@@ -3,7 +3,7 @@ use dotenv::dotenv;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
-use sports_service::{start_sports_service, SportsHealth, log::init_async_logger, database::initialize_pool};
+use sports_service::{start_sports_service, SportsHealth, RateLimitTracker, log::init_async_logger, database::initialize_pool};
 
 #[derive(Clone)]
 struct AppState {
@@ -31,15 +31,19 @@ async fn main() {
     };
     let health = Arc::new(Mutex::new(SportsHealth::new()));
 
+    // Pro plan: 7,500 requests/day. Start with that as the initial budget.
+    let rate_limiter = Arc::new(RateLimitTracker::new(7500));
+
     // Cancellation token for coordinated shutdown
     let cancel = CancellationToken::new();
 
-    // Start the background service (Periodic ingest)
+    // Start the background service (periodic ingest with adaptive intervals)
     let pool_clone = pool.clone();
     let health_clone = health.clone();
+    let rate_limiter_clone = rate_limiter.clone();
     let cancel_clone = cancel.clone();
     tokio::spawn(async move {
-        println!("Starting periodic sports ingest loop (1 minute interval)...");
+        println!("Starting periodic sports ingest loop (adaptive intervals)...");
         loop {
             tokio::select! {
                 _ = cancel_clone.cancelled() => {
@@ -47,8 +51,19 @@ async fn main() {
                     break;
                 }
                 _ = async {
-                    start_sports_service(pool_clone.clone(), health_clone.clone()).await;
-                    tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                    start_sports_service(pool_clone.clone(), health_clone.clone(), rate_limiter_clone.clone()).await;
+
+                    // Adaptive interval: poll more frequently when there are live games
+                    let interval = {
+                        let h = health_clone.lock().await;
+                        if h.leagues_live > 0 {
+                            30  // 30s when live games are happening
+                        } else {
+                            180 // 3 min when no live games
+                        }
+                    };
+
+                    tokio::time::sleep(std::time::Duration::from_secs(interval)).await;
                 } => {}
             }
         }

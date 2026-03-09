@@ -2,10 +2,11 @@ package main
 
 import "time"
 
-// Game represents a sports game from the ESPN ingestion service.
+// Game represents a sports game from the api-sports.io ingestion service.
 type Game struct {
 	ID             int       `json:"id"`
 	League         string    `json:"league"`
+	Sport          string    `json:"sport"`
 	ExternalGameID string    `json:"external_game_id"`
 	Link           string    `json:"link"`
 	HomeTeamName   string    `json:"home_team_name"`
@@ -17,6 +18,20 @@ type Game struct {
 	StartTime      time.Time `json:"start_time"`
 	ShortDetail    string    `json:"short_detail"`
 	State          string    `json:"state"`
+	StatusShort    string    `json:"status_short,omitempty"`
+	StatusLong     string    `json:"status_long,omitempty"`
+	Timer          string    `json:"timer,omitempty"`
+	Venue          string    `json:"venue,omitempty"`
+	Season         string    `json:"season,omitempty"`
+}
+
+// TrackedLeague represents a league entry from the catalog.
+type TrackedLeague struct {
+	Name     string `json:"name"`
+	SportAPI string `json:"sport_api"`
+	Category string `json:"category"`
+	Country  string `json:"country"`
+	LogoURL  string `json:"logo_url"`
 }
 
 // CDCRecord represents a Change Data Capture record from Sequin.

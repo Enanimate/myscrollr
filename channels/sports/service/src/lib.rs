@@ -1,47 +1,106 @@
-use std::{sync::Arc, fs};
-use reqwest::Client;
+use std::{env, fs, sync::Arc};
+use reqwest::{Client, header};
 use tokio::sync::Mutex;
-use crate::log::{error, info};
-use crate::database::{PgPool, create_tables, get_tracked_leagues, seed_tracked_leagues, LeagueConfigs, upsert_game};
-pub use crate::types::SportsHealth;
+use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
+use crate::log::{error, info, warn};
+use crate::database::{
+    PgPool, create_tables, run_migrations, truncate_games,
+    get_tracked_leagues, seed_tracked_leagues, LeagueConfig, TrackedLeague,
+    upsert_game, CleanedData, Team,
+};
+pub use crate::types::{SportsHealth, RateLimitTracker};
 
 pub mod log;
 pub mod database;
 pub mod types;
 
-pub async fn start_sports_service(pool: Arc<PgPool>, health_state: Arc<Mutex<SportsHealth>>) {
+// =============================================================================
+// Service entrypoint
+// =============================================================================
+
+pub async fn start_sports_service(pool: Arc<PgPool>, health_state: Arc<Mutex<SportsHealth>>, rate_limiter: Arc<RateLimitTracker>) {
     info!("Starting sports service...");
+
+    // Create tables (idempotent)
     if let Err(e) = create_tables(&pool).await {
         error!("Failed to create database tables: {}", e);
         return;
     }
 
-    // Seed from JSON if database is empty
-    let existing = get_tracked_leagues(pool.clone()).await;
-    let leagues = if existing.is_empty() {
-        info!("Database tracked_leagues is empty, seeding from local config...");
-        if let Ok(file_contents) = fs::read_to_string("./configs/leagues.json") {
-            if let Ok(config) = serde_json::from_str::<Vec<LeagueConfigs>>(&file_contents) {
-                let _ = seed_tracked_leagues(pool.clone(), config.clone()).await;
-                config
-            } else { Vec::new() }
-        } else { Vec::new() }
-    } else {
-        existing
-    };
+    // Run additive migrations for existing tables
+    if let Err(e) = run_migrations(&pool).await {
+        warn!("Migration warnings: {}", e);
+    }
 
+    // Seed from JSON config — always upsert to pick up new leagues
+    if let Ok(file_contents) = fs::read_to_string("./configs/leagues.json") {
+        match serde_json::from_str::<Vec<LeagueConfig>>(&file_contents) {
+            Ok(config) => {
+                info!("Seeding/updating {} leagues from config", config.len());
+                if let Err(e) = seed_tracked_leagues(pool.clone(), config).await {
+                    error!("Failed to seed tracked leagues: {}", e);
+                }
+            }
+            Err(e) => error!("Failed to parse leagues.json: {}", e),
+        }
+    } else {
+        warn!("Could not read ./configs/leagues.json");
+    }
+
+    // Check for data source migration flag — truncate old ESPN data on first run
+    let migration_flag = pool.acquire().await.ok().map(|mut conn| async move {
+        sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS(SELECT 1 FROM games WHERE sport = '' OR sport IS NULL LIMIT 1)"
+        )
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap_or(false)
+    });
+
+    if let Some(future) = migration_flag {
+        if future.await {
+            info!("Detected old ESPN data (games without sport field). Truncating for migration...");
+            if let Err(e) = truncate_games(&pool).await {
+                error!("Failed to truncate games: {}", e);
+            }
+        }
+    }
+
+    let leagues = get_tracked_leagues(pool.clone()).await;
     if leagues.is_empty() {
         error!("No leagues to track. Sports service idling.");
         return;
     }
 
-    info!("Polling sports data for {} leagues...", leagues.len());
-    let client = Client::new();
+    info!("Polling sports data for {} leagues via api-sports.io...", leagues.len());
+
+    let api_key = env::var("API_SPORTS_KEY").unwrap_or_default();
+    if api_key.is_empty() {
+        error!("API_SPORTS_KEY not set. Cannot poll api-sports.io.");
+        return;
+    }
+
+    let client = build_client(&api_key);
+    let today = Utc::now().format("%Y-%m-%d").to_string();
+
+    let mut total_upserted = 0u32;
+    let mut total_failed = 0u32;
+    let mut leagues_with_live = 0u32;
 
     for league in &leagues {
-        match poll_league(&client, league).await {
+        if !rate_limiter.has_budget() {
+            warn!("[{}] Skipping poll — rate limit budget low ({})", league.name, rate_limiter.remaining());
+            continue;
+        }
+
+        match poll_league(&client, league, &today, &rate_limiter).await {
             Ok(games) => {
                 let total = games.len();
+                let has_live = games.iter().any(|g| g.state == "in");
+                if has_live {
+                    leagues_with_live += 1;
+                }
+
                 let mut upserted = 0;
                 let mut failed = 0;
                 for game in games {
@@ -55,7 +114,8 @@ pub async fn start_sports_service(pool: Arc<PgPool>, health_state: Arc<Mutex<Spo
                     }
                 }
                 info!("[{}] Poll complete: {} games found, {} upserted, {} failed", league.name, total, upserted, failed);
-                health_state.lock().await.record_success();
+                total_upserted += upserted;
+                total_failed += failed;
             }
             Err(e) => {
                 error!("Error polling league {}: {}", league.name, e);
@@ -63,175 +123,550 @@ pub async fn start_sports_service(pool: Arc<PgPool>, health_state: Arc<Mutex<Spo
             }
         }
     }
+
+    let mut health = health_state.lock().await;
+    health.record_success(leagues.len() as u32, leagues_with_live);
+    health.set_rate_limit(rate_limiter.remaining());
+
+    if total_failed > 0 {
+        info!("Poll cycle complete: {} upserted, {} failed across {} leagues", total_upserted, total_failed, leagues.len());
+    }
 }
 
-async fn poll_league(client: &Client, league: &LeagueConfigs) -> anyhow::Result<Vec<crate::database::CleanedData>> {
-    let base_url = format!("https://site.api.espn.com/apis/site/v2/sports/{}/scoreboard", league.slug);
-    let url = match league.slug.as_str() {
-        s if s.contains("college") => {
-            format!("{}?groups=80", base_url)
-        }
-        _ => base_url,
-    };
-    
-    let resp = client.get(&url).send().await?.json::<serde_json::Value>().await?;
-    
-    let mut cleaned_games = Vec::new();
-    if let Some(events) = resp.get("events").and_then(|e| e.as_array()) {
-        for event in events {
-            if let Some(game) = parse_espn_game(event, &league.name) {
-                cleaned_games.push(game);
-            }
+// =============================================================================
+// HTTP client
+// =============================================================================
+
+fn build_client(api_key: &str) -> Client {
+    let mut headers = header::HeaderMap::new();
+    headers.insert(
+        "x-apisports-key",
+        header::HeaderValue::from_str(api_key).expect("Invalid API key"),
+    );
+
+    Client::builder()
+        .default_headers(headers)
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .expect("Failed to build HTTP client")
+}
+
+// =============================================================================
+// League polling
+// =============================================================================
+
+async fn poll_league(
+    client: &Client,
+    league: &TrackedLeague,
+    date: &str,
+    rate_limiter: &RateLimitTracker,
+) -> anyhow::Result<Vec<CleanedData>> {
+    let url = build_api_url(league, date);
+
+    let resp = client.get(&url).send().await?;
+
+    // Extract rate limit info from headers
+    if let Some(remaining) = resp.headers()
+        .get("x-ratelimit-requests-remaining")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u32>().ok())
+    {
+        rate_limiter.update(remaining);
+    }
+
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        anyhow::bail!("[{}] API returned {}: {}", league.name, status, body);
+    }
+
+    let body: serde_json::Value = resp.json().await?;
+
+    // api-sports.io wraps all responses in: {"get": "...", "results": N, "response": [...]}
+    let response_array = body.get("response")
+        .and_then(|r| r.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    if let Some(errors) = body.get("errors") {
+        if errors.is_object() && errors.as_object().map_or(false, |m| !m.is_empty()) {
+            warn!("[{}] API returned errors: {}", league.name, errors);
         }
     }
+
+    let mut cleaned_games = Vec::new();
+    for item in &response_array {
+        if let Some(game) = parse_game(item, league) {
+            cleaned_games.push(game);
+        }
+    }
+
     Ok(cleaned_games)
 }
 
-fn parse_espn_game(event: &serde_json::Value, league_name: &str) -> Option<crate::database::CleanedData> {
-    // --- Required fields: bail with a log message if any are missing ---
+/// Build the correct API URL based on the sport type.
+fn build_api_url(league: &TrackedLeague, date: &str) -> String {
+    let base = format!("https://{}", league.api_host);
 
-    let id = match event.get("id").and_then(|v| v.as_str()) {
-        Some(id) if id.len() <= 50 => id,
-        Some(id) => {
-            error!("[{}] Skipping game: id too long ({})", league_name, id.len());
-            return None;
+    match league.sport_api.as_str() {
+        "football" => {
+            // Soccer/Football API v3 uses /fixtures endpoint
+            let season = league.season.as_deref().unwrap_or("2025");
+            format!("{}/fixtures?league={}&season={}&date={}", base, league.league_id, season, date)
         }
-        None => {
-            error!("[{}] Skipping game: missing 'id' field", league_name);
-            return None;
+        "american-football" => {
+            let season = league.season.as_deref().unwrap_or("2025");
+            format!("{}/games?league={}&season={}&date={}", base, league.league_id, season, date)
         }
-    };
+        "basketball" | "hockey" | "baseball" => {
+            let season = league.season.as_deref().unwrap_or("2024-2025");
+            format!("{}/games?league={}&season={}&date={}", base, league.league_id, season, date)
+        }
+        "formula-1" => {
+            let season = league.season.as_deref().unwrap_or("2025");
+            format!("{}/races?season={}", base, season)
+        }
+        other => {
+            warn!("Unknown sport_api '{}', falling back to /games", other);
+            format!("{}/games?league={}&date={}", base, league.league_id, date)
+        }
+    }
+}
 
-    let competition = match event.get("competitions").and_then(|c| c.get(0)) {
-        Some(c) => c,
-        None => {
-            error!("[{}] Skipping game {}: missing 'competitions[0]'", league_name, id);
-            return None;
-        }
-    };
+// =============================================================================
+// Response parsing — dispatches to sport-specific parsers
+// =============================================================================
 
-    let competitors = match competition.get("competitors").and_then(|c| c.as_array()) {
-        Some(c) if c.len() >= 2 => c,
+fn parse_game(item: &serde_json::Value, league: &TrackedLeague) -> Option<CleanedData> {
+    match league.sport_api.as_str() {
+        "football" => parse_football_fixture(item, league),
+        "american-football" => parse_american_football_game(item, league),
+        "basketball" => parse_basketball_game(item, league),
+        "hockey" => parse_hockey_game(item, league),
+        "baseball" => parse_baseball_game(item, league),
+        "formula-1" => parse_f1_race(item, league),
         _ => {
-            error!("[{}] Skipping game {}: missing or insufficient 'competitors'", league_name, id);
-            return None;
+            warn!("[{}] No parser for sport_api '{}'", league.name, league.sport_api);
+            None
         }
-    };
+    }
+}
 
-    let home_team_node = &competitors[0];
-    let away_team_node = &competitors[1];
+// =============================================================================
+// Status mapping — consistent across all sports
+// =============================================================================
 
-    let home_name = match home_team_node.get("team").and_then(|t| t.get("displayName")).and_then(|n| n.as_str()) {
-        Some(name) if name.len() <= 100 => name.to_string(),
-        Some(name) => {
-            error!("[{}] Skipping game {}: home team name too long ({})", league_name, id, name.len());
-            return None;
-        }
-        None => {
-            error!("[{}] Skipping game {}: missing home team displayName", league_name, id);
-            return None;
-        }
-    };
+/// Map api-sports.io status short codes to our state enum: "pre", "in", "final", "postponed"
+fn map_status_to_state(status_short: &str) -> &'static str {
+    match status_short {
+        // Not started
+        "NS" | "TBD" | "CANC" | "WO" => "pre",
+        // Finished
+        "FT" | "AET" | "PEN" | "AOT" | "AP" | "ABD" | "AWD" | "INT" => "final",
+        // Postponed / suspended
+        "PST" | "SUSP" => "postponed",
+        // Everything else is live / in progress
+        // Q1, Q2, Q3, Q4, HT, OT, P1, P2, P3, BT, 1H, 2H, ET, IN1-IN9, etc.
+        _ => "in",
+    }
+}
 
-    let away_name = match away_team_node.get("team").and_then(|t| t.get("displayName")).and_then(|n| n.as_str()) {
-        Some(name) if name.len() <= 100 => name.to_string(),
-        Some(name) => {
-            error!("[{}] Skipping game {}: away team name too long ({})", league_name, id, name.len());
-            return None;
-        }
-        None => {
-            error!("[{}] Skipping game {}: missing away team displayName", league_name, id);
-            return None;
-        }
-    };
+// =============================================================================
+// Football (Soccer) — v3.football.api-sports.io
+// =============================================================================
 
-    let date_str = event.get("date").and_then(|d| d.as_str());
-    let start_time = match date_str.and_then(|d| parse_espn_date(d)) {
-        Some(dt) => dt,
-        None => {
-            error!("[{}] Skipping game {}: missing or unparseable 'date' (raw: {:?})", league_name, id, date_str);
-            return None;
-        }
-    };
+fn parse_football_fixture(item: &serde_json::Value, league: &TrackedLeague) -> Option<CleanedData> {
+    let fixture = item.get("fixture")?;
+    let teams = item.get("teams")?;
+    let goals = item.get("goals")?;
 
-    let state = match competition.get("status").and_then(|s| s.get("type")).and_then(|t| t.get("state")).and_then(|s| s.as_str()) {
-        Some(s) => s.to_string(),
-        None => {
-            error!("[{}] Skipping game {}: missing 'status.type.state'", league_name, id);
-            return None;
-        }
-    };
+    let game_id = fixture.get("id")?.as_i64()?.to_string();
+    let timestamp = fixture.get("timestamp").and_then(|t| t.as_i64());
+    let date_str = fixture.get("date").and_then(|d| d.as_str());
 
-    // --- Optional fields: use None/defaults and warn if missing ---
+    let start_time = parse_api_date(timestamp, date_str)?;
 
-    let link = event.get("links")
-        .and_then(|l| l.get(0))
-        .and_then(|l| l.get("href"))
-        .and_then(|h| h.as_str())
+    let status = fixture.get("status")?;
+    let status_short = status.get("short").and_then(|s| s.as_str()).unwrap_or("NS");
+    let status_long = status.get("long").and_then(|s| s.as_str());
+    let elapsed = status.get("elapsed").and_then(|e| e.as_i64());
+
+    let home = teams.get("home")?;
+    let away = teams.get("away")?;
+
+    let venue_obj = fixture.get("venue");
+    let venue = venue_obj
+        .and_then(|v| v.get("name"))
+        .and_then(|n| n.as_str())
         .map(|s| s.to_string());
 
-    let home_logo = home_team_node.get("team")
-        .and_then(|t| t.get("logo"))
-        .and_then(|l| l.as_str())
-        .map(|s| s.to_string());
+    let timer = elapsed.map(|e| format!("{}′", e));
+    let detail = build_detail(status_short, status_long, timer.as_deref());
 
-    let home_score = home_team_node.get("score")
-        .and_then(|s| s.as_str())
-        .and_then(|s| s.parse::<i32>().ok());
-
-    let away_logo = away_team_node.get("team")
-        .and_then(|t| t.get("logo"))
-        .and_then(|l| l.as_str())
-        .map(|s| s.to_string());
-
-    let away_score = away_team_node.get("score")
-        .and_then(|s| s.as_str())
-        .and_then(|s| s.parse::<i32>().ok());
-
-    let short_detail = competition.get("status")
-        .and_then(|s| s.get("type"))
-        .and_then(|t| t.get("shortDetail"))
-        .and_then(|d| d.as_str())
-        .map(|s| s.to_string());
-
-    Some(crate::database::CleanedData {
-        league: league_name.to_string(),
-        external_game_id: id.to_string(),
-        link,
-        home_team: crate::database::Team {
-            name: home_name,
-            logo: home_logo,
-            score: home_score,
+    Some(CleanedData {
+        league: league.name.clone(),
+        sport: league.sport_api.clone(),
+        external_game_id: game_id,
+        link: None,
+        home_team: Team {
+            name: home.get("name").and_then(|n| n.as_str())?.to_string(),
+            logo: home.get("logo").and_then(|l| l.as_str()).map(|s| s.to_string()),
+            score: goals.get("home").and_then(|s| s.as_i64()).map(|s| s as i32),
         },
-        away_team: crate::database::Team {
-            name: away_name,
-            logo: away_logo,
-            score: away_score,
+        away_team: Team {
+            name: away.get("name").and_then(|n| n.as_str())?.to_string(),
+            logo: away.get("logo").and_then(|l| l.as_str()).map(|s| s.to_string()),
+            score: goals.get("away").and_then(|s| s.as_i64()).map(|s| s as i32),
         },
         start_time,
-        short_detail,
-        state,
+        short_detail: detail,
+        state: map_status_to_state(status_short).to_string(),
+        status_short: Some(status_short.to_string()),
+        status_long: status_long.map(|s| s.to_string()),
+        timer,
+        venue,
+        season: league.season.clone(),
     })
 }
 
-/// Parse ESPN date strings which may omit seconds (e.g. "2026-02-08T23:30Z").
-/// `parse_from_rfc3339` requires seconds, so we try that first and fall back
-/// to `NaiveDateTime::parse_from_str` with formats ESPN is known to use.
-fn parse_espn_date(s: &str) -> Option<chrono::DateTime<chrono::Utc>> {
-    // Try strict RFC 3339 first (e.g. "2026-02-08T23:30:00Z")
-    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
-        return Some(dt.with_timezone(&chrono::Utc));
+// =============================================================================
+// American Football (NFL / NCAA) — v1.american-football.api-sports.io
+// =============================================================================
+
+fn parse_american_football_game(item: &serde_json::Value, league: &TrackedLeague) -> Option<CleanedData> {
+    let game = item.get("game")?;
+    let teams = item.get("teams")?;
+    let scores = item.get("scores")?;
+
+    let game_id = game.get("id")?.as_i64()?.to_string();
+    let date_obj = game.get("date")?;
+    let timestamp = date_obj.get("timestamp").and_then(|t| t.as_i64());
+    let date_str = date_obj.get("date").and_then(|d| d.as_str())
+        .or_else(|| date_obj.get("start").and_then(|d| d.as_str()));
+
+    let start_time = parse_api_date(timestamp, date_str)?;
+
+    let status = game.get("status")?;
+    let status_short = status.get("short").and_then(|s| s.as_str()).unwrap_or("NS");
+    let status_long = status.get("long").and_then(|s| s.as_str());
+    let timer_str = status.get("timer").and_then(|t| t.as_str()).map(|s| s.to_string());
+
+    let home = teams.get("home")?;
+    let away = teams.get("away")?;
+
+    let home_score = scores.get("home").and_then(|s| s.get("total")).and_then(|t| t.as_i64()).map(|s| s as i32);
+    let away_score = scores.get("away").and_then(|s| s.get("total")).and_then(|t| t.as_i64()).map(|s| s as i32);
+
+    let venue = game.get("venue")
+        .and_then(|v| v.get("name"))
+        .and_then(|n| n.as_str())
+        .map(|s| s.to_string());
+
+    let detail = build_detail(status_short, status_long, timer_str.as_deref());
+
+    Some(CleanedData {
+        league: league.name.clone(),
+        sport: league.sport_api.clone(),
+        external_game_id: game_id,
+        link: None,
+        home_team: Team {
+            name: home.get("name").and_then(|n| n.as_str())?.to_string(),
+            logo: home.get("logo").and_then(|l| l.as_str()).map(|s| s.to_string()),
+            score: home_score,
+        },
+        away_team: Team {
+            name: away.get("name").and_then(|n| n.as_str())?.to_string(),
+            logo: away.get("logo").and_then(|l| l.as_str()).map(|s| s.to_string()),
+            score: away_score,
+        },
+        start_time,
+        short_detail: detail,
+        state: map_status_to_state(status_short).to_string(),
+        status_short: Some(status_short.to_string()),
+        status_long: status_long.map(|s| s.to_string()),
+        timer: timer_str,
+        venue,
+        season: league.season.clone(),
+    })
+}
+
+// =============================================================================
+// Basketball (NBA / NCAA Basketball) — v1.basketball.api-sports.io
+// =============================================================================
+
+fn parse_basketball_game(item: &serde_json::Value, league: &TrackedLeague) -> Option<CleanedData> {
+    let game_id = item.get("id")?.as_i64()?.to_string();
+
+    let timestamp = item.get("timestamp").and_then(|t| t.as_i64());
+    let date_str = item.get("date").and_then(|d| d.as_str());
+    let start_time = parse_api_date(timestamp, date_str)?;
+
+    let status = item.get("status")?;
+    let status_short = status.get("short").and_then(|s| s.as_str()).unwrap_or("NS");
+    let status_long = status.get("long").and_then(|s| s.as_str());
+    let timer_str = status.get("timer").and_then(|t| t.as_str()).map(|s| s.to_string());
+
+    let teams = item.get("teams")?;
+    let scores = item.get("scores")?;
+
+    let home = teams.get("home")?;
+    let away = teams.get("away")?;
+
+    let home_score = scores.get("home").and_then(|s| s.get("total")).and_then(|t| t.as_i64()).map(|s| s as i32);
+    let away_score = scores.get("away").and_then(|s| s.get("total")).and_then(|t| t.as_i64()).map(|s| s as i32);
+
+    let detail = build_detail(status_short, status_long, timer_str.as_deref());
+
+    Some(CleanedData {
+        league: league.name.clone(),
+        sport: league.sport_api.clone(),
+        external_game_id: game_id,
+        link: None,
+        home_team: Team {
+            name: home.get("name").and_then(|n| n.as_str())?.to_string(),
+            logo: home.get("logo").and_then(|l| l.as_str()).map(|s| s.to_string()),
+            score: home_score,
+        },
+        away_team: Team {
+            name: away.get("name").and_then(|n| n.as_str())?.to_string(),
+            logo: away.get("logo").and_then(|l| l.as_str()).map(|s| s.to_string()),
+            score: away_score,
+        },
+        start_time,
+        short_detail: detail,
+        state: map_status_to_state(status_short).to_string(),
+        status_short: Some(status_short.to_string()),
+        status_long: status_long.map(|s| s.to_string()),
+        timer: timer_str,
+        venue: None,
+        season: league.season.clone(),
+    })
+}
+
+// =============================================================================
+// Hockey (NHL) — v1.hockey.api-sports.io
+// =============================================================================
+
+fn parse_hockey_game(item: &serde_json::Value, league: &TrackedLeague) -> Option<CleanedData> {
+    let game_id = item.get("id")?.as_i64()?.to_string();
+
+    let timestamp = item.get("timestamp").and_then(|t| t.as_i64());
+    let date_str = item.get("date").and_then(|d| d.as_str());
+    let start_time = parse_api_date(timestamp, date_str)?;
+
+    let status = item.get("status")?;
+    let status_short = status.get("short").and_then(|s| s.as_str()).unwrap_or("NS");
+    let status_long = status.get("long").and_then(|s| s.as_str());
+    let timer_str = status.get("timer").and_then(|t| t.as_str()).map(|s| s.to_string());
+
+    let teams = item.get("teams")?;
+    let scores = item.get("scores")?;
+
+    let home = teams.get("home")?;
+    let away = teams.get("away")?;
+
+    // Hockey scores can be at top level of scores.home/scores.away as integers
+    let home_score = scores.get("home").and_then(|s| s.as_i64()).map(|s| s as i32);
+    let away_score = scores.get("away").and_then(|s| s.as_i64()).map(|s| s as i32);
+
+    let detail = build_detail(status_short, status_long, timer_str.as_deref());
+
+    Some(CleanedData {
+        league: league.name.clone(),
+        sport: league.sport_api.clone(),
+        external_game_id: game_id,
+        link: None,
+        home_team: Team {
+            name: home.get("name").and_then(|n| n.as_str())?.to_string(),
+            logo: home.get("logo").and_then(|l| l.as_str()).map(|s| s.to_string()),
+            score: home_score,
+        },
+        away_team: Team {
+            name: away.get("name").and_then(|n| n.as_str())?.to_string(),
+            logo: away.get("logo").and_then(|l| l.as_str()).map(|s| s.to_string()),
+            score: away_score,
+        },
+        start_time,
+        short_detail: detail,
+        state: map_status_to_state(status_short).to_string(),
+        status_short: Some(status_short.to_string()),
+        status_long: status_long.map(|s| s.to_string()),
+        timer: timer_str,
+        venue: None,
+        season: league.season.clone(),
+    })
+}
+
+// =============================================================================
+// Baseball (MLB) — v1.baseball.api-sports.io
+// =============================================================================
+
+fn parse_baseball_game(item: &serde_json::Value, league: &TrackedLeague) -> Option<CleanedData> {
+    let game_id = item.get("id")?.as_i64()?.to_string();
+
+    let timestamp = item.get("timestamp").and_then(|t| t.as_i64());
+    let date_str = item.get("date").and_then(|d| d.as_str());
+    let start_time = parse_api_date(timestamp, date_str)?;
+
+    let status = item.get("status")?;
+    let status_short = status.get("short").and_then(|s| s.as_str()).unwrap_or("NS");
+    let status_long = status.get("long").and_then(|s| s.as_str());
+
+    let teams = item.get("teams")?;
+    let scores = item.get("scores")?;
+
+    let home = teams.get("home")?;
+    let away = teams.get("away")?;
+
+    // Baseball scores: scores.home.total / scores.away.total or top-level integer
+    let home_score = scores.get("home")
+        .and_then(|s| s.get("total").and_then(|t| t.as_i64()).or_else(|| s.as_i64()))
+        .map(|s| s as i32);
+    let away_score = scores.get("away")
+        .and_then(|s| s.get("total").and_then(|t| t.as_i64()).or_else(|| s.as_i64()))
+        .map(|s| s as i32);
+
+    // Baseball uses inning info in status
+    let inning = status.get("inning").and_then(|i| i.as_i64());
+    let timer_str = inning.map(|i| format!("Inn {}", i));
+
+    let detail = build_detail(status_short, status_long, timer_str.as_deref());
+
+    Some(CleanedData {
+        league: league.name.clone(),
+        sport: league.sport_api.clone(),
+        external_game_id: game_id,
+        link: None,
+        home_team: Team {
+            name: home.get("name").and_then(|n| n.as_str())?.to_string(),
+            logo: home.get("logo").and_then(|l| l.as_str()).map(|s| s.to_string()),
+            score: home_score,
+        },
+        away_team: Team {
+            name: away.get("name").and_then(|n| n.as_str())?.to_string(),
+            logo: away.get("logo").and_then(|l| l.as_str()).map(|s| s.to_string()),
+            score: away_score,
+        },
+        start_time,
+        short_detail: detail,
+        state: map_status_to_state(status_short).to_string(),
+        status_short: Some(status_short.to_string()),
+        status_long: status_long.map(|s| s.to_string()),
+        timer: timer_str,
+        venue: None,
+        season: league.season.clone(),
+    })
+}
+
+// =============================================================================
+// Formula 1 — v1.formula-1.api-sports.io
+// =============================================================================
+
+fn parse_f1_race(item: &serde_json::Value, league: &TrackedLeague) -> Option<CleanedData> {
+    let race_id = item.get("id")?.as_i64()?.to_string();
+
+    let date_str = item.get("date").and_then(|d| d.as_str());
+    let start_time = parse_api_date(None, date_str)?;
+
+    let status = item.get("status").and_then(|s| s.as_str()).unwrap_or("Scheduled");
+
+    let competition = item.get("competition")?;
+    let race_name = competition.get("name").and_then(|n| n.as_str()).unwrap_or("Race");
+    let circuit = item.get("circuit");
+    let circuit_name = circuit
+        .and_then(|c| c.get("name"))
+        .and_then(|n| n.as_str())
+        .map(|s| s.to_string());
+
+    // F1 doesn't have a traditional home/away structure.
+    // We use the race name as "home" and circuit as "away" for display.
+    let state = match status {
+        "Completed" => "final",
+        "Live" | "In Progress" => "in",
+        _ => "pre",
+    };
+
+    Some(CleanedData {
+        league: league.name.clone(),
+        sport: league.sport_api.clone(),
+        external_game_id: race_id,
+        link: None,
+        home_team: Team {
+            name: race_name.to_string(),
+            logo: None,
+            score: None,
+        },
+        away_team: Team {
+            name: circuit_name.clone().unwrap_or_else(|| "TBD".to_string()),
+            logo: None,
+            score: None,
+        },
+        start_time,
+        short_detail: Some(status.to_string()),
+        state: state.to_string(),
+        status_short: Some(status.to_string()),
+        status_long: Some(status.to_string()),
+        timer: None,
+        venue: circuit_name,
+        season: league.season.clone(),
+    })
+}
+
+// =============================================================================
+// Date parsing helpers
+// =============================================================================
+
+/// Parse dates from api-sports.io. They provide either a UNIX timestamp,
+/// an ISO 8601 date string, or both.
+fn parse_api_date(timestamp: Option<i64>, date_str: Option<&str>) -> Option<DateTime<Utc>> {
+    // Prefer timestamp if available
+    if let Some(ts) = timestamp {
+        return DateTime::from_timestamp(ts, 0);
     }
 
-    // ESPN often sends "2026-02-08T23:30Z" (no seconds)
-    if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%MZ") {
-        return Some(dt.and_utc());
-    }
+    // Fall back to date string
+    if let Some(s) = date_str {
+        // Try full ISO 8601 / RFC 3339
+        if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
+            return Some(dt.with_timezone(&Utc));
+        }
 
-    // Also handle offset variant without seconds: "2026-02-08T23:30+00:00"
-    if let Ok(dt) = chrono::DateTime::parse_from_str(s, "%Y-%m-%dT%H:%M%:z") {
-        return Some(dt.with_timezone(&chrono::Utc));
+        // Try without timezone: "2025-03-09T19:00:00"
+        if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S") {
+            return Some(dt.and_utc());
+        }
+
+        // Try date-only: "2025-03-09"
+        if let Ok(d) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+            return d.and_hms_opt(0, 0, 0).map(|dt| dt.and_utc());
+        }
+
+        // Try with timezone offset without colon: "2025-03-09T19:00:00+0000"
+        if let Ok(dt) = DateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%z") {
+            return Some(dt.with_timezone(&Utc));
+        }
     }
 
     None
+}
+
+/// Build a human-readable detail string from status fields.
+fn build_detail(status_short: &str, status_long: Option<&str>, timer: Option<&str>) -> Option<String> {
+    match (status_short, status_long, timer) {
+        // Live with timer: "Q3 · 4:32"
+        (_, _, Some(t)) if map_status_to_state(status_short) == "in" => {
+            Some(format!("{} · {}", status_short, t))
+        }
+        // Live without timer: use long status
+        (_, Some(long), _) if map_status_to_state(status_short) == "in" => {
+            Some(long.to_string())
+        }
+        // Finished
+        (_, Some(long), _) if map_status_to_state(status_short) == "final" => {
+            Some(long.to_string())
+        }
+        // Not started / other
+        (_, Some(long), _) => Some(long.to_string()),
+        _ => None,
+    }
 }
