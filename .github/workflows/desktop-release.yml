@@ -50,6 +50,10 @@ jobs:
         with:
           workspaces: desktop/src-tauri
 
+      - name: Prepare extension (generates .wxt/tsconfig.json needed by shared components)
+        run: npm ci
+        working-directory: extension
+
       - name: Install frontend dependencies
         run: npm ci
 
