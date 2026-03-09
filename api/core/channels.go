@@ -66,19 +66,22 @@ func SyncChannelSubscriptions(logtoSub string) {
 			RemoveSubscriber(ctx, setKey, logtoSub)
 		}
 
-		// Sports: sync per-league subscriber sets
+		// Sports: sync per-league subscriber sets based on user's configured leagues
 		if ch.ChannelType == "sports" {
-			leagueKeys := make([]string, len(SportsLeagues))
-			for i, league := range SportsLeagues {
-				leagueKeys[i] = SportsLeagueSubscribersPrefix + league
-			}
-			if ch.Enabled {
-				if err := AddSubscriberMulti(ctx, leagueKeys, logtoSub); err != nil {
-					log.Printf("[Channels] Failed to sync sports league subscriptions for %s: %v", logtoSub, err)
+			leagues := extractSportsLeaguesFromConfig(ch.Config)
+			if len(leagues) > 0 {
+				leagueKeys := make([]string, len(leagues))
+				for i, league := range leagues {
+					leagueKeys[i] = SportsLeagueSubscribersPrefix + league
 				}
-			} else {
-				if err := RemoveSubscriberMulti(ctx, leagueKeys, logtoSub); err != nil {
-					log.Printf("[Channels] Failed to remove sports league subscriptions for %s: %v", logtoSub, err)
+				if ch.Enabled {
+					if err := AddSubscriberMulti(ctx, leagueKeys, logtoSub); err != nil {
+						log.Printf("[Channels] Failed to sync sports league subscriptions for %s: %v", logtoSub, err)
+					}
+				} else {
+					if err := RemoveSubscriberMulti(ctx, leagueKeys, logtoSub); err != nil {
+						log.Printf("[Channels] Failed to remove sports league subscriptions for %s: %v", logtoSub, err)
+					}
 				}
 			}
 		}
@@ -94,16 +97,17 @@ func SyncChannelSubscriptions(logtoSub string) {
 func addChannelSubscriptions(ctx context.Context, logtoSub, channelType string, config map[string]interface{}) {
 	AddSubscriber(ctx, RedisChannelSubscribersPrefix+channelType, logtoSub)
 
-	// Sports: also populate per-league subscriber sets for targeted CDC fan-out.
-	// Currently adds to ALL leagues; per-league filtering can be added later
-	// by reading league preferences from the config JSONB.
+	// Sports: populate per-league subscriber sets for user's configured leagues.
 	if channelType == "sports" {
-		leagueKeys := make([]string, len(SportsLeagues))
-		for i, league := range SportsLeagues {
-			leagueKeys[i] = SportsLeagueSubscribersPrefix + league
-		}
-		if err := AddSubscriberMulti(ctx, leagueKeys, logtoSub); err != nil {
-			log.Printf("[Channels] Failed to add sports league subscriptions for %s: %v", logtoSub, err)
+		leagues := extractSportsLeaguesFromConfig(config)
+		if len(leagues) > 0 {
+			leagueKeys := make([]string, len(leagues))
+			for i, league := range leagues {
+				leagueKeys[i] = SportsLeagueSubscribersPrefix + league
+			}
+			if err := AddSubscriberMulti(ctx, leagueKeys, logtoSub); err != nil {
+				log.Printf("[Channels] Failed to add sports league subscriptions for %s: %v", logtoSub, err)
+			}
 		}
 	}
 
@@ -120,14 +124,17 @@ func addChannelSubscriptions(ctx context.Context, logtoSub, channelType string, 
 func removeChannelSubscriptions(ctx context.Context, logtoSub, channelType string, config map[string]interface{}) {
 	RemoveSubscriber(ctx, RedisChannelSubscribersPrefix+channelType, logtoSub)
 
-	// Sports: also remove from per-league subscriber sets.
+	// Sports: remove from per-league subscriber sets for user's configured leagues.
 	if channelType == "sports" {
-		leagueKeys := make([]string, len(SportsLeagues))
-		for i, league := range SportsLeagues {
-			leagueKeys[i] = SportsLeagueSubscribersPrefix + league
-		}
-		if err := RemoveSubscriberMulti(ctx, leagueKeys, logtoSub); err != nil {
-			log.Printf("[Channels] Failed to remove sports league subscriptions for %s: %v", logtoSub, err)
+		leagues := extractSportsLeaguesFromConfig(config)
+		if len(leagues) > 0 {
+			leagueKeys := make([]string, len(leagues))
+			for i, league := range leagues {
+				leagueKeys[i] = SportsLeagueSubscribersPrefix + league
+			}
+			if err := RemoveSubscriberMulti(ctx, leagueKeys, logtoSub); err != nil {
+				log.Printf("[Channels] Failed to remove sports league subscriptions for %s: %v", logtoSub, err)
+			}
 		}
 	}
 
@@ -495,4 +502,27 @@ func DeleteChannel(c *fiber.Ctx) error {
 	InvalidateDashboardCache(userID)
 
 	return c.JSON(fiber.Map{"status": "ok", "message": "Channel removed"})
+}
+
+// extractSportsLeaguesFromConfig reads the "leagues" array from a sports
+// channel's config JSONB map. Config shape: {"leagues": ["NFL", "NBA", ...]}
+func extractSportsLeaguesFromConfig(config map[string]interface{}) []string {
+	if config == nil {
+		return nil
+	}
+	raw, ok := config["leagues"]
+	if !ok {
+		return nil
+	}
+	arr, ok := raw.([]interface{})
+	if !ok {
+		return nil
+	}
+	leagues := make([]string, 0, len(arr))
+	for _, v := range arr {
+		if s, ok := v.(string); ok && s != "" {
+			leagues = append(leagues, s)
+		}
+	}
+	return leagues
 }

@@ -60,6 +60,7 @@ export default defineConfig({
     browser_specific_settings: {
       gecko: {
         id: "scrollr@relentnet.dev",
+        // id: "scrollr@enanimate.dev",
       },
     },
   },

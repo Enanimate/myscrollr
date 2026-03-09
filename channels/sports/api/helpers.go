@@ -42,9 +42,28 @@ func SetCache(rdb *redis.Client, key string, value interface{}, expiration time.
 	}
 }
 
+// DeleteCache removes a cached value from Redis.
+func DeleteCache(rdb *redis.Client, key string) {
+	rdb.Del(context.Background(), key)
+}
+
 // GetSubscribers returns all user subs in a Redis subscription set.
 func GetSubscribers(rdb *redis.Client, ctx context.Context, setKey string) ([]string, error) {
 	return rdb.SMembers(ctx, setKey).Result()
+}
+
+// AddSubscriber adds a user to a Redis subscriber set.
+func AddSubscriber(rdb *redis.Client, ctx context.Context, setKey, userSub string) {
+	if err := rdb.SAdd(ctx, setKey, userSub).Err(); err != nil {
+		log.Printf("[Redis] Failed to add subscriber %s to %s: %v", userSub, setKey, err)
+	}
+}
+
+// RemoveSubscriber removes a user from a Redis subscriber set.
+func RemoveSubscriber(rdb *redis.Client, ctx context.Context, setKey, userSub string) {
+	if err := rdb.SRem(ctx, setKey, userSub).Err(); err != nil {
+		log.Printf("[Redis] Failed to remove subscriber %s from %s: %v", userSub, setKey, err)
+	}
 }
 
 // buildHealthURL ensures the URL ends with /health.

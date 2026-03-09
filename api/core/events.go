@@ -311,9 +311,10 @@ func subscribeUserToTopics(userID string) {
 			}
 
 		case "sports":
-			// Subscribe to all leagues. Per-league filtering via config
-			// can be added later.
-			for _, league := range SportsLeagues {
+			// Subscribe only to the user's configured leagues.
+			// Config shape: {"leagues": ["NFL", "NBA", ...]}
+			leagues := extractLeaguesFromConfig(ch.Config)
+			for _, league := range leagues {
 				globalHub.registry.subscribe(userID, TopicPrefixSports+league)
 			}
 
@@ -378,6 +379,26 @@ func extractFeedURLsFromConfig(config map[string]interface{}) []string {
 		}
 	}
 	return urls
+}
+
+// extractLeaguesFromConfig reads the "leagues" array from a sports channel's config JSONB.
+// Config shape: {"leagues": ["NFL", "NBA", ...]}
+func extractLeaguesFromConfig(config map[string]interface{}) []string {
+	raw, ok := config["leagues"]
+	if !ok {
+		return nil
+	}
+	arr, ok := raw.([]interface{})
+	if !ok {
+		return nil
+	}
+	leagues := make([]string, 0, len(arr))
+	for _, v := range arr {
+		if s, ok := v.(string); ok && s != "" {
+			leagues = append(leagues, s)
+		}
+	}
+	return leagues
 }
 
 // getUserFantasyLeagues returns the Yahoo league keys a user has imported.

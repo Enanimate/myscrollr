@@ -16,6 +16,7 @@ export interface Trade {
 export interface Game {
   id: number | string;
   league: string;
+  sport: string;
   external_game_id: string;
   link: string;
   home_team_name: string;
@@ -27,6 +28,11 @@ export interface Game {
   start_time: string;
   short_detail?: string;
   state?: string;
+  status_short?: string;
+  status_long?: string;
+  timer?: string;
+  venue?: string;
+  season?: string;
   created_at?: string;
   updated_at?: string;
 }
