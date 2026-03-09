@@ -4,7 +4,7 @@ Operational guide for AI coding agents working in this repository.
 
 ## Project Overview
 
-MyScrollr — platform aggregating financial market data, sports scores, RSS feeds, and Yahoo Fantasy Sports. React frontend, browser extension, Go gateway API, and independent channel services. Infrastructure: PostgreSQL, Redis, Logto (auth), Sequin (CDC), Stripe (billing). Deployed on Coolify.
+MyScrollr — platform aggregating financial market data, sports scores, RSS feeds, and Yahoo Fantasy Sports. React frontend, browser extension, Tauri desktop app, Go gateway API, and independent channel services. Infrastructure: PostgreSQL, Redis, Logto (auth), Sequin (CDC), Stripe (billing). Deployed on Coolify.
 
 ## Repository Layout
 
@@ -13,10 +13,10 @@ Monorepo with independently deployable components:
 - `api/` — Core gateway API (Go 1.21, Fiber v2, sub-package `core/`)
 - `myscrollr.com/` — Frontend (React 19, Vite 7, TanStack Router, Tailwind v4)
 - `extension/` — Browser extension (WXT v0.20, React 19, Tailwind v4)
+- `desktop/` — Tauri v2 desktop app (React 19, Vite 7, Tailwind v4, Rust backend)
 - `channels/{finance,sports,rss}/api/` — Channel Go APIs (flat `main` package, independent modules)
 - `channels/{finance,sports,rss}/service/` — Rust ingestion services (independent crates, edition 2024)
-- `channels/fantasy/api/` — Fantasy Go API (adds `golang.org/x/oauth2` for Yahoo)
-- `channels/fantasy/service/` — Fantasy Python service (FastAPI + uvicorn + asyncpg)
+- `channels/fantasy/api/` — Fantasy Go API (Yahoo OAuth2, Go-native sync in `sync.go`)
 - `channels/*/web/` — Dashboard tab components (single `DashboardTab.tsx` each, no own `package.json`)
 - `channels/*/extension/` — Feed tab components (`FeedTab.tsx` + item components, no own `package.json`)
 
@@ -37,10 +37,22 @@ npm run format       # prettier only
 ```sh
 npm run dev          # Dev mode (Chrome)
 npm run dev:firefox  # Dev mode (Firefox)
+npm run dev:edge     # Dev mode (Edge)
 npm run build        # Build Chrome MV3
+npm run build:firefox / build:edge / build:safari
 npm run compile      # tsc --noEmit (type-check only)
 npm run zip          # Package for store submission
 ```
+
+### Desktop (`desktop/`)
+
+```sh
+npm run dev          # Vite frontend only on port 5174
+npm run tauri:dev    # Full Tauri dev (Vite + Rust backend)
+npm run tauri:build  # Production build (native binary)
+```
+
+Note: Desktop depends on extension types. Run `npm ci` in `extension/` first to generate `.wxt/tsconfig.json`.
 
 ### Go APIs (`api/` and `channels/{name}/api/`)
 
@@ -55,21 +67,13 @@ go build -o {name}_api && ./{name}_api     # finance=8081, sports=8082, rss=8083
 cargo build --release && cargo run         # finance=3001, sports=3002, rss=3004
 ```
 
-### Fantasy Python Service (`channels/fantasy/service/`)
-
-```sh
-python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
-uvicorn main:app --port 3003
-```
-
 ### Tests
 
 No test infrastructure exists yet. When adding tests:
 
-- **Frontend/Extension**: Vitest. Single file: `npx vitest run path/to/file.test.ts`. Single test: `npx vitest run -t "test name"`
+- **Frontend/Extension/Desktop**: Vitest. All: `npx vitest run`. Single file: `npx vitest run path/to/file.test.ts`. Single test: `npx vitest run -t "test name"`
 - **Go**: `go test ./...`. Single test: `go test -run TestName ./path/to/pkg`
 - **Rust**: `cargo test`. Single test: `cargo test test_name`
-- **Python**: pytest. Single test: `pytest path/to/test.py -k "test_name"`
 
 ## Code Style -- TypeScript (Frontend: `myscrollr.com/`)
 
@@ -85,11 +89,11 @@ No test infrastructure exists yet. When adding tests:
 
 **Components**: Function components with named exports. Routes use TanStack Router file-based convention (`export const Route = createFileRoute(...)`). Hooks are named function exports (`export function useRealtime(...)`).
 
-**External channels**: Custom Vite plugin `resolveExternalChannels` resolves bare imports from `channels/*/web/` to `myscrollr.com/node_modules`. Never duplicate dependencies in channel web dirs. Channel web files are included in the frontend tsconfig but Prettier may not format them -- they currently use double quotes and semicolons.
+**External channels**: Custom Vite plugin `resolveExternalChannels` resolves bare imports from `channels/*/web/` to `myscrollr.com/node_modules`. Never duplicate dependencies in channel web dirs.
 
 ## Code Style -- TypeScript (Extension: `extension/`)
 
-**Formatting**: Semicolons, double quotes (no Prettier). Uses `clsx` for conditional classes.
+**Formatting**: Semicolons, double quotes (no Prettier configured). Uses `clsx` for conditional classes.
 
 **Path aliases**: `~/` -> srcDir (WXT default), `@scrollr/` -> `../channels/`.
 
@@ -97,7 +101,15 @@ No test infrastructure exists yet. When adding tests:
 
 **Exports**: Feed tab components use default export (`export default function FinanceFeedTab`). Manifest objects are named exports (`export const financeChannel: ChannelManifest`).
 
-**Auth**: No `@logto/react` -- auth handled via custom token exchange in background script. Storage managed through WXT `storage` API.
+## Code Style -- TypeScript (Desktop: `desktop/`)
+
+**Formatting**: Semicolons, double quotes (same as extension, no Prettier). Uses `clsx`.
+
+**TypeScript**: Strict mode but `noUnusedLocals` and `noUnusedParameters` are **disabled** (relaxed vs frontend).
+
+**Path aliases**: `@/` -> `myscrollr.com/src/` (shared components), `~/` -> `extension/` (reused extension components), `@scrollr/` -> `channels/`. Desktop overrides `@/api/client` (Tauri fetch) and `~/channels/hooks/useScrollrCDC` (direct fetch vs browser.runtime).
+
+**Tauri Rust** (`desktop/src-tauri/`): Edition 2021 (not 2024). Uses `tauri::command` for IPC. Error handling via `Result<(), String>` and `map_err` (no `anyhow`). SSE streaming via `tokio` + `reqwest`, events emitted to webview.
 
 ## Code Style -- Go
 
@@ -111,15 +123,15 @@ No test infrastructure exists yet. When adding tests:
 
 **Error handling**: `if err != nil` returns. `log.Printf` for non-fatal, `log.Fatalf` for startup failures. Wrap with `fmt.Errorf("context: %w", err)`. HTTP errors return `ErrorResponse` struct.
 
-**Logging**: Bracketed category prefixes (`log.Printf("[Auth] message: %v", err)`). Not all channels use prefixes consistently.
+**Logging**: Bracketed category prefixes (`log.Printf("[Auth] message: %v", err)`).
 
 **Registration**: Channels self-register in Redis with 30s TTL, 20s heartbeat. Deregister on shutdown via `rdb.Del`.
 
-## Code Style -- Rust
+## Code Style -- Rust (Ingestion Services)
 
 **Edition**: 2024. Default `rustfmt` formatting.
 
-**Error handling**: `anyhow` exclusively (`anyhow::{Context, Result}`). No custom error types. Use `.context("message")?`. Avoid `unwrap()` and `panic!` except for truly unrecoverable init failures (DB connect retries use `panic!`).
+**Error handling**: `anyhow` exclusively (`anyhow::{Context, Result}`). No custom error types. Use `.context("message")?`. Avoid `unwrap()` and `panic!` except for truly unrecoverable init failures.
 
 **Async**: Tokio (full features), HTTP via Axum, database via SQLx (Postgres). Each feed/poll task spawned with `tokio::spawn`. Coordinated shutdown via `tokio_util::sync::CancellationToken`.
 
@@ -127,22 +139,15 @@ No test infrastructure exists yet. When adding tests:
 
 **Known duplication**: `database.rs` and `log.rs` are copy-pasted across all 3 Rust services. Do not extract a shared crate.
 
-## Code Style -- Python (Fantasy: `channels/fantasy/service/`)
-
-**Framework**: FastAPI with `lifespan` async context manager. Pydantic `BaseModel` for request validation.
-
-**Logging**: `logging.basicConfig()` to stdout, format `%(asctime)s [%(name)s] %(levelname)s %(message)s`.
-
-**State**: Module-level variables (`_pool`, `_sync_task`, `_shutdown_event`, `_health`). Shutdown via `asyncio.Event` + signal handlers.
-
 ## Architecture Rules
 
 1. **Core API has zero channel-specific code.** Discovers channels via Redis, proxies routes dynamically.
 2. **Channel isolation is absolute.** Each channel owns its Go API, ingestion service, frontend/extension components, configs, and Docker Compose.
 3. **HTTP-only contract.** No shared Go interfaces or types. Core calls `POST /internal/cdc`, channel returns `{ "users": [...] }`.
 4. **Route proxying**: Core proxies `/{name}/*` to channel APIs with `X-User-Sub` header. Channels never validate JWTs.
-5. **Convention-based UI discovery**: Frontend and extension use `import.meta.glob` to discover channel components at build time.
-6. **No migration framework.** Tables created programmatically via `CREATE TABLE IF NOT EXISTS` on service startup.
+5. **Convention-based UI discovery**: Frontend, extension, and desktop use `import.meta.glob` to discover channel components at build time.
+6. **Topic-based CDC PubSub**: Core hub dispatches CDC events via Redis topic-based PubSub (O(1) per event). Clients subscribe to topic channels matching their preferences.
+7. **No migration framework.** Tables created programmatically via `CREATE TABLE IF NOT EXISTS` on service startup.
 
 ## Git Workflow
 
