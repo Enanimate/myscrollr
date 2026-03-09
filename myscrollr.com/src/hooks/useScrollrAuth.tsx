@@ -98,8 +98,9 @@ const ScrollrAuthContext = createContext<ScrollrAuthContextValue | null>(null)
 
 // ── Provider ──────────────────────────────────────────────────────
 
+// const API_RESOURCE = import.meta.env.VITE_API_URL || 'https://api.myscrollr.relentnet.dev'
 const API_RESOURCE =
-  import.meta.env.VITE_API_URL || 'https://api.myscrollr.relentnet.dev'
+  import.meta.env.VITE_API_URL || 'https://api.myscrollr.enanimate.dev'
 
 export function ScrollrAuthProvider({ children }: { children: ReactNode }) {
   const logto = useLogto()
