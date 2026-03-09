@@ -194,12 +194,15 @@ body {
   transition: none !important;
 }
 
-/* Canvas: fill remaining space after the 32px taskbar header.
-   min-height: 0 overrides flexbox default (auto) so the element
-   can shrink below its content size — required for overflow scroll. */
+/* Canvas: fill remaining space after the 32/36/44px taskbar header.
+   height: 0 gives Chromium (WebView2) a definite specified height so
+   overflow-y: auto correctly creates a scrollbar. flex-grow still
+   expands the element to fill available space. height: auto would
+   leave the specified height ambiguous, causing Chromium to skip
+   overflow detection even though flex layout assigns a real height. */
 #desktop-shell > div:last-child > .overflow-y-auto {
   flex: 1 1 0% !important;
-  height: auto !important;
+  height: 0 !important;
   min-height: 0 !important;
 }
 
