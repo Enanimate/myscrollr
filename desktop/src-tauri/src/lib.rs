@@ -12,14 +12,37 @@ use tokio::sync::watch;
 struct SseHandle(Mutex<Option<watch::Sender<bool>>>);
 
 /// Resize the window height, preserving current width.
-/// Called from JS during drag-resize and collapse/expand.
+/// Anchors the bottom edge: when height changes, the top edge moves
+/// while the bottom stays fixed (natural for a bottom-docked window).
+///
+/// Reads current geometry once up-front, then applies size + position
+/// in a single pass to minimise visual tearing. Size is applied first
+/// so the brief intermediate state extends *downward* (usually off-screen
+/// for a bottom-docked window), then position corrects upward.
 #[tauri::command]
 fn resize_window(window: tauri::Window, height: f64) {
-    if let Ok(size) = window.outer_size() {
-        let scale = window.scale_factor().unwrap_or(1.0);
-        let current_width = size.width as f64 / scale;
-        let _ = window.set_size(tauri::LogicalSize::new(current_width, height));
+    let (size, pos) = match (window.outer_size(), window.outer_position()) {
+        (Ok(s), Ok(p)) => (s, p),
+        _ => return,
+    };
+    let scale = window.scale_factor().unwrap_or(1.0);
+    let current_width = size.width as f64 / scale;
+    let current_height = size.height as f64 / scale;
+    let delta = height - current_height;
+
+    if delta.abs() < 0.5 {
+        return; // no meaningful change
     }
+
+    // 1. Resize first — window briefly extends downward
+    let _ = window.set_size(tauri::LogicalSize::new(current_width, height));
+
+    // 2. Shift upward so bottom edge returns to its original position
+    let current_y = pos.y as f64 / scale;
+    let _ = window.set_position(tauri::LogicalPosition::new(
+        pos.x as f64 / scale,
+        current_y - delta,
+    ));
 }
 
 /// Start a temporary HTTP server on 127.0.0.1:19284 to receive the OAuth
@@ -494,6 +517,7 @@ pub fn run() {
             let window_clone = window.clone();
             TrayIconBuilder::new()
                 .tooltip("Scrollr")
+                .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
                 .on_menu_event(move |app, event| match event.id().as_ref() {
                     "show" => {

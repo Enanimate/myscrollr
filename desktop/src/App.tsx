@@ -853,30 +853,6 @@ export default function App() {
     }
   }, [isFullWidth, toggleFullWidth, tickerCollapsed, handleToggleTicker, canvasMode, handleCanvasModeChange, authenticated, pinned, handleTogglePin, showChannelPicker, prefs.taskbar, prefs.appearance, prefs.ticker]);
 
-  // ── Native compositor resize via drag handle ─────────────────
-  // Intercept the drag handle mousedown to use Tauri's startResizing()
-  // instead of FeedBar's built-in JS mouse tracking. This delegates
-  // resize to the compositor via startResizeDragging(), which correctly
-  // anchors the opposite edge (bottom stays fixed when dragging the
-  // top handle upward).
-
-  useEffect(() => {
-    const handle = document.querySelector(".cursor-row-resize");
-    if (!handle) return;
-
-    const onMouseDown = (e: Event) => {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      // Handle is at the top edge (position=bottom), so resize from North
-      const direction = position === "bottom" ? "North" : "South";
-      getCurrentWindow().startResizeDragging(direction).catch(() => {});
-    };
-
-    // Use capture phase to intercept before React's event delegation
-    handle.addEventListener("mousedown", onMouseDown, true);
-    return () => handle.removeEventListener("mousedown", onMouseDown, true);
-  }, [position]);
-
   // ── Sync height state from native resize events ──────────────
   // When the compositor finishes resizing, read the new window size
   // and update our height state + persist to localStorage.
@@ -908,17 +884,36 @@ export default function App() {
   }, []);
 
   // ── FeedBar height callbacks ─────────────────────────────────
-  // These are still passed to FeedBar for API compatibility, but
-  // the native resize handler above drives the actual behavior.
-  // FeedBar's built-in drag logic is intercepted and never fires.
+  // FeedBar's built-in JS mouse tracking drives resize. These
+  // callbacks sync the window size via the Tauri resize_window command.
+  // Throttled to one invoke per animation frame to prevent overlapping
+  // IPC calls that race and read stale window geometry.
 
-  const handleHeightChange = useCallback((_h: number) => {
-    // No-op: native resize handles this
-  }, []);
+  const resizeRaf = useRef(0);
+  const pendingHeight = useRef(0);
 
-  const handleHeightCommit = useCallback((_h: number) => {
-    // No-op: native resize handles this
-  }, []);
+  const handleHeightChange = useCallback((h: number) => {
+    setHeight(h);
+    pendingHeight.current = h;
+    if (resizeRaf.current) return; // already scheduled
+    resizeRaf.current = requestAnimationFrame(() => {
+      resizeRaf.current = 0;
+      const tickerH = tickerCollapsed ? 0 : TICKER_HEIGHTS[prefs.ticker.tickerMode] * prefs.appearance.tickerRows;
+      invoke("resize_window", { height: pendingHeight.current + tickerH }).catch(() => {});
+    });
+  }, [tickerCollapsed, prefs.ticker.tickerMode, prefs.appearance.tickerRows]);
+
+  const handleHeightCommit = useCallback((h: number) => {
+    // Cancel any pending rAF so the final value wins
+    if (resizeRaf.current) {
+      cancelAnimationFrame(resizeRaf.current);
+      resizeRaf.current = 0;
+    }
+    setHeight(h);
+    savePref("feedHeight", h);
+    const tickerH = tickerCollapsed ? 0 : TICKER_HEIGHTS[prefs.ticker.tickerMode] * prefs.appearance.tickerRows;
+    invoke("resize_window", { height: h + tickerH }).catch(() => {});
+  }, [tickerCollapsed, prefs.ticker.tickerMode, prefs.appearance.tickerRows]);
 
   // ── Initial setup ────────────────────────────────────────────
 

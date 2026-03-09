@@ -187,7 +187,7 @@ export default function ScrollrTicker({
   if (chips.length === 0) return null;
 
   return (
-    <div className={`ticker-container ${comfort ? "h-16" : "h-11"} flex items-center bg-base-150 border-b border-edge/50 flex-shrink-0 relative`}>
+    <div className={`ticker-container ${comfort ? "h-16" : "h-11"} flex items-center bg-base-150 border-b border-edge/50 flex-shrink-0 relative w-full overflow-hidden`}>
       {/* Top accent line — matches the website's card accent pattern */}
       <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent z-10" />
       <Ticker
@@ -195,7 +195,8 @@ export default function ScrollrTicker({
         velocity={-speed}
         hoverFactor={pauseOnHover ? hoverSpeed : 1}
         gap={gap}
-        fade="10%"
+        fade={40}
+        style={{ width: "100%", minWidth: 0 }}
       />
     </div>
   );
