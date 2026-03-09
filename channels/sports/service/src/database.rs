@@ -251,6 +251,21 @@ pub async fn seed_tracked_leagues(pool: Arc<PgPool>, leagues: Vec<LeagueConfig>)
     Ok(())
 }
 
+/// Disable any tracked_leagues rows not present in the config file.
+/// This cleans up old ESPN-era leagues (e.g. "College Football") that were
+/// never overwritten by the ON CONFLICT upsert (different names).
+pub async fn disable_stale_leagues(pool: &Arc<PgPool>, active_names: &[String]) -> Result<()> {
+    if active_names.is_empty() {
+        return Ok(());
+    }
+    let mut connection = pool.acquire().await?;
+    query("UPDATE tracked_leagues SET is_enabled = false WHERE name != ALL($1) AND is_enabled = true")
+        .bind(active_names)
+        .execute(&mut *connection)
+        .await?;
+    Ok(())
+}
+
 /// Wipe all games data. Called during the ESPN -> api-sports.io migration.
 pub async fn truncate_games(pool: &Arc<PgPool>) -> Result<()> {
     let mut connection = pool.acquire().await?;

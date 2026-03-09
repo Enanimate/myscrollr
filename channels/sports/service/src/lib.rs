@@ -5,8 +5,8 @@ use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use crate::log::{error, info, warn};
 use crate::database::{
     PgPool, create_tables, run_migrations, truncate_games,
-    get_tracked_leagues, seed_tracked_leagues, LeagueConfig, TrackedLeague,
-    upsert_game, CleanedData, Team,
+    get_tracked_leagues, seed_tracked_leagues, disable_stale_leagues,
+    LeagueConfig, TrackedLeague, upsert_game, CleanedData, Team,
 };
 pub use crate::types::{SportsHealth, RateLimitTracker};
 
@@ -37,8 +37,13 @@ pub async fn start_sports_service(pool: Arc<PgPool>, health_state: Arc<Mutex<Spo
         match serde_json::from_str::<Vec<LeagueConfig>>(&file_contents) {
             Ok(config) => {
                 info!("Seeding/updating {} leagues from config", config.len());
+                let active_names: Vec<String> = config.iter().map(|l| l.name.clone()).collect();
                 if let Err(e) = seed_tracked_leagues(pool.clone(), config).await {
                     error!("Failed to seed tracked leagues: {}", e);
+                }
+                // Disable any old leagues not in the current config (e.g. ESPN-era names)
+                if let Err(e) = disable_stale_leagues(&pool, &active_names).await {
+                    warn!("Failed to disable stale leagues: {}", e);
                 }
             }
             Err(e) => error!("Failed to parse leagues.json: {}", e),
@@ -218,8 +223,13 @@ fn build_api_url(league: &TrackedLeague, date: &str) -> String {
             let season = league.season.as_deref().unwrap_or("2025");
             format!("{}/games?league={}&season={}&date={}", base, league.league_id, season, date)
         }
-        "basketball" | "hockey" | "baseball" => {
+        "basketball" => {
             let season = league.season.as_deref().unwrap_or("2024-2025");
+            format!("{}/games?league={}&season={}&date={}", base, league.league_id, season, date)
+        }
+        "hockey" | "baseball" => {
+            // Hockey and baseball APIs require an integer season year
+            let season = league.season.as_deref().unwrap_or("2024");
             format!("{}/games?league={}&season={}&date={}", base, league.league_id, season, date)
         }
         "formula-1" => {
