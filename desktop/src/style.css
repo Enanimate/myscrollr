@@ -71,7 +71,8 @@
 /* Dark is the default @theme. Light overrides via data-theme attribute.
    Color palette matches the website's light mode. */
 
-#desktop-shell[data-theme="light"] {
+#desktop-shell[data-theme="light"],
+#app-shell[data-theme="light"] {
   --color-surface: #ffffff;
   --color-surface-2: #f6f7fb;
   --color-surface-hover: #eef0f6;
@@ -105,21 +106,26 @@
 
 /* Smooth theme transition */
 #desktop-shell.theme-transition,
-#desktop-shell.theme-transition * {
+#desktop-shell.theme-transition *,
+#app-shell.theme-transition,
+#app-shell.theme-transition * {
   transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease !important;
 }
 
 /* Light theme scrollbar */
-#desktop-shell[data-theme="light"] ::-webkit-scrollbar-thumb {
+#desktop-shell[data-theme="light"] ::-webkit-scrollbar-thumb,
+#app-shell[data-theme="light"] ::-webkit-scrollbar-thumb {
   background: var(--color-base-350);
 }
 
-#desktop-shell[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+#desktop-shell[data-theme="light"] ::-webkit-scrollbar-thumb:hover,
+#app-shell[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
   background: var(--color-base-400);
 }
 
 /* Light theme selection */
-#desktop-shell[data-theme="light"] ::selection {
+#desktop-shell[data-theme="light"] ::selection,
+#app-shell[data-theme="light"] ::selection {
   background: rgba(52, 211, 153, 0.2);
   color: var(--color-fg);
 }
@@ -308,106 +314,33 @@ body {
   animation: unlimited-dot-glow 2s ease-in-out infinite;
 }
 
-/* ── Desktop taskbar & ticker scaling ──────────────────────────── */
-/* Shared extension components (FeedBar, FeedTabs, ConnectionIndicator)
-   use text-[9px]–[11px] for the compact browser popup. Desktop displays
-   (especially 2K+ ultrawides) need larger text and proper cursors. */
+/* ── Custom title bar ─────────────────────────────────────────── */
 
-/* Taskbar header: 32px → 36px, grab cursor for window drag region */
-#desktop-shell [data-tauri-drag-region] {
-  height: 36px !important;
-  cursor: grab;
+.titlebar {
+  border-bottom: 1px solid var(--color-edge);
+  -webkit-app-region: drag;
+  app-region: drag;
 }
+
+/* Buttons must be non-draggable so they receive clicks */
+.titlebar button {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/* Title bar rounds top corners when window is not maximized.
+   Tauri's borderless window has no rounding by default on Linux. */
+#app-shell {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* ── Desktop cursor overrides ─────────────────────────────────── */
 
 /* Every button in the app shows pointer cursor */
-#desktop-shell button {
+#desktop-shell button,
+#app-shell button {
   cursor: pointer;
-}
-
-/* "scrollr" logo button: more breathing room from window edge, bigger text */
-#desktop-shell [data-tauri-drag-region] > div:first-child > button:first-child {
-  margin-left: 2px;
-}
-
-#desktop-shell [data-tauri-drag-region] > div:first-child > button:first-child span {
-  font-size: 14px;
-}
-
-/* FeedTabs channel buttons: 10px → 12px, flex for icon alignment */
-#desktop-shell [data-channel-id] {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 12px;
-}
-
-/* Hide channel icons when toggled off in settings */
-#desktop-shell[data-channel-icons="off"] [data-channel-id]::before {
-  display: none;
-}
-
-/* Channel tab icons via CSS mask — inherits text color automatically */
-#desktop-shell [data-channel-id]::before {
-  content: '';
-  display: block;
-  width: 11px;
-  height: 11px;
-  flex-shrink: 0;
-  background: currentColor;
-  -webkit-mask-size: contain;
-  mask-size: contain;
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-}
-
-#desktop-shell [data-channel-id="finance"]::before {
-  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='22 7 13.5 15.5 8.5 10.5 2 17'/%3E%3Cpolyline points='16 7 22 7 22 13'/%3E%3C/svg%3E");
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='22 7 13.5 15.5 8.5 10.5 2 17'/%3E%3Cpolyline points='16 7 22 7 22 13'/%3E%3C/svg%3E");
-}
-
-#desktop-shell [data-channel-id="sports"]::before {
-  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='4' width='16' height='16' rx='2'/%3E%3Crect x='9' y='9' width='6' height='6'/%3E%3Cpath d='M15 2v2'/%3E%3Cpath d='M15 20v2'/%3E%3Cpath d='M2 15h2'/%3E%3Cpath d='M2 9h2'/%3E%3Cpath d='M20 15h2'/%3E%3Cpath d='M20 9h2'/%3E%3Cpath d='M9 2v2'/%3E%3Cpath d='M9 20v2'/%3E%3C/svg%3E");
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='4' width='16' height='16' rx='2'/%3E%3Crect x='9' y='9' width='6' height='6'/%3E%3Cpath d='M15 2v2'/%3E%3Cpath d='M15 20v2'/%3E%3Cpath d='M2 15h2'/%3E%3Cpath d='M2 9h2'/%3E%3Cpath d='M20 15h2'/%3E%3Cpath d='M20 9h2'/%3E%3Cpath d='M9 2v2'/%3E%3Cpath d='M9 20v2'/%3E%3C/svg%3E");
-}
-
-#desktop-shell [data-channel-id="rss"]::before {
-  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 11a9 9 0 0 1 9 9'/%3E%3Cpath d='M4 4a16 16 0 0 1 16 16'/%3E%3Ccircle cx='5' cy='20' r='1'/%3E%3C/svg%3E");
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 11a9 9 0 0 1 9 9'/%3E%3Cpath d='M4 4a16 16 0 0 1 16 16'/%3E%3Ccircle cx='5' cy='20' r='1'/%3E%3C/svg%3E");
-}
-
-#desktop-shell [data-channel-id="fantasy"]::before {
-  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 10h.01'/%3E%3Cpath d='M15 10h.01'/%3E%3Cpath d='M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z'/%3E%3C/svg%3E");
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 10h.01'/%3E%3Cpath d='M15 10h.01'/%3E%3Cpath d='M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z'/%3E%3C/svg%3E");
-}
-
-/* Header dividers: taller to fill 36px header */
-#desktop-shell [data-tauri-drag-region] .w-px {
-  height: 1rem;
-}
-
-/* Connection indicator dot: 6px → 8px */
-#desktop-shell [data-tauri-drag-region] .rounded-full {
-  width: 8px;
-  height: 8px;
-}
-
-/* Connection indicator label: 9px → 11px */
-#desktop-shell [data-tauri-drag-region] .tracking-widest {
-  font-size: 11px;
-}
-
-/* Collapse button: 10px → 13px (last button in the right group) */
-#desktop-shell [data-tauri-drag-region] > div:last-child > button:last-of-type {
-  font-size: 13px;
-}
-
-/* Sign-in banner: bump text for readability */
-#desktop-shell .border-accent\/10 span {
-  font-size: 12px;
-}
-
-#desktop-shell .border-accent\/10 button {
-  font-size: 11px;
 }
 
 /* ── Dashboard content scaling ──────────────────────────────────── */
@@ -434,6 +367,78 @@ body {
 /* Sub-body text: sm (14px) → 15px */
 .dashboard-content .text-sm {
   font-size: 15px !important;
+}
+
+/* ── EKG animated trace ──────────────────────────────────────────
+   A bright segment sweeps along the heartbeat path like a real
+   cardiac monitor. Uses pathLength normalisation + stroke-dashoffset.
+   60% sweep, 40% pause — gives it a breathing rhythm. */
+
+@keyframes ekg-trace {
+  0%   { stroke-dashoffset: 0; }
+  60%  { stroke-dashoffset: -100; }
+  100% { stroke-dashoffset: -100; }
+}
+
+.ekg-trace {
+  animation: ekg-trace 2.8s ease-in-out infinite;
+}
+
+/* ── Live indicator dot ─────────────────────────────────────────── */
+
+@keyframes ekg-dot {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 6px rgba(52, 211, 153, 0.6);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.65);
+    box-shadow: 0 0 2px rgba(52, 211, 153, 0.2);
+  }
+}
+
+.ekg-dot {
+  animation: ekg-dot 2s ease-in-out infinite;
+}
+
+/* ── Toggle switch ──────────────────────────────────────────────── */
+
+.toggle-switch {
+  position: relative;
+  width: 34px;
+  height: 18px;
+  border-radius: 9999px;
+  background: var(--color-base-350);
+  border: none;
+  padding: 0;
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.toggle-switch[data-checked="true"] {
+  background: var(--color-accent);
+  box-shadow: 0 0 10px rgba(52, 211, 153, 0.3), 0 0 3px rgba(52, 211, 153, 0.15);
+}
+
+.toggle-switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: white;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.toggle-switch[data-checked="true"]::after {
+  transform: translateX(16px);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), 0 0 8px rgba(52, 211, 153, 0.4);
 }
 
 /* ── Reduced motion ─────────────────────────────────────────────── */
