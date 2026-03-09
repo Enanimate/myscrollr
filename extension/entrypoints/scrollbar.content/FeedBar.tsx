@@ -20,19 +20,22 @@ interface FeedBarProps {
   position: FeedPosition;
   height: number;
   mode: FeedMode;
-  collapsed: boolean;
+  collapsed?: boolean;
   behavior: FeedBehavior;
   /** Channel IDs that are visible (derived from user_channels). */
   activeTabs: string[];
   authenticated: boolean;
   onLogin: () => void;
-  onToggleCollapse: () => void;
+  onToggleCollapse?: () => void;
   onHeightChange: (height: number) => void;
   onHeightCommit: (height: number) => void;
   /** Optional: externally controlled active tab (desktop ticker click). */
   activeTab?: string;
   /** Optional: called when the user switches tabs (for external state sync). */
   onActiveTabChange?: (tab: string) => void;
+  /** Optional: when provided, renders this content instead of the FeedTab in the canvas area.
+   *  Used by desktop app to inject DashboardTab when canvas mode is "dashboard". */
+  overrideContent?: React.ReactNode;
 }
 
 const COLLAPSED_HEIGHT = 32;
@@ -58,7 +61,7 @@ export default function FeedBar({
   position,
   height,
   mode,
-  collapsed,
+  collapsed = false,
   behavior,
   activeTabs,
   authenticated,
@@ -68,6 +71,7 @@ export default function FeedBar({
   onHeightCommit,
   activeTab: externalActiveTab,
   onActiveTabChange,
+  overrideContent,
 }: FeedBarProps) {
   const [internalActiveTab, setInternalActiveTab] = useState<string>(
     externalActiveTab ?? activeTabs[0] ?? "finance",
@@ -173,6 +177,7 @@ export default function FeedBar({
       {/* Drag handle */}
       <div
         onMouseDown={handleDragStart}
+        title="Drag to resize"
         className={clsx(
           "absolute left-0 right-0 h-2 cursor-row-resize group z-10",
           position === "bottom" ? "-top-1" : "-bottom-1",
@@ -206,20 +211,24 @@ export default function FeedBar({
             status={connectionStatus}
             deliveryMode={deliveryMode}
           />
-          <span className="h-3 w-px bg-edge" />
-          <button
-            onClick={onToggleCollapse}
-            className="text-fg-3 hover:text-accent transition-colors text-[10px] font-mono px-0.5"
-            title={collapsed ? "Expand" : "Collapse"}
-          >
-            {collapsed
-              ? position === "bottom"
-                ? "\u25B2"
-                : "\u25BC"
-              : position === "bottom"
-                ? "\u25BC"
-                : "\u25B2"}
-          </button>
+          {onToggleCollapse && (
+            <>
+              <span className="h-3 w-px bg-edge" />
+              <button
+                onClick={onToggleCollapse}
+                className="text-fg-3 hover:text-accent transition-colors text-[10px] font-mono px-0.5"
+                title={collapsed ? "Expand" : "Collapse"}
+              >
+                {collapsed
+                  ? position === "bottom"
+                    ? "\u25B2"
+                    : "\u25BC"
+                  : position === "bottom"
+                    ? "\u25BC"
+                    : "\u25B2"}
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -243,7 +252,9 @@ export default function FeedBar({
               </button>
             </div>
           )}
-          {FeedTabComponent ? (
+          {overrideContent ? (
+            overrideContent
+          ) : FeedTabComponent ? (
             <FeedTabComponent mode={mode} channelConfig={channelConfig} />
           ) : (
             <div className="text-center py-8 text-fg-3 text-xs font-mono">

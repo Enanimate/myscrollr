@@ -1,7 +1,9 @@
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&display=swap');
 @import "tailwindcss";
 @source "../../channels/*/extension/**/*.tsx";
+@source "../../channels/*/web/**/*.tsx";
 @source "../../extension/entrypoints/scrollbar.content/**/*.tsx";
+@source "../../myscrollr.com/src/channels/shared.tsx";
 @source "./components/**/*.tsx";
 
 @theme {
@@ -65,6 +67,63 @@
   --shadow-soft-md: 0 4px 16px rgba(0, 0, 0, 0.3);
 }
 
+/* ── Light theme ──────────────────────────────────────────────── */
+/* Dark is the default @theme. Light overrides via data-theme attribute.
+   Color palette matches the website's light mode. */
+
+#desktop-shell[data-theme="light"] {
+  --color-surface: #ffffff;
+  --color-surface-2: #f6f7fb;
+  --color-surface-hover: #eef0f6;
+
+  --color-base-100: #ffffff;
+  --color-base-150: #f6f7fb;
+  --color-base-200: #eef0f6;
+  --color-base-250: #e4e6ee;
+  --color-base-300: #d5d7e2;
+  --color-base-350: #c4c6d4;
+  --color-base-400: #b0b3c4;
+  --color-base-content: #1a1b2e;
+
+  --color-edge: #d5d7e2;
+  --color-edge-2: #c4c6d4;
+
+  --color-info: #00b8db;
+
+  --color-fg: #1a1b2e;
+  --color-fg-2: #4a4a5a;
+  --color-fg-3: #7a7a8a;
+  --color-fg-4: #a0a0b0;
+
+  --shadow-glow-sm: 0 0 20px rgba(52, 211, 153, 0.04);
+  --shadow-glow-md: 0 0 30px rgba(52, 211, 153, 0.06);
+  --shadow-glow-lg: 0 0 50px rgba(52, 211, 153, 0.08);
+
+  --shadow-soft-sm: 0 1px 3px rgba(0, 0, 0, 0.04), 0 2px 8px rgba(0, 0, 0, 0.06);
+  --shadow-soft-md: 0 2px 6px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+/* Smooth theme transition */
+#desktop-shell.theme-transition,
+#desktop-shell.theme-transition * {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease !important;
+}
+
+/* Light theme scrollbar */
+#desktop-shell[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: var(--color-base-350);
+}
+
+#desktop-shell[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+  background: var(--color-base-400);
+}
+
+/* Light theme selection */
+#desktop-shell[data-theme="light"] ::selection {
+  background: rgba(52, 211, 153, 0.2);
+  color: var(--color-fg);
+}
+
 /* ── Base styles ──────────────────────────────────────────────── */
 
 html,
@@ -101,16 +160,23 @@ body {
    Top-to-bottom: Ticker → Taskbar (FeedBar header) → Canvas (FeedBar content).
    The Tauri window size is the viewport — CSS fills 100%. */
 
-/* Shell wraps Ticker + FeedBar */
+/* Shell wraps Ticker + FeedBar. Background and color are set here
+   (not on body) so the data-theme light/dark overrides take effect. */
 #desktop-shell {
   display: flex;
   flex-direction: column;
   width: 100%;
   height: 100vh;
   overflow: hidden;
+  background: var(--color-surface);
+  color: var(--color-fg);
 }
 
-/* Override FeedBar outer div: fill remaining space, use flexbox column */
+/* Override FeedBar outer div: fill remaining space, use flexbox column.
+   min-height: 0 is critical — flexbox items default to min-height: auto,
+   which prevents shrinking below content size. Without it, a tall
+   DashboardTab makes this div grow beyond the viewport, and the inner
+   scroll container never overflows. */
 #desktop-shell > div:last-child {
   position: relative !important;
   top: auto !important;
@@ -120,16 +186,21 @@ body {
   width: 100% !important;
   height: auto !important;
   flex: 1 1 0% !important;
+  min-height: 0 !important;
   z-index: auto !important;
   display: flex !important;
   flex-direction: column !important;
+  overflow: hidden !important;
   transition: none !important;
 }
 
-/* Canvas: fill remaining space after the 32px taskbar header */
+/* Canvas: fill remaining space after the 32px taskbar header.
+   min-height: 0 overrides flexbox default (auto) so the element
+   can shrink below its content size — required for overflow scroll. */
 #desktop-shell > div:last-child > .overflow-y-auto {
   flex: 1 1 0% !important;
   height: auto !important;
+  min-height: 0 !important;
 }
 
 /* ── Ticker ─────────────────────────────────────────────────────── */
@@ -140,9 +211,8 @@ body {
 
 /* Ensure ticker chips have consistent gap spacing */
 .ticker-container [data-motion-ticker] {
-  gap: 6px;
+  gap: 8px;
   align-items: center;
-  height: 100%;
 }
 
 /* ── Scrollbar ──────────────────────────────────────────────────── */
@@ -168,6 +238,190 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-base-350);
+}
+
+/* ── Unlimited tier glow animations ─────────────────────────────── */
+/* Copied from myscrollr.com/src/styles.css — used by ChannelHeader
+   and InfoCard in @/channels/shared for uplink_unlimited users. */
+
+@keyframes unlimited-glow-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 8px rgba(52, 211, 153, 0.12),
+      0 0 24px rgba(52, 211, 153, 0.04),
+      inset 0 0 8px rgba(52, 211, 153, 0.02);
+  }
+  50% {
+    box-shadow:
+      0 0 14px rgba(52, 211, 153, 0.25),
+      0 0 40px rgba(52, 211, 153, 0.08),
+      inset 0 0 14px rgba(52, 211, 153, 0.04);
+  }
+}
+
+@keyframes unlimited-text-glow {
+  0%,
+  100% {
+    text-shadow: 0 0 6px rgba(52, 211, 153, 0.2);
+  }
+  50% {
+    text-shadow: 0 0 14px rgba(52, 211, 153, 0.45);
+  }
+}
+
+@keyframes unlimited-dot-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 0 4px rgba(52, 211, 153, 0.3),
+      0 0 10px rgba(52, 211, 153, 0.1);
+  }
+  50% {
+    box-shadow:
+      0 0 7px rgba(52, 211, 153, 0.55),
+      0 0 16px rgba(52, 211, 153, 0.2);
+  }
+}
+
+.unlimited-glow {
+  animation: unlimited-glow-pulse 3s ease-in-out infinite;
+}
+
+.unlimited-text-glow {
+  animation: unlimited-text-glow 3s ease-in-out infinite;
+}
+
+.unlimited-dot-glow {
+  animation: unlimited-dot-glow 2s ease-in-out infinite;
+}
+
+/* ── Desktop taskbar & ticker scaling ──────────────────────────── */
+/* Shared extension components (FeedBar, FeedTabs, ConnectionIndicator)
+   use text-[9px]–[11px] for the compact browser popup. Desktop displays
+   (especially 2K+ ultrawides) need larger text and proper cursors. */
+
+/* Taskbar header: 32px → 36px, grab cursor for window drag region */
+#desktop-shell [data-tauri-drag-region] {
+  height: 36px !important;
+  cursor: grab;
+}
+
+/* Every button in the app shows pointer cursor */
+#desktop-shell button {
+  cursor: pointer;
+}
+
+/* "scrollr" logo button: more breathing room from window edge, bigger text */
+#desktop-shell [data-tauri-drag-region] > div:first-child > button:first-child {
+  margin-left: 2px;
+}
+
+#desktop-shell [data-tauri-drag-region] > div:first-child > button:first-child span {
+  font-size: 14px;
+}
+
+/* FeedTabs channel buttons: 10px → 12px, flex for icon alignment */
+#desktop-shell [data-channel-id] {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+}
+
+/* Hide channel icons when toggled off in settings */
+#desktop-shell[data-channel-icons="off"] [data-channel-id]::before {
+  display: none;
+}
+
+/* Channel tab icons via CSS mask — inherits text color automatically */
+#desktop-shell [data-channel-id]::before {
+  content: '';
+  display: block;
+  width: 11px;
+  height: 11px;
+  flex-shrink: 0;
+  background: currentColor;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
+#desktop-shell [data-channel-id="finance"]::before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='22 7 13.5 15.5 8.5 10.5 2 17'/%3E%3Cpolyline points='16 7 22 7 22 13'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='22 7 13.5 15.5 8.5 10.5 2 17'/%3E%3Cpolyline points='16 7 22 7 22 13'/%3E%3C/svg%3E");
+}
+
+#desktop-shell [data-channel-id="sports"]::before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='4' width='16' height='16' rx='2'/%3E%3Crect x='9' y='9' width='6' height='6'/%3E%3Cpath d='M15 2v2'/%3E%3Cpath d='M15 20v2'/%3E%3Cpath d='M2 15h2'/%3E%3Cpath d='M2 9h2'/%3E%3Cpath d='M20 15h2'/%3E%3Cpath d='M20 9h2'/%3E%3Cpath d='M9 2v2'/%3E%3Cpath d='M9 20v2'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='4' width='16' height='16' rx='2'/%3E%3Crect x='9' y='9' width='6' height='6'/%3E%3Cpath d='M15 2v2'/%3E%3Cpath d='M15 20v2'/%3E%3Cpath d='M2 15h2'/%3E%3Cpath d='M2 9h2'/%3E%3Cpath d='M20 15h2'/%3E%3Cpath d='M20 9h2'/%3E%3Cpath d='M9 2v2'/%3E%3Cpath d='M9 20v2'/%3E%3C/svg%3E");
+}
+
+#desktop-shell [data-channel-id="rss"]::before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 11a9 9 0 0 1 9 9'/%3E%3Cpath d='M4 4a16 16 0 0 1 16 16'/%3E%3Ccircle cx='5' cy='20' r='1'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 11a9 9 0 0 1 9 9'/%3E%3Cpath d='M4 4a16 16 0 0 1 16 16'/%3E%3Ccircle cx='5' cy='20' r='1'/%3E%3C/svg%3E");
+}
+
+#desktop-shell [data-channel-id="fantasy"]::before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 10h.01'/%3E%3Cpath d='M15 10h.01'/%3E%3Cpath d='M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 10h.01'/%3E%3Cpath d='M15 10h.01'/%3E%3Cpath d='M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z'/%3E%3C/svg%3E");
+}
+
+/* Header dividers: taller to fill 36px header */
+#desktop-shell [data-tauri-drag-region] .w-px {
+  height: 1rem;
+}
+
+/* Connection indicator dot: 6px → 8px */
+#desktop-shell [data-tauri-drag-region] .rounded-full {
+  width: 8px;
+  height: 8px;
+}
+
+/* Connection indicator label: 9px → 11px */
+#desktop-shell [data-tauri-drag-region] .tracking-widest {
+  font-size: 11px;
+}
+
+/* Collapse button: 10px → 13px (last button in the right group) */
+#desktop-shell [data-tauri-drag-region] > div:last-child > button:last-of-type {
+  font-size: 13px;
+}
+
+/* Sign-in banner: bump text for readability */
+#desktop-shell .border-accent\/10 span {
+  font-size: 12px;
+}
+
+#desktop-shell .border-accent\/10 button {
+  font-size: 11px;
+}
+
+/* ── Dashboard content scaling ──────────────────────────────────── */
+/* DashboardTab components use compact 8–10px text designed for the
+   website layout. Desktop displays need larger text for readability.
+   The .dashboard-content class is applied by App.tsx's overrideContent. */
+
+/* Tiny labels & metadata: 8–9px → 11px */
+.dashboard-content .text-\[8px\],
+.dashboard-content .text-\[9px\] {
+  font-size: 11px !important;
+}
+
+/* Small labels: 10px → 12px */
+.dashboard-content .text-\[10px\] {
+  font-size: 12px !important;
+}
+
+/* Body text: xs (12px) → 13px */
+.dashboard-content .text-xs {
+  font-size: 13px !important;
+}
+
+/* Sub-body text: sm (14px) → 15px */
+.dashboard-content .text-sm {
+  font-size: 15px !important;
 }
 
 /* ── Reduced motion ─────────────────────────────────────────────── */

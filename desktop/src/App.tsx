@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   getCurrentWindow,
   currentMonitor,
@@ -17,6 +17,8 @@ import type {
 } from "~/utils/types";
 import FeedBar from "~/entrypoints/scrollbar.content/FeedBar";
 import ScrollrTicker from "./components/ScrollrTicker";
+import { getWebChannel } from "./channels/webRegistry";
+import { getValidToken as authGetValidToken } from "./auth";
 import {
   login as authLogin,
   logout as authLogout,
@@ -25,6 +27,28 @@ import {
   getTier,
 } from "./auth";
 import type { SubscriptionTier } from "./auth";
+import type { Channel } from "./api/client";
+import { channelsApi } from "./api/client";
+import ChannelPicker from "./components/ChannelPicker";
+import AppMenu from "./components/AppMenu";
+import SettingsPanel from "./components/SettingsPanel";
+import {
+  loadPrefs,
+  savePrefs,
+  TASKBAR_HEIGHTS,
+  TICKER_GAPS,
+  TICKER_HEIGHTS,
+} from "./preferences";
+import type { AppPreferences } from "./preferences";
+import {
+  enable as enableAutostart,
+  disable as disableAutostart,
+  isEnabled as isAutostartEnabled,
+} from "@tauri-apps/plugin-autostart";
+
+// ── Canvas mode type ─────────────────────────────────────────────
+
+type CanvasMode = "feed" | "dashboard" | "settings";
 
 // ── Constants ────────────────────────────────────────────────────
 
@@ -34,9 +58,7 @@ const POLL_INTERVALS: Record<SubscriptionTier, number> = {
   uplink: 30_000,
   uplink_unlimited: 30_000, // Baseline fallback; SSE CDC handles real-time
 };
-const TICKER_HEIGHT = 28;
-const TASKBAR_HEIGHT = 32;
-const COLLAPSED_HEIGHT = TASKBAR_HEIGHT;
+const TASKBAR_HEIGHT = 36;
 const MIN_HEIGHT = 100;
 const MAX_HEIGHT = 600;
 const DEFAULT_NARROW_WIDTH = 800;
@@ -72,11 +94,16 @@ export default function App() {
   const [mode] = useState<FeedMode>(() =>
     loadPref("feedMode", "comfort" as FeedMode),
   );
-  const [collapsed, setCollapsed] = useState(() =>
-    loadPref("feedCollapsed", false),
-  );
   const [activeTabs, setActiveTabs] = useState<string[]>(() =>
     loadPref("activeFeedTabs", ["finance", "sports"]),
+  );
+
+  // Channel config state (from dashboard response, for DashboardTab)
+  const [channels, setChannels] = useState<Channel[]>([]);
+
+  // Canvas mode: "feed" shows FeedTab, "dashboard" shows DashboardTab
+  const [canvasMode, setCanvasMode] = useState<CanvasMode>(() =>
+    loadPref("canvasMode", "feed" as CanvasMode),
   );
 
   // Ticker state
@@ -97,18 +124,34 @@ export default function App() {
     loadPref("feedCustomWidth", DEFAULT_NARROW_WIDTH),
   );
 
+  // Pin (always-on-top) state
+  const [pinned, setPinned] = useState(() => loadPref("feedPinned", true));
+
+  // Channel picker dropdown
+  const [showChannelPicker, setShowChannelPicker] = useState(false);
+
+  // App menu dropdown
+  const [showMenu, setShowMenu] = useState(false);
+
+  // Settings preferences
+  const [prefs, setPrefs] = useState<AppPreferences>(loadPrefs);
+  const [autostartOn, setAutostartOn] = useState(false);
+  const prefsRef = useRef(prefs);
+  prefsRef.current = prefs;
+
   // Auth state
   const [authenticated, setAuthenticated] = useState(() => checkAuth());
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const collapsedRef = useRef(collapsed);
-  collapsedRef.current = collapsed;
   const isFullWidthRef = useRef(isFullWidth);
   isFullWidthRef.current = isFullWidth;
   const authenticatedRef = useRef(authenticated);
   authenticatedRef.current = authenticated;
-  const maxWidthBtnRef = useRef<HTMLButtonElement | null>(null);
-  const tickerBtnRef = useRef<HTMLButtonElement | null>(null);
+  const feedBtnRef = useRef<HTMLButtonElement | null>(null);
+  const dashBtnRef = useRef<HTMLButtonElement | null>(null);
+  const menuBtnRef = useRef<HTMLButtonElement | null>(null);
+  const pinnedContainerRef = useRef<HTMLElement | null>(null);
+  const logoChevronRef = useRef<SVGSVGElement | null>(null);
   const tierRef = useRef<SubscriptionTier>("free");
   const sseActiveRef = useRef(false);
 
@@ -145,11 +188,15 @@ export default function App() {
       setDashboard({ data: data.data });
       setStatus("connected");
 
-      // Sync active tabs from server channel config.
-      // The /dashboard response includes a `channels` array with
-      // enabled/visible flags. Derive which tabs to show from it.
+      // Store full channels array for DashboardTab rendering
       if (Array.isArray(data.channels)) {
-        const visible = (data.channels as { channel_type: string; enabled: boolean; visible: boolean }[])
+        const channelList = data.channels as Channel[];
+        setChannels(channelList);
+
+        // Sync active tabs from server channel config.
+        // The /dashboard response includes a `channels` array with
+        // enabled/visible flags. Derive which tabs to show from it.
+        const visible = channelList
           .filter((ch) => ch.enabled && ch.visible)
           .map((ch) => ch.channel_type);
         setActiveTabs(visible);
@@ -412,44 +459,89 @@ export default function App() {
     }
   }, [customWidth]);
 
-  // ── Inject width-toggle button into FeedBar header ───────────
-  // Adds a ↔ button to the header's right-side group, matching the
-  // existing collapse button style. Also wires double-click on the
-  // header as an alternate trigger (standard desktop maximize gesture).
+  // ── Inject buttons into FeedBar header ─────────────────────────
+  // Left group: channel picker (+) button after the tab strip.
+  // Right group: FEED|DASH pill, ticker toggle, width toggle.
+  // Also wires double-click on the header as width toggle.
 
   useEffect(() => {
     const header = document.querySelector("[data-tauri-drag-region]");
     if (!header) return;
 
-    // Find the right-side group (last child div) and its collapse button
+    // Find the left-side group (first child div) and right-side group
+    const leftGroup = header.firstElementChild as HTMLElement;
     const rightGroup = header.lastElementChild as HTMLElement;
-    const collapseBtn = rightGroup?.querySelector("button");
-    if (!rightGroup || !collapseBtn) return;
+    if (!leftGroup || !rightGroup) return;
 
     // Create buttons matching existing header style
     const btnClass =
-      "text-fg-3 hover:text-accent transition-colors text-[10px] font-mono px-0.5";
-    const divClass = "h-3 w-px bg-edge";
+      "text-fg-3 hover:text-accent transition-colors text-[15px] font-mono px-1.5 cursor-pointer";
+    const divClass = "h-4 w-px bg-edge";
 
-    // Ticker toggle button
-    const tickerDiv = document.createElement("span");
-    tickerDiv.className = divClass;
-    const tickerBtn = document.createElement("button");
-    tickerBtn.className = btnClass;
-    tickerBtnRef.current = tickerBtn;
+    // Wrap the "scrollr" logo span in a clickable button with a chevron icon.
+    // Clicking anywhere on the logo or icon toggles the channel picker.
+    const logoSpan = leftGroup.firstElementChild as HTMLElement;
+    const logoBtn = document.createElement("button");
+    logoBtn.className =
+      "flex items-center gap-1 cursor-pointer group";
+    logoBtn.title = "Toggle channels";
+    logoBtn.setAttribute("data-channel-picker-trigger", "");
+    logoBtn.onclick = () => setShowChannelPicker((prev) => !prev);
+    // Move the original span inside the button
+    leftGroup.insertBefore(logoBtn, logoSpan);
+    logoBtn.appendChild(logoSpan);
+    // Add chevron-up SVG icon (lucide ChevronUp, 14x14)
+    const chevronSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    chevronSvg.setAttribute("width", "14");
+    chevronSvg.setAttribute("height", "14");
+    chevronSvg.setAttribute("viewBox", "0 0 24 24");
+    chevronSvg.setAttribute("fill", "none");
+    chevronSvg.setAttribute("stroke", "currentColor");
+    chevronSvg.setAttribute("stroke-width", "2");
+    chevronSvg.setAttribute("stroke-linecap", "round");
+    chevronSvg.setAttribute("stroke-linejoin", "round");
+    chevronSvg.setAttribute("class", "text-fg-4 group-hover:text-accent transition-all duration-200");
+    chevronSvg.style.transform = showChannelPicker ? "rotate(180deg)" : "rotate(0deg)";
+    const chevronPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    chevronPath.setAttribute("d", "m18 15-6-6-6 6");
+    chevronSvg.appendChild(chevronPath);
+    logoBtn.appendChild(chevronSvg);
+    logoChevronRef.current = chevronSvg;
 
-    // Width toggle button
-    const widthDiv = document.createElement("span");
-    widthDiv.className = divClass;
-    const widthBtn = document.createElement("button");
-    widthBtn.className = btnClass;
-    maxWidthBtnRef.current = widthBtn;
+    // Canvas mode toggle: segmented pill [FEED|DASH]
+    // Wrapped in a container with a subtle bg so it reads as a control
+    const canvasPill = document.createElement("span");
+    canvasPill.className =
+      "inline-flex items-center rounded bg-surface-2 border border-edge overflow-hidden";
+    const feedBtn = document.createElement("button");
+    feedBtnRef.current = feedBtn;
+    const dashBtn = document.createElement("button");
+    dashBtnRef.current = dashBtn;
+    canvasPill.appendChild(feedBtn);
+    canvasPill.appendChild(dashBtn);
 
-    // Insert: ... | [▦] | [↔] | [▼]
-    rightGroup.insertBefore(tickerDiv, collapseBtn);
-    rightGroup.insertBefore(tickerBtn, collapseBtn);
-    rightGroup.insertBefore(widthDiv, collapseBtn);
-    rightGroup.insertBefore(widthBtn, collapseBtn);
+    // Pinned quick-action buttons container
+    const pinnedContainer = document.createElement("span");
+    pinnedContainer.className = "inline-flex items-center";
+    pinnedContainer.setAttribute("data-pinned-actions", "");
+    pinnedContainerRef.current = pinnedContainer;
+
+    // Menu (three-dot) button
+    const menuDiv = document.createElement("span");
+    menuDiv.className = divClass;
+    const menuBtn = document.createElement("button");
+    menuBtn.className = btnClass;
+    menuBtn.textContent = "\u22EE";
+    menuBtn.title = "Menu";
+    menuBtn.setAttribute("data-app-menu-trigger", "");
+    menuBtn.onclick = () => setShowMenu((prev) => !prev);
+    menuBtnRef.current = menuBtn;
+
+    // Insert: ... | [FEED|DASH] | [pinned actions] | [⋮]
+    rightGroup.appendChild(canvasPill);
+    rightGroup.appendChild(pinnedContainer);
+    rightGroup.appendChild(menuDiv);
+    rightGroup.appendChild(menuBtn);
 
     // Double-click header = toggle width
     const onDblClick = (e: Event) => {
@@ -460,26 +552,23 @@ export default function App() {
     header.addEventListener("dblclick", onDblClick);
 
     return () => {
-      tickerDiv.remove();
-      tickerBtn.remove();
-      widthDiv.remove();
-      widthBtn.remove();
-      maxWidthBtnRef.current = null;
-      tickerBtnRef.current = null;
+      // Restore the logo span back to the left group before removing the button
+      if (logoBtn.contains(logoSpan)) {
+        leftGroup.insertBefore(logoSpan, logoBtn);
+      }
+      logoBtn.remove();
+      canvasPill.remove();
+      pinnedContainer.remove();
+      menuDiv.remove();
+      menuBtn.remove();
+      feedBtnRef.current = null;
+      dashBtnRef.current = null;
+      pinnedContainerRef.current = null;
+      menuBtnRef.current = null;
+      logoChevronRef.current = null;
       header.removeEventListener("dblclick", onDblClick);
     };
   }, [toggleFullWidth]);
-
-  // ── Collapse / expand ────────────────────────────────────────
-
-  const handleToggleCollapse = useCallback(() => {
-    const next = !collapsed;
-    setCollapsed(next);
-    savePref("feedCollapsed", next);
-    const tickerH = tickerCollapsed ? 0 : TICKER_HEIGHT;
-    const newHeight = next ? TASKBAR_HEIGHT + tickerH : height + tickerH;
-    invoke("resize_window", { height: newHeight }).catch(() => {});
-  }, [collapsed, height, tickerCollapsed]);
 
   // ── Ticker toggle ───────────────────────────────────────────
 
@@ -487,6 +576,12 @@ export default function App() {
     const next = !tickerCollapsed;
     setTickerCollapsed(next);
     savePref("tickerCollapsed", next);
+    // Keep settings pref in sync
+    setPrefs((prev) => {
+      const updated = { ...prev, ticker: { ...prev.ticker, showTicker: !next } };
+      savePrefs(updated);
+      return updated;
+    });
   }, [tickerCollapsed]);
 
   // ── Ticker chip click → switch canvas tab ───────────────────
@@ -496,27 +591,267 @@ export default function App() {
     savePref("activeTab", channelType);
   }, []);
 
+  // Track the canvas mode before entering settings so we can restore it
+  const prevCanvasModeRef = useRef<"feed" | "dashboard">("feed");
+
   const handleActiveTabChange = useCallback((tab: string) => {
     setActiveTab(tab);
     savePref("activeTab", tab);
+    // Exit settings when a channel tab is clicked
+    setCanvasMode((prev) => {
+      if (prev === "settings") {
+        const restore = prevCanvasModeRef.current;
+        savePref("canvasMode", restore);
+        return restore;
+      }
+      return prev;
+    });
+  }, []);
+
+  // ── Pin (always-on-top) toggle ────────────────────────────────
+  // Uses compositor-specific IPC (Hyprland/Sway) instead of
+  // GTK's set_keep_above which is silently ignored on Wayland.
+
+  const handleTogglePin = useCallback(() => {
+    const next = !pinned;
+    setPinned(next);
+    savePref("feedPinned", next);
+    invoke("pin_window", { pinned: next }).catch((err) => {
+      console.error("[Scrollr] Pin toggle failed:", err);
+    });
+  }, [pinned]);
+
+  // ── Settings ─────────────────────────────────────────────────
+
+  const handleOpenSettings = useCallback(() => {
+    setCanvasMode((prev) => {
+      if (prev !== "settings") prevCanvasModeRef.current = prev as "feed" | "dashboard";
+      return "settings";
+    });
+    savePref("canvasMode", "settings");
+  }, []);
+
+  const handleCloseSettings = useCallback(() => {
+    const restore = prevCanvasModeRef.current;
+    setCanvasMode(restore);
+    savePref("canvasMode", restore);
+  }, []);
+
+  const handleQuit = useCallback(() => {
+    getCurrentWindow().close();
+  }, []);
+
+  const handlePrefsChange = useCallback((next: AppPreferences) => {
+    setPrefs(next);
+    // Sync window prefs that have side effects
+    if (next.window.pinned !== prefsRef.current.window.pinned) {
+      setPinned(next.window.pinned);
+      savePref("feedPinned", next.window.pinned);
+      invoke("pin_window", { pinned: next.window.pinned }).catch(() => {});
+    }
+    // Sync ticker visibility
+    if (!next.ticker.showTicker !== tickerCollapsed) {
+      setTickerCollapsed(!next.ticker.showTicker);
+      savePref("tickerCollapsed", !next.ticker.showTicker);
+    }
+  }, [tickerCollapsed]);
+
+  const handleAutostartChange = useCallback((enabled: boolean) => {
+    setAutostartOn(enabled);
+    if (enabled) {
+      enableAutostart().catch((err) => {
+        console.error("[Scrollr] Enable autostart failed:", err);
+        setAutostartOn(false);
+      });
+    } else {
+      disableAutostart().catch((err) => {
+        console.error("[Scrollr] Disable autostart failed:", err);
+        setAutostartOn(true);
+      });
+    }
+  }, []);
+
+  // ── Canvas mode toggle ──────────────────────────────────────────
+
+  const handleCanvasModeChange = useCallback((mode: CanvasMode) => {
+    setCanvasMode(mode);
+    savePref("canvasMode", mode);
   }, []);
 
   // Keep the injected buttons' text/handlers in sync with state
   useEffect(() => {
-    const widthBtn = maxWidthBtnRef.current;
-    if (widthBtn) {
-      widthBtn.textContent = "\u2194";
-      widthBtn.title = isFullWidth ? "Narrow window" : "Full screen width";
-      widthBtn.onclick = () => toggleFullWidth();
+    const btnClass =
+      "text-fg-3 hover:text-accent transition-colors text-[15px] font-mono px-1.5 cursor-pointer";
+    const btnActiveClass =
+      "text-accent transition-colors text-[15px] font-mono px-1.5 cursor-pointer";
+
+    // Segmented pill styles for FEED / DASH toggle
+    const segBase =
+      "px-2.5 py-1 text-[11px] font-mono font-semibold uppercase tracking-widest transition-colors leading-none cursor-pointer";
+    const segActive = `${segBase} bg-accent/15 text-accent`;
+    const segInactive = `${segBase} text-fg-3 hover:text-fg-2`;
+
+    // Canvas mode toggle pill — only visible when authenticated
+    const feedBtn = feedBtnRef.current;
+    const dashBtn = dashBtnRef.current;
+    const canvasPill = feedBtn?.parentElement;
+
+    if (feedBtn) {
+      feedBtn.textContent = "FEED";
+      feedBtn.title = "Show live feed";
+      feedBtn.className = canvasMode === "feed" ? segActive : segInactive;
+      feedBtn.onclick = () => handleCanvasModeChange("feed");
+    }
+    if (dashBtn) {
+      dashBtn.textContent = "DASH";
+      dashBtn.title = "Show dashboard config";
+      dashBtn.className = canvasMode === "dashboard" ? segActive : segInactive;
+      dashBtn.onclick = () => handleCanvasModeChange("dashboard");
+    }
+    // Hide the whole pill + preceding divider when not authenticated or toggled off
+    const showPill = authenticated && prefs.taskbar.showCanvasToggle;
+    if (canvasPill) {
+      canvasPill.style.display = showPill ? "" : "none";
+      const prevDiv = canvasPill.previousElementSibling;
+      if (prevDiv && (prevDiv as HTMLElement).className.includes("bg-edge")) {
+        (prevDiv as HTMLElement).style.display = showPill ? "" : "none";
+      }
     }
 
-    const tickerBtn = tickerBtnRef.current;
-    if (tickerBtn) {
-      tickerBtn.textContent = tickerCollapsed ? "\u25A4" : "\u25A6";
-      tickerBtn.title = tickerCollapsed ? "Show ticker" : "Hide ticker";
-      tickerBtn.onclick = () => handleToggleTicker();
+    // Menu button — highlight when settings view is active
+    const menuBtn = menuBtnRef.current;
+    if (menuBtn) {
+      menuBtn.className = canvasMode === "settings" ? btnActiveClass : btnClass;
     }
-  }, [isFullWidth, toggleFullWidth, tickerCollapsed, handleToggleTicker]);
+
+    // Rotate logo chevron to reflect picker open/closed state
+    const chevron = logoChevronRef.current;
+    if (chevron) {
+      chevron.style.transform = showChannelPicker ? "rotate(180deg)" : "rotate(0deg)";
+    }
+
+    // Apply taskbar height
+    const header = document.querySelector("#desktop-shell [data-tauri-drag-region]") as HTMLElement | null;
+    if (header) {
+      header.style.setProperty("height", `${TASKBAR_HEIGHTS[prefs.taskbar.taskbarHeight]}px`, "important");
+    }
+
+    // Apply connection indicator visibility
+    const connIndicator = document.querySelector("#desktop-shell [data-tauri-drag-region] .tracking-widest")?.parentElement as HTMLElement | null;
+    if (connIndicator) {
+      connIndicator.style.display = prefs.taskbar.showConnectionIndicator ? "" : "none";
+    }
+
+    // Apply channel icon visibility via data attribute
+    const shell = document.getElementById("desktop-shell");
+    if (shell) {
+      shell.dataset.channelIcons = prefs.taskbar.showChannelIcons ? "on" : "off";
+    }
+
+    // ── Pinned quick-action buttons ────────────────────────────
+    // Render inline icon buttons for each pinned action ID.
+    const pinnedEl = pinnedContainerRef.current;
+    if (pinnedEl) {
+      pinnedEl.innerHTML = "";
+      const actions = prefs.taskbar.pinnedActions;
+
+      if (actions.length > 0) {
+        // Leading divider
+        const div = document.createElement("span");
+        div.className = "h-4 w-px bg-edge mx-0.5";
+        pinnedEl.appendChild(div);
+      }
+
+      for (const actionId of actions) {
+        const btn = document.createElement("button");
+        btn.className = btnClass;
+
+        switch (actionId) {
+          case "theme": {
+            const isDark = prefs.appearance.theme === "dark" ||
+              (prefs.appearance.theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+            btn.textContent = isDark ? "\u263E" : "\u2600";
+            btn.title = isDark ? "Switch to light mode" : "Switch to dark mode";
+            btn.onclick = () => {
+              const next = isDark ? "light" : "dark";
+              const updated = { ...prefsRef.current, appearance: { ...prefsRef.current.appearance, theme: next as "light" | "dark" } };
+              setPrefs(updated);
+              savePrefs(updated);
+            };
+            break;
+          }
+          case "tickerRows": {
+            const rows = prefs.appearance.tickerRows;
+            btn.textContent = rows === 1 ? "\u2630" : rows === 2 ? "\u2633" : "\u2637";
+            btn.title = `Ticker: ${rows} row${rows > 1 ? "s" : ""} (click to cycle)`;
+            btn.onclick = () => {
+              const nextRows = (rows % 3 + 1) as 1 | 2 | 3;
+              const updated = { ...prefsRef.current, appearance: { ...prefsRef.current.appearance, tickerRows: nextRows } };
+              setPrefs(updated);
+              savePrefs(updated);
+            };
+            break;
+          }
+          case "showTicker": {
+            btn.textContent = prefs.ticker.showTicker ? "\u25A6" : "\u25A4";
+            btn.title = prefs.ticker.showTicker ? "Hide ticker" : "Show ticker";
+            btn.onclick = () => {
+              const updated = { ...prefsRef.current, ticker: { ...prefsRef.current.ticker, showTicker: !prefsRef.current.ticker.showTicker } };
+              setPrefs(updated);
+              savePrefs(updated);
+              setTickerCollapsed(prefsRef.current.ticker.showTicker);
+              savePref("tickerCollapsed", prefsRef.current.ticker.showTicker);
+            };
+            break;
+          }
+          case "tickerMode": {
+            const isComfort = prefs.ticker.tickerMode === "comfort";
+            btn.textContent = isComfort ? "\u2261" : "\u2630";
+            btn.title = isComfort ? "Switch to compact ticker" : "Switch to comfort ticker";
+            btn.onclick = () => {
+              const nextMode = isComfort ? "compact" : "comfort";
+              const updated = { ...prefsRef.current, ticker: { ...prefsRef.current.ticker, tickerMode: nextMode as "compact" | "comfort" } };
+              setPrefs(updated);
+              savePrefs(updated);
+            };
+            break;
+          }
+          case "pinned": {
+            btn.textContent = pinned ? "\u25A3" : "\u25A2";
+            btn.title = pinned ? "Unpin window" : "Pin window on top";
+            if (pinned) btn.className = btnActiveClass;
+            btn.onclick = () => handleTogglePin();
+            break;
+          }
+          case "width": {
+            btn.textContent = "\u2194";
+            btn.title = isFullWidth ? "Narrow window" : "Full screen width";
+            btn.onclick = () => toggleFullWidth();
+            break;
+          }
+          case "mixMode": {
+            const mode = prefs.ticker.mixMode;
+            const icons = { grouped: "\u2759", weave: "\u2194", random: "\u{1F500}" } as const;
+            const labels = { grouped: "Grouped", weave: "Weave", random: "Random" } as const;
+            const cycle = { grouped: "weave", weave: "random", random: "grouped" } as const;
+            btn.textContent = icons[mode];
+            btn.title = `Mix: ${labels[mode]} (click to cycle)`;
+            if (mode !== "grouped") btn.className = btnActiveClass;
+            btn.onclick = () => {
+              const cur = prefsRef.current.ticker.mixMode;
+              const next = cycle[cur];
+              const updated = { ...prefsRef.current, ticker: { ...prefsRef.current.ticker, mixMode: next } };
+              setPrefs(updated);
+              savePrefs(updated);
+            };
+            break;
+          }
+        }
+
+        pinnedEl.appendChild(btn);
+      }
+    }
+  }, [isFullWidth, toggleFullWidth, tickerCollapsed, handleToggleTicker, canvasMode, handleCanvasModeChange, authenticated, pinned, handleTogglePin, showChannelPicker, prefs.taskbar, prefs.appearance, prefs.ticker]);
 
   // ── Native compositor resize via drag handle ─────────────────
   // Intercept the drag handle mousedown to use Tauri's startResizing()
@@ -551,9 +886,6 @@ export default function App() {
     let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
     const promise = appWindow.onResized((event) => {
-      // Ignore resize events while collapsed (programmatic collapse)
-      if (collapsedRef.current) return;
-
       const scale = window.devicePixelRatio || 1;
       const logicalHeight = Math.round(event.payload.height / scale);
 
@@ -591,15 +923,60 @@ export default function App() {
   // ── Initial setup ────────────────────────────────────────────
 
   useEffect(() => {
-    const tickerH = tickerCollapsed ? 0 : TICKER_HEIGHT;
-    const effectiveHeight = collapsed
-      ? TASKBAR_HEIGHT + tickerH
-      : height + tickerH;
+    const tickerH = tickerCollapsed ? 0 : TICKER_HEIGHTS[prefs.ticker.tickerMode] * prefs.appearance.tickerRows;
+    const effectiveHeight = height + tickerH;
     invoke("resize_window", { height: effectiveHeight })
       .then(() => getCurrentWindow().show())
       .catch(() => {});
+    // Sync pinned state via compositor IPC — tauri.conf.json defaults
+    // to alwaysOnTop: true, but the user may have unpinned previously.
+    invoke("pin_window", { pinned }).catch(() => {});
+    // Check autostart state
+    isAutostartEnabled()
+      .then((enabled) => setAutostartOn(enabled))
+      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ── Theme & scale application ────────────────────────────────
+  // Apply theme class and UI scale whenever appearance prefs change.
+
+  useEffect(() => {
+    const shell = document.getElementById("desktop-shell");
+    if (!shell) return;
+
+    // Resolve theme: "system" follows OS preference
+    let resolved: "light" | "dark" = prefs.appearance.theme === "system"
+      ? window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
+      : prefs.appearance.theme;
+
+    // Add transition class for smooth theme switch
+    shell.classList.add("theme-transition");
+    shell.dataset.theme = resolved;
+    const timer = setTimeout(() => shell.classList.remove("theme-transition"), 350);
+
+    // Listen for OS theme changes when set to "system"
+    if (prefs.appearance.theme === "system") {
+      const mq = window.matchMedia("(prefers-color-scheme: dark)");
+      const handler = (e: MediaQueryListEvent) => {
+        shell.dataset.theme = e.matches ? "dark" : "light";
+      };
+      mq.addEventListener("change", handler);
+      return () => {
+        clearTimeout(timer);
+        mq.removeEventListener("change", handler);
+      };
+    }
+
+    return () => clearTimeout(timer);
+  }, [prefs.appearance.theme]);
+
+  useEffect(() => {
+    const shell = document.getElementById("desktop-shell");
+    if (!shell) return;
+    // Apply UI scale via CSS zoom (simpler than transform, works with layout)
+    shell.style.zoom = prefs.appearance.uiScale === 100 ? "" : `${prefs.appearance.uiScale}%`;
+  }, [prefs.appearance.uiScale]);
 
   // ── Auth handlers ─────────────────────────────────────────────
 
@@ -639,15 +1016,200 @@ export default function App() {
     startPolling("free");
   }, [startPolling, stopPolling, stopSSE]);
 
+  // ── Channel picker toggle ───────────────────────────────────────
+
+  const handlePickerToggle = useCallback(
+    async (channelType: string, visible: boolean) => {
+      try {
+        await channelsApi.update(
+          channelType as Channel["channel_type"],
+          { visible },
+          () => getValidToken(),
+        );
+        // Optimistic update for instant UI feedback
+        setActiveTabs((prev) => {
+          const next = visible
+            ? [...prev, channelType]
+            : prev.filter((t) => t !== channelType);
+          savePref("activeFeedTabs", next);
+          return next;
+        });
+        // Full refetch to sync everything
+        fetchFeed();
+      } catch (err) {
+        console.error("[Scrollr] Channel toggle failed:", err);
+      }
+    },
+    [fetchFeed],
+  );
+
+  // ── DashboardTab handlers ───────────────────────────────────────
+
+  const handleToggleChannel = useCallback(async () => {
+    const ch = channels.find((c) => c.channel_type === activeTab);
+    if (!ch) return;
+
+    try {
+      await channelsApi.update(
+        ch.channel_type,
+        { visible: !ch.visible },
+        () => getValidToken(),
+      );
+      fetchFeed();
+    } catch (err) {
+      console.error("[Scrollr] Toggle channel failed:", err);
+    }
+  }, [channels, activeTab, fetchFeed]);
+
+  const handleDeleteChannel = useCallback(async () => {
+    const ch = channels.find((c) => c.channel_type === activeTab);
+    if (!ch) return;
+
+    try {
+      await channelsApi.delete(ch.channel_type, () => getValidToken());
+      setCanvasMode("feed");
+      savePref("canvasMode", "feed");
+      fetchFeed();
+    } catch (err) {
+      console.error("[Scrollr] Delete channel failed:", err);
+    }
+  }, [channels, activeTab, fetchFeed]);
+
+  const handleChannelUpdate = useCallback(
+    (updated: Channel) => {
+      setChannels((prev) =>
+        prev.map((ch) =>
+          ch.channel_type === updated.channel_type ? updated : ch,
+        ),
+      );
+      // Also refetch to sync everything
+      fetchFeed();
+    },
+    [fetchFeed],
+  );
+
+  // ── Token getter for DashboardTab props ─────────────────────────
+
+  const getToken = useCallback(async (): Promise<string | null> => {
+    return authGetValidToken();
+  }, []);
+
+  // ── Build overrideContent for DashboardTab / Settings mode ─────
+
+  const overrideContent = useMemo(() => {
+    if (canvasMode === "settings") {
+      return (
+        <SettingsPanel
+          prefs={prefs}
+          onPrefsChange={handlePrefsChange}
+          authenticated={authenticated}
+          tier={getTier()}
+          onLogin={handleLogin}
+          onLogout={handleLogout}
+          onClose={handleCloseSettings}
+          autostartEnabled={autostartOn}
+          onAutostartChange={handleAutostartChange}
+        />
+      );
+    }
+
+    if (canvasMode !== "dashboard" || !authenticated) return undefined;
+
+    const webChannel = getWebChannel(activeTab);
+    if (!webChannel) {
+      return (
+        <div className="text-center py-8 text-fg-3 text-xs font-mono">
+          No dashboard available for this channel
+        </div>
+      );
+    }
+
+    const channel = channels.find((c) => c.channel_type === activeTab);
+    if (!channel) {
+      return (
+        <div className="text-center py-8 text-fg-3 text-xs font-mono">
+          Channel not configured — switch to feed view
+        </div>
+      );
+    }
+
+    const DashboardTab = webChannel.DashboardTab;
+    const tier = getTier();
+    const isConnected = status === "connected" && deliveryMode === "sse";
+
+    return (
+      <div className="dashboard-content max-w-4xl mx-auto py-6 px-6">
+        <DashboardTab
+          channel={channel}
+          getToken={getToken}
+          onToggle={handleToggleChannel}
+          onDelete={handleDeleteChannel}
+          onChannelUpdate={handleChannelUpdate}
+          connected={isConnected}
+          subscriptionTier={tier}
+          hex={webChannel.hex}
+        />
+      </div>
+    );
+  }, [
+    canvasMode,
+    authenticated,
+    activeTab,
+    channels,
+    status,
+    deliveryMode,
+    getToken,
+    handleToggleChannel,
+    handleDeleteChannel,
+    handleChannelUpdate,
+    pinned,
+    handleLogin,
+    handleLogout,
+    handleCloseSettings,
+    prefs,
+    handlePrefsChange,
+    autostartOn,
+    handleAutostartChange,
+  ]);
+
   const _behavior: FeedBehavior = "overlay";
 
   return (
     <div id="desktop-shell">
-      {!tickerCollapsed && (
-        <ScrollrTicker
-          dashboard={dashboard}
+      {!tickerCollapsed && prefs.ticker.showTicker &&
+        Array.from({ length: prefs.appearance.tickerRows }, (_, i) => (
+          <ScrollrTicker
+            key={`row${i}-${prefs.ticker.tickerGap}-${prefs.ticker.tickerSpeed}-${prefs.ticker.hoverSpeed}-${prefs.ticker.tickerMode}-${prefs.ticker.mixMode}-${prefs.ticker.chipColors}-${prefs.appearance.tickerRows}`}
+            dashboard={dashboard}
+            activeTabs={activeTabs}
+            onChipClick={handleChipClick}
+            speed={prefs.ticker.tickerSpeed}
+            gap={TICKER_GAPS[prefs.ticker.tickerGap]}
+            pauseOnHover={prefs.ticker.pauseOnHover}
+            hoverSpeed={prefs.ticker.hoverSpeed}
+            mixMode={prefs.ticker.mixMode}
+            chipColorMode={prefs.ticker.chipColors}
+            comfort={prefs.ticker.tickerMode === "comfort"}
+            rowIndex={i}
+            totalRows={prefs.appearance.tickerRows}
+          />
+        ))
+      }
+      {showChannelPicker && authenticated && (
+        <ChannelPicker
+          channels={channels}
           activeTabs={activeTabs}
-          onChipClick={handleChipClick}
+          onToggle={handlePickerToggle}
+          onClose={() => setShowChannelPicker(false)}
+          topOffset={(tickerCollapsed || !prefs.ticker.showTicker ? 0 : TICKER_HEIGHTS[prefs.ticker.tickerMode] * prefs.appearance.tickerRows) + TASKBAR_HEIGHTS[prefs.taskbar.taskbarHeight] + 2}
+        />
+      )}
+      {showMenu && (
+        <AppMenu
+          onSettings={handleOpenSettings}
+          onQuit={handleQuit}
+          onClose={() => setShowMenu(false)}
+          topOffset={(tickerCollapsed || !prefs.ticker.showTicker ? 0 : TICKER_HEIGHTS[prefs.ticker.tickerMode] * prefs.appearance.tickerRows) + TASKBAR_HEIGHTS[prefs.taskbar.taskbarHeight] + 2}
         />
       )}
       <FeedBar
@@ -657,16 +1219,15 @@ export default function App() {
         position={position}
         height={height}
         mode={mode}
-        collapsed={collapsed}
         behavior={_behavior}
         activeTabs={activeTabs}
         authenticated={authenticated}
         activeTab={activeTab}
         onActiveTabChange={handleActiveTabChange}
         onLogin={handleLogin}
-        onToggleCollapse={handleToggleCollapse}
         onHeightChange={handleHeightChange}
         onHeightCommit={handleHeightCommit}
+        overrideContent={overrideContent}
       />
     </div>
   );
