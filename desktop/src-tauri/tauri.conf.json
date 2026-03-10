@@ -1,6 +1,6 @@
 {
   "productName": "Scrollr",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "identifier": "com.scrollr.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -31,15 +31,14 @@
     "windows": [
       {
         "label": "ticker",
-        "title": "Scrollr",
+        "title": "Scrollr Ticker",
         "width": 1920,
         "height": 228,
         "decorations": false,
         "alwaysOnTop": true,
         "resizable": true,
         "skipTaskbar": true,
-        "visible": false,
-        "center": true
+        "visible": false
       },
       {
         "label": "app",
