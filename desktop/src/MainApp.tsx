@@ -38,7 +38,7 @@ import {
 import type { AppPreferences } from "./preferences";
 import type { DashboardResponse, DeliveryMode } from "~/utils/types";
 
-const API_URL = "https://api.myscrollr.relentnet.dev";
+import { API_BASE as API_URL } from "./config";
 
 // ── Canonical channel order ─────────────────────────────────────
 

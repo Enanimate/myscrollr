@@ -17,11 +17,13 @@ import { open } from "@tauri-apps/plugin-shell";
 
 // ── Constants ────────────────────────────────────────────────────
 
-const LOGTO_ENDPOINT = "https://auth.myscrollr.relentnet.dev";
-const LOGTO_APP_ID = "kq298uwwusrvw8m6yn6b4";
-const API_RESOURCE = "https://api.myscrollr.relentnet.dev";
-const REDIRECT_URI = "http://127.0.0.1:19284/callback";
-const REFRESH_BUFFER_MS = 60_000; // Refresh 60s before expiry
+import {
+  AUTH_ENDPOINT as LOGTO_ENDPOINT,
+  LOGTO_APP_ID,
+  API_BASE as API_RESOURCE,
+  REDIRECT_URI,
+  REFRESH_BUFFER_MS,
+} from "./config";
 
 // ── Types ────────────────────────────────────────────────────────
 

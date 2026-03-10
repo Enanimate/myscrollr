@@ -10,7 +10,8 @@ import { fetch } from "@tauri-apps/plugin-http";
 
 // ── Constants ────────────────────────────────────────────────────
 
-export const API_BASE = "https://api.myscrollr.relentnet.dev";
+import { API_BASE } from "../config";
+export { API_BASE };
 
 // ── Extension notification (no-op in desktop) ───────────────────
 

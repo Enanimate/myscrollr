@@ -31,12 +31,15 @@ import type { AppPreferences, TickerPosition } from "./preferences";
 
 // ── Constants ────────────────────────────────────────────────────
 
-const API_URL = "https://api.myscrollr.relentnet.dev";
+import { API_BASE as API_URL } from "./config";
 const POLL_INTERVALS: Record<SubscriptionTier, number> = {
   free: 60_000,
   uplink: 30_000,
   uplink_unlimited: 30_000,
 };
+/** Delay before re-fetching after an SSE config-change event, giving the
+ *  backend time to propagate the update before we query. */
+const SSE_REFETCH_DELAY_MS = 500;
 
 // ── App (Ticker Window) ─────────────────────────────────────────
 
@@ -249,7 +252,7 @@ export default function App() {
         return next;
       });
 
-      setTimeout(() => fetchFeed(), 500);
+      setTimeout(() => fetchFeed(), SSE_REFETCH_DELAY_MS);
     }).then((fn) => {
       unlisten = fn;
     });

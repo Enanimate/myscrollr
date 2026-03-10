@@ -276,9 +276,9 @@ function FantasyDashboardTab({
       )
       setSelectedKeys(preSelected)
       setPhase('picking')
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[Fantasy] discover failed:', err)
-      setDiscoverError(err?.message || 'Discovery failed')
+      setDiscoverError(err instanceof Error ? err.message : 'Discovery failed')
       setPhase(leagues.length > 0 ? 'connected' : 'disconnected')
     }
   }, [getToken, leagues])

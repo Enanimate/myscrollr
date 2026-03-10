@@ -58,7 +58,7 @@
       }
     ],
     "security": {
-      "capabilities": ["main-capability"]
+      "capabilities": ["main-capability", "ticker-capability"]
     }
   }
 }

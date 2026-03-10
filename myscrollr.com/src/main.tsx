@@ -15,13 +15,10 @@ const logtoConfig: LogtoConfig = {
   endpoint:
     import.meta.env.VITE_LOGTO_ENDPOINT ||
     'https://auth.myscrollr.relentnet.dev/',
-    // 'https://auth.myscrollr.enanimate.dev/',
   appId: import.meta.env.VITE_LOGTO_APP_ID || 'ogbulfshvf934eeli4t9u',
-  // appId: import.meta.env.VITE_LOGTO_APP_ID || 'roazl2zldtcfscslysiuf',
   resources: [
     import.meta.env.VITE_LOGTO_RESOURCE ||
       'https://api.myscrollr.relentnet.dev',
-      // 'https://api.myscrollr.enanimate.dev',
   ],
 }
 

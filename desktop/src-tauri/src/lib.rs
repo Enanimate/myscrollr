@@ -11,6 +11,10 @@ use tokio::sync::watch;
 /// Holds the cancellation handle for the background SSE task.
 struct SseHandle(Mutex<Option<watch::Sender<bool>>>);
 
+/// Tracks whether the OAuth callback server is already running.
+#[derive(Clone)]
+struct AuthServerRunning(std::sync::Arc<Mutex<bool>>);
+
 /// Resize the window height, preserving current width.
 /// The `anchor` parameter controls which edge stays fixed:
 ///   - `"top"`: top edge stays fixed, height extends downward (no reposition)
@@ -20,6 +24,10 @@ struct SseHandle(Mutex<Option<watch::Sender<bool>>>);
 /// in a single pass to minimise visual tearing.
 #[tauri::command]
 fn resize_window(window: tauri::Window, height: f64, anchor: Option<String>) {
+    if !height.is_finite() || height < 1.0 || height > 10_000.0 {
+        return;
+    }
+
     let (size, pos) = match (window.outer_size(), window.outer_position()) {
         (Ok(s), Ok(p)) => (s, p),
         _ => return,
@@ -57,11 +65,24 @@ fn start_auth_server(app: tauri::AppHandle) -> Result<(), String> {
     use std::net::TcpListener;
     use std::time::Duration;
 
+    // Prevent multiple concurrent auth servers
+    let running = app.state::<AuthServerRunning>();
+    {
+        let mut guard = running.0.lock().unwrap();
+        if *guard {
+            return Err("Auth server already running".into());
+        }
+        *guard = true;
+    }
+
     // Bind first (on the calling thread) so we know the port is available
     // before opening the browser.
-    let listener =
-        TcpListener::bind("127.0.0.1:19284").map_err(|e| format!("Failed to bind: {e}"))?;
+    let listener = TcpListener::bind("127.0.0.1:19284").map_err(|e| {
+        *running.0.lock().unwrap() = false;
+        format!("Failed to bind: {e}")
+    })?;
 
+    let running_handle = app.state::<AuthServerRunning>().inner().clone();
     std::thread::spawn(move || {
         // Accept one connection with a 5-minute timeout.
         // SO_RCVTIMEO on the listener socket doesn't work portably, so we
@@ -96,6 +117,7 @@ fn start_auth_server(app: tauri::AppHandle) -> Result<(), String> {
             }
         }
         // Listener drops here, freeing the port
+        *running_handle.0.lock().unwrap() = false;
     });
 
     Ok(())
@@ -159,6 +181,16 @@ fn position_ticker(
     position: String,
     height: Option<f64>,
 ) -> Result<(), String> {
+    // Validate inputs
+    if position != "top" && position != "bottom" {
+        return Err(format!("invalid position: {position}"));
+    }
+    if let Some(h) = height {
+        if !h.is_finite() || h < 1.0 || h > 10_000.0 {
+            return Err("height out of range".into());
+        }
+    }
+
     let monitor = window
         .current_monitor()
         .map_err(|e| format!("monitor query failed: {e}"))?
@@ -744,6 +776,7 @@ pub fn run() {
 
     builder
         .manage(SseHandle(Mutex::new(None)))
+        .manage(AuthServerRunning(std::sync::Arc::new(Mutex::new(false))))
         .invoke_handler(tauri::generate_handler![
             resize_window,
             position_ticker,
