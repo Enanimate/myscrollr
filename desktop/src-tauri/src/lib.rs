@@ -706,7 +706,7 @@ fn process_sse_frame(app: &tauri::AppHandle, frame: &str) {
 
 #[tauri::command]
 fn show_app_window(app: tauri::AppHandle) -> Result<(), String> {
-    if let Some(w) = app.get_webview_window("app") {
+    if let Some(w) = app.get_webview_window("main") {
         w.show().map_err(|e| format!("show failed: {e}"))?;
         w.set_focus().map_err(|e| format!("focus failed: {e}"))?;
     }
@@ -715,7 +715,7 @@ fn show_app_window(app: tauri::AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 fn hide_app_window(app: tauri::AppHandle) -> Result<(), String> {
-    if let Some(w) = app.get_webview_window("app") {
+    if let Some(w) = app.get_webview_window("main") {
         w.hide().map_err(|e| format!("hide failed: {e}"))?;
     }
     Ok(())
@@ -727,7 +727,7 @@ fn quit_app(app: tauri::AppHandle) {
 }
 
 pub fn run() {
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_autostart::init(
@@ -735,7 +735,14 @@ pub fn run() {
             None,
         ))
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_process::init());
+
+    #[cfg(debug_assertions)]
+    {
+        builder = builder.plugin(tauri_plugin_mcp_bridge::init());
+    }
+
+    builder
         .manage(SseHandle(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
             resize_window,
@@ -753,7 +760,7 @@ pub fn run() {
             // Only tray "Quit" or context menu "Quit" actually exits.
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 let label = window.label();
-                if label == "app" || label == "ticker" {
+                if label == "main" || label == "ticker" {
                     api.prevent_close();
                     let _ = window.hide();
                 }
@@ -776,7 +783,7 @@ pub fn run() {
             // macOS keeps native decorations (traffic lights). On
             // other platforms we use our custom TitleBar component.
             #[cfg(not(target_os = "macos"))]
-            if let Some(app_win) = app.get_webview_window("app") {
+            if let Some(app_win) = app.get_webview_window("main") {
                 let _ = app_win.set_decorations(false);
             }
 
@@ -794,7 +801,7 @@ pub fn run() {
                 .menu(&menu)
                 .on_menu_event(move |app, event| match event.id().as_ref() {
                     "open" => {
-                        if let Some(w) = app.get_webview_window("app") {
+                        if let Some(w) = app.get_webview_window("main") {
                             let _ = w.show();
                             let _ = w.set_focus();
                         }
@@ -822,7 +829,7 @@ pub fn run() {
                         ..
                     } = event
                     {
-                        if let Some(w) = tray.app_handle().get_webview_window("app") {
+                        if let Some(w) = tray.app_handle().get_webview_window("main") {
                             let _ = w.show();
                             let _ = w.set_focus();
                         }

@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main-capability",
   "description": "Capabilities for all Scrollr windows",
-  "windows": ["ticker", "app"],
+  "windows": ["ticker", "main"],
   "permissions": [
     "core:default",
     "core:window:default",
@@ -36,6 +36,7 @@
     "autostart:allow-is-enabled",
     "updater:default",
     "process:allow-restart",
+    "mcp-bridge:default",
     {
       "identifier": "http:default",
       "allow": [

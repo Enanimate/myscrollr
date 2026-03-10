@@ -28,6 +28,7 @@
     }
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "label": "ticker",
@@ -41,7 +42,7 @@
         "visible": false
       },
       {
-        "label": "app",
+        "label": "main",
         "url": "app.html",
         "title": "Scrollr",
         "width": 960,
