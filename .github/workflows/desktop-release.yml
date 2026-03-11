@@ -23,6 +23,10 @@ permissions:
 env:
   # sccache-action v0.0.9 still uses Node 20 internally
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # Use sccache local disk storage (NOT the GHA backend). The local
+  # cache dir is saved/restored via actions/cache, which allows tag
+  # workflows to read caches from the default branch (main).
+  SCCACHE_GHA_ENABLED: "false"
 
 jobs:
   # ── Resolve the build matrix based on the selected platform ────
@@ -84,7 +88,6 @@ jobs:
 
     runs-on: ${{ matrix.platform }}
     env:
-      SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: sccache
     defaults:
       run:
@@ -113,13 +116,32 @@ jobs:
         with:
           targets: ${{ matrix.rust_target }}
 
-      # sccache caches individual compilation units via the GitHub Actions
-      # cache backend. Unlike swatinem/rust-cache (which caches target/),
-      # sccache works across branches and tag refs because it uses a
-      # content-addressed key, not a branch-scoped one.
-      # RUSTC_WRAPPER and SCCACHE_GHA_ENABLED are set at the job level.
+      # sccache wraps rustc to cache individual compilation units.
+      # We use local disk storage (not the GHA backend) combined with
+      # actions/cache so that tag-triggered builds can read caches
+      # from the default branch (main), where desktop-cache.yml warms them.
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Set sccache cache path
+        id: sccache-path
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            echo "path=$LOCALAPPDATA/Mozilla/sccache" >> "$GITHUB_OUTPUT"
+          elif [[ "$RUNNER_OS" == "macOS" ]]; then
+            echo "path=$HOME/Library/Caches/Mozilla.sccache" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=$HOME/.cache/sccache" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Restore sccache cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.sccache-path.outputs.path }}
+          key: sccache-${{ matrix.rust_target }}-${{ hashFiles('desktop/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            sccache-${{ matrix.rust_target }}-
 
       - name: Prepare extension (generates .wxt/tsconfig.json needed by shared components)
         run: npm ci
