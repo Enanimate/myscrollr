@@ -62,11 +62,11 @@ async fn initialize_symbols(state: FinanceState) {
 pub async fn update_all_previous_closes(state: FinanceState) {
     info!("Updating previous closes for {} symbols...", state.subscriptions.len());
 
-    // TwelveData free tier: 8 API credits/min, 800/day.
-    // Batch 2 at a time with 2s delay to stay well within limits.
-    let batch_size = 2;
+    // TwelveData Pro tier: 610 API credits/min, 500 WS symbols.
+    // Batch 8 at a time with 1s delay to stay within limits.
+    let batch_size = 8;
     for batch in state.subscriptions.chunks(batch_size) {
-        time::sleep(Duration::from_millis(2_000)).await;
+        time::sleep(Duration::from_millis(1_000)).await;
         let futures: Vec<_> = batch.iter().map(|symbol| {
             let client = state.client.clone();
             let api_key = state.api_key.clone();
