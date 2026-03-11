@@ -955,7 +955,8 @@ for (var i = 0; i < wins.length; i++) {{
 
 // ── SSE commands ─────────────────────────────────────────────────
 
-const SSE_URL: &str = "https://api.myscrollr.relentnet.dev/events";
+// const SSE_URL: &str = "https://api.myscrollr.relentnet.dev/events";
+const SSE_URL: &str = "https://api.myscrollr.enanimate.dev/events";
 
 /// Connect to the SSE endpoint and stream CDC events to the webview.
 /// Cancels any existing SSE connection first. Runs in a background

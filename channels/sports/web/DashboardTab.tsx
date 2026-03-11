@@ -27,7 +27,8 @@ const HEX = '#ff4757'
 // ── API helper ──────────────────────────────────────────────────
 
 const API_BASE =
-  import.meta.env.VITE_API_URL || 'https://api.myscrollr.relentnet.dev'
+  // import.meta.env.VITE_API_URL || 'https://api.myscrollr.relentnet.dev'
+  import.meta.env.VITE_API_URL || 'https://api.myscrollr.enanimate.dev'
 
 async function fetchCatalog(): Promise<TrackedLeague[]> {
   const res = await fetch(`${API_BASE}/sports/leagues`)
