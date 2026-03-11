@@ -125,7 +125,7 @@ Three TS sub-projects with different conventions:
 
 ## Git Workflow
 
-Branch off `staging`: `git checkout -b <prefix>/short-description`. PR back into `staging`. Squash merge. Trivial fixes commit directly to `staging`.
+Branch off `main`: `git checkout -b <prefix>/short-description`. PR back into `main`. Squash merge. Trivial fixes commit directly to `main`.
 
 Prefixes: `feature/`, `fix/`, `refactor/`, `chore/`.
 

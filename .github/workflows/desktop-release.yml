@@ -20,10 +20,6 @@ on:
 permissions:
   contents: write
 
-env:
-  # swatinem/rust-cache@v2 still runs on Node 20; opt into Node 24 now
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   # ── Resolve the build matrix based on the selected platform ────
   # Tag pushes and "all" both build every target. Selecting a single
@@ -110,11 +106,18 @@ jobs:
         with:
           targets: ${{ matrix.rust_target }}
 
-      - name: Rust cache
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: desktop/src-tauri
-          cache-on-failure: true
+      # sccache caches individual compilation units via the GitHub Actions
+      # cache backend. Unlike swatinem/rust-cache (which caches target/),
+      # sccache works across branches and tag refs because it uses a
+      # content-addressed key, not a branch-scoped one.
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.7
+
+      - name: Configure Rust to use sccache
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+        working-directory: .
 
       - name: Prepare extension (generates .wxt/tsconfig.json needed by shared components)
         run: npm ci
@@ -138,6 +141,10 @@ jobs:
           releaseBody: "See the [full changelog](https://github.com/brandon-relentnet/myscrollr/commits/${{ needs.resolve-tag.outputs.tag }}) for details."
           releaseDraft: false
           prerelease: false
+
+      - name: Show sccache stats
+        run: sccache --show-stats
+        working-directory: .
 
       # ── Fix AppImage for rolling-release distros ───────────────
       # Bundled Ubuntu 22.04 libwayland-* are ABI-incompatible with
@@ -169,9 +176,12 @@ jobs:
   # This job runs AFTER all builds complete (so latest.json is fully
   # assembled), re-signs the patched AppImage, and patches both the
   # .sig asset and the signature entries in latest.json.
+  #
+  # Uses !cancelled() so it runs even if macOS or Windows builds fail
+  # — the Linux AppImage still needs its signature fixed.
   fix-appimage-signature:
     needs: [matrix-setup, build, resolve-tag]
-    if: needs.matrix-setup.outputs.has-linux == 'true'
+    if: ${{ !cancelled() && needs.build.result != 'skipped' && needs.matrix-setup.outputs.has-linux == 'true' }}
     runs-on: ubuntu-latest
 
     steps:

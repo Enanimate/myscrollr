@@ -1066,7 +1066,7 @@ fn quit_app(app: tauri::AppHandle) {
 }
 
 pub fn run() {
-    let mut builder = tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_autostart::init(
