@@ -349,7 +349,8 @@ func (a *App) onSyncSubscriptions(ctx context.Context, userSub string, config ma
 // Database Helpers
 // =============================================================================
 
-// queryGames fetches games from PostgreSQL ordered by start_time descending.
+// queryGames fetches games from PostgreSQL prioritized by relevance:
+// live games first, then soonest upcoming, then most recently finished.
 func (a *App) queryGames(ctx context.Context, limit int) ([]Game, error) {
 	rows, err := a.db.Query(ctx, fmt.Sprintf(`
 		SELECT id, league, COALESCE(sport, ''), external_game_id, COALESCE(link, ''),
@@ -358,7 +359,12 @@ func (a *App) queryGames(ctx context.Context, limit int) ([]Game, error) {
 			start_time, COALESCE(short_detail, ''), state,
 			COALESCE(status_short, ''), COALESCE(status_long, ''),
 			COALESCE(timer, ''), COALESCE(venue, ''), COALESCE(season, '')
-		FROM games ORDER BY start_time DESC LIMIT %d`, limit))
+		FROM games
+		ORDER BY
+			CASE state WHEN 'in' THEN 0 WHEN 'pre' THEN 1 ELSE 2 END,
+			CASE WHEN state = 'pre' THEN start_time END ASC,
+			CASE WHEN state != 'pre' THEN start_time END DESC
+		LIMIT %d`, limit))
 	if err != nil {
 		return nil, fmt.Errorf("sports query failed: %w", err)
 	}
@@ -398,7 +404,11 @@ func (a *App) queryGamesByLeagues(ctx context.Context, leagues []string, limit i
 			COALESCE(timer, ''), COALESCE(venue, ''), COALESCE(season, '')
 		FROM games
 		WHERE league = ANY($1)
-		ORDER BY start_time DESC LIMIT %d`, limit), leagues)
+		ORDER BY
+			CASE state WHEN 'in' THEN 0 WHEN 'pre' THEN 1 ELSE 2 END,
+			CASE WHEN state = 'pre' THEN start_time END ASC,
+			CASE WHEN state != 'pre' THEN start_time END DESC
+		LIMIT %d`, limit), leagues)
 	if err != nil {
 		return nil, fmt.Errorf("sports league query failed: %w", err)
 	}
