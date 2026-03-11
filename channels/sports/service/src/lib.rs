@@ -1,7 +1,7 @@
 use std::{env, fs, sync::Arc};
 use reqwest::{Client, header};
 use tokio::sync::Mutex;
-use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, Utc};
+use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, Utc};
 use crate::log::{error, info, warn};
 use crate::database::{
     PgPool, create_tables, run_migrations, truncate_games,
@@ -312,36 +312,60 @@ async fn poll_league(
     Ok(cleaned_games)
 }
 
+/// Compute the current season string dynamically based on the league's
+/// `season_format` and today's date. This eliminates the need to manually
+/// update season values in `leagues.json` every year.
+///
+/// Supported formats:
+///   - `"cross-year"`    — YYYY-YYYY, new season starts October (NBA, NCAA Basketball)
+///   - `"fall-october"`  — YYYY (start year), new season starts October (NHL)
+///   - `"fall-august"`   — YYYY (start year), new season starts August (NFL, NCAA Football, Soccer)
+///   - `"calendar"`      — YYYY, always the current calendar year (MLB, MLS, F1)
+fn compute_current_season(season_format: &str) -> String {
+    let now = Utc::now();
+    let year = now.year();
+    let month = now.month();
+
+    match season_format {
+        "cross-year" => {
+            if month >= 10 { format!("{}-{}", year, year + 1) }
+            else { format!("{}-{}", year - 1, year) }
+        }
+        "fall-october" => {
+            if month >= 10 { format!("{}", year) }
+            else { format!("{}", year - 1) }
+        }
+        "fall-august" => {
+            if month >= 8 { format!("{}", year) }
+            else { format!("{}", year - 1) }
+        }
+        "calendar" => format!("{}", year),
+        other => {
+            warn!("Unknown season_format '{}', falling back to calendar year", other);
+            format!("{}", year)
+        }
+    }
+}
+
 /// Build the correct API URL based on the sport type.
 fn build_api_url(league: &TrackedLeague, date: &str) -> String {
     let base = format!("https://{}", league.api_host);
+    let format_str = league.season_format.as_deref().unwrap_or("calendar");
+    let default_season = compute_current_season(format_str);
+    let season = league.season.as_deref().unwrap_or(&default_season);
 
     match league.sport_api.as_str() {
         "football" => {
-            // Soccer/Football API v3 uses /fixtures endpoint
-            let season = league.season.as_deref().unwrap_or("2025");
             format!("{}/fixtures?league={}&season={}&date={}", base, league.league_id, season, date)
         }
-        "american-football" => {
-            let season = league.season.as_deref().unwrap_or("2025");
-            format!("{}/games?league={}&season={}&date={}", base, league.league_id, season, date)
-        }
-        "basketball" => {
-            let season = league.season.as_deref().unwrap_or("2024-2025");
-            format!("{}/games?league={}&season={}&date={}", base, league.league_id, season, date)
-        }
-        "hockey" | "baseball" => {
-            // Hockey and baseball APIs require an integer season year
-            let season = league.season.as_deref().unwrap_or("2024");
-            format!("{}/games?league={}&season={}&date={}", base, league.league_id, season, date)
-        }
         "formula-1" => {
-            let season = league.season.as_deref().unwrap_or("2026");
             format!("{}/races?season={}", base, season)
         }
         other => {
-            warn!("Unknown sport_api '{}', falling back to /games", other);
-            format!("{}/games?league={}&date={}", base, league.league_id, date)
+            if other != "basketball" && other != "hockey" && other != "baseball" && other != "american-football" {
+                warn!("Unknown sport_api '{}', falling back to /games", other);
+            }
+            format!("{}/games?league={}&season={}&date={}", base, league.league_id, season, date)
         }
     }
 }

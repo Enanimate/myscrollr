@@ -5,7 +5,8 @@
     "api_host": "v1.american-football.api-sports.io",
     "league_id": 1,
     "category": "Football",
-    "country": "USA"
+    "country": "USA",
+    "season_format": "fall-august"
   },
   {
     "name": "NCAA Football",
@@ -13,7 +14,8 @@
     "api_host": "v1.american-football.api-sports.io",
     "league_id": 2,
     "category": "Football",
-    "country": "USA"
+    "country": "USA",
+    "season_format": "fall-august"
   },
   {
     "name": "NBA",
@@ -21,7 +23,8 @@
     "api_host": "v1.basketball.api-sports.io",
     "league_id": 12,
     "category": "Basketball",
-    "country": "USA"
+    "country": "USA",
+    "season_format": "cross-year"
   },
   {
     "name": "NCAA Basketball",
@@ -29,7 +32,8 @@
     "api_host": "v1.basketball.api-sports.io",
     "league_id": 116,
     "category": "Basketball",
-    "country": "USA"
+    "country": "USA",
+    "season_format": "cross-year"
   },
   {
     "name": "NHL",
@@ -38,7 +42,7 @@
     "league_id": 57,
     "category": "Hockey",
     "country": "USA",
-    "season": "2024"
+    "season_format": "fall-october"
   },
   {
     "name": "MLB",
@@ -47,7 +51,7 @@
     "league_id": 1,
     "category": "Baseball",
     "country": "USA",
-    "season": "2025"
+    "season_format": "calendar"
   },
   {
     "name": "Premier League",
@@ -55,7 +59,8 @@
     "api_host": "v3.football.api-sports.io",
     "league_id": 39,
     "category": "Soccer",
-    "country": "England"
+    "country": "England",
+    "season_format": "fall-august"
   },
   {
     "name": "La Liga",
@@ -63,7 +68,8 @@
     "api_host": "v3.football.api-sports.io",
     "league_id": 140,
     "category": "Soccer",
-    "country": "Spain"
+    "country": "Spain",
+    "season_format": "fall-august"
   },
   {
     "name": "MLS",
@@ -71,7 +77,8 @@
     "api_host": "v3.football.api-sports.io",
     "league_id": 253,
     "category": "Soccer",
-    "country": "USA"
+    "country": "USA",
+    "season_format": "calendar"
   },
   {
     "name": "Champions League",
@@ -79,7 +86,8 @@
     "api_host": "v3.football.api-sports.io",
     "league_id": 2,
     "category": "Soccer",
-    "country": "World"
+    "country": "World",
+    "season_format": "fall-august"
   },
   {
     "name": "Formula 1",
@@ -88,6 +96,6 @@
     "league_id": 1,
     "category": "Motorsport",
     "country": "World",
-    "season": "2026"
+    "season_format": "calendar"
   }
 ]
