@@ -336,7 +336,7 @@ fn build_api_url(league: &TrackedLeague, date: &str) -> String {
             format!("{}/games?league={}&season={}&date={}", base, league.league_id, season, date)
         }
         "formula-1" => {
-            let season = league.season.as_deref().unwrap_or("2025");
+            let season = league.season.as_deref().unwrap_or("2026");
             format!("{}/races?season={}", base, season)
         }
         other => {
