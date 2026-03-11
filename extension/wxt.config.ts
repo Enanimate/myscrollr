@@ -52,17 +52,19 @@ export default defineConfig({
     name: "Scrollr",
     description: "Real-time financial and sports data feed for your browser",
     permissions: ["storage", "identity", "alarms"],
-    // FORK: enanimate.dev values: api.myscrollr.enanimate.dev, auth.myscrollr.enanimate.dev
+    // ORIGINAL: relentnet.dev
+    // "https://api.myscrollr.relentnet.dev/*",
+    // "https://auth.myscrollr.relentnet.dev/*",
     host_permissions: [
-      "https://api.myscrollr.relentnet.dev/*",
-      "https://auth.myscrollr.relentnet.dev/*",
+      "https://api.myscrollr.enanimate.dev/*",
+      "https://auth.myscrollr.enanimate.dev/*",
       "https://api.open-meteo.com/*",
       "https://geocoding-api.open-meteo.com/*",
     ],
     browser_specific_settings: {
       gecko: {
-        id: "scrollr@relentnet.dev",
-        // id: "scrollr@enanimate.dev",
+        // id: "scrollr@relentnet.dev",
+        id: "scrollr@enanimate.dev",
       },
     },
   },
