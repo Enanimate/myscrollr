@@ -676,20 +676,18 @@ fn parse_baseball_game(item: &serde_json::Value, league: &TrackedLeague) -> Opti
 // =============================================================================
 
 fn parse_f1_race(item: &serde_json::Value, league: &TrackedLeague) -> Option<CleanedData> {
+    // Only ingest actual Race sessions — skip practice, qualifying, sprint
+    let race_type = item.get("type").and_then(|t| t.as_str()).unwrap_or("");
+    if race_type != "Race" {
+        return None;
+    }
+
     let race_id = item.get("id")?.as_i64()?.to_string();
 
     let date_str = item.get("date").and_then(|d| d.as_str());
     let start_time = parse_api_date(None, date_str)?;
 
     let status = item.get("status").and_then(|s| s.as_str()).unwrap_or("Scheduled");
-
-    let competition = item.get("competition")?;
-    let race_name = competition.get("name").and_then(|n| n.as_str()).unwrap_or("Race");
-    let circuit = item.get("circuit");
-    let circuit_name = circuit
-        .and_then(|c| c.get("name"))
-        .and_then(|n| n.as_str())
-        .map(|s| s.to_string());
 
     // F1 doesn't have a traditional home/away structure.
     // We use the race name as "home" and circuit as "away" for display.
@@ -698,6 +696,19 @@ fn parse_f1_race(item: &serde_json::Value, league: &TrackedLeague) -> Option<Cle
         "Live" | "In Progress" => "in",
         _ => "pre",
     };
+
+    // Skip old completed races — they'd be cleaned up anyway and waste DB writes
+    if state == "final" && start_time < Utc::now() - Duration::hours(24) {
+        return None;
+    }
+
+    let competition = item.get("competition")?;
+    let race_name = competition.get("name").and_then(|n| n.as_str()).unwrap_or("Race");
+    let circuit = item.get("circuit");
+    let circuit_name = circuit
+        .and_then(|c| c.get("name"))
+        .and_then(|n| n.as_str())
+        .map(|s| s.to_string());
 
     Some(CleanedData {
         league: league.name.clone(),
