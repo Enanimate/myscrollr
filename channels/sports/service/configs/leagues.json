@@ -87,6 +87,7 @@
     "api_host": "v1.formula-1.api-sports.io",
     "league_id": 1,
     "category": "Motorsport",
-    "country": "World"
+    "country": "World",
+    "season": "2026"
   }
 ]
