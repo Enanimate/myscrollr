@@ -88,5 +88,104 @@
     "league_id": 1,
     "category": "Motorsport",
     "country": "World"
+  },
+  {
+    "name": "Six Nations",
+    "sport_api": "rugby",
+    "api_host": "v1.rugby.api-sports.io",
+    "league_id": 51,
+    "category": "Rugby",
+    "country": "Europe",
+    "season": "2025"
+  },
+  {
+    "name": "Rugby World Cup",
+    "sport_api": "rugby",
+    "api_host": "v1.rugby.api-sports.io",
+    "league_id": 69,
+    "category": "Rugby",
+    "country": "World",
+    "season": "2027"
+  },
+  {
+    "name": "Super Rugby",
+    "sport_api": "rugby",
+    "api_host": "v1.rugby.api-sports.io",
+    "league_id": 71,
+    "category": "Rugby",
+    "country": "World",
+    "season": "2026"
+  },
+  {
+    "name": "Premiership Rugby",
+    "sport_api": "rugby",
+    "api_host": "v1.rugby.api-sports.io",
+    "league_id": 13,
+    "category": "Rugby",
+    "country": "England",
+    "season": "2024"
+  },
+  {
+    "name": "Top 14",
+    "sport_api": "rugby",
+    "api_host": "v1.rugby.api-sports.io",
+    "league_id": 16,
+    "category": "Rugby",
+    "country": "France",
+    "season": "2024"
+  },
+  {
+    "name": "United Rugby Championship",
+    "sport_api": "rugby",
+    "api_host": "v1.rugby.api-sports.io",
+    "league_id": 76,
+    "category": "Rugby",
+    "country": "World",
+    "season": "2024"
+  },
+  {
+    "name": "UFC",
+    "sport_api": "mma",
+    "api_host": "v1.mma.api-sports.io",
+    "league_id": 0,
+    "category": "MMA",
+    "country": "World",
+    "season": "2025"
+  },
+  {
+    "name": "Handball Champions League",
+    "sport_api": "handball",
+    "api_host": "v1.handball.api-sports.io",
+    "league_id": 131,
+    "category": "Handball",
+    "country": "Europe",
+    "season": "2024"
+  },
+  {
+    "name": "Handball Bundesliga",
+    "sport_api": "handball",
+    "api_host": "v1.handball.api-sports.io",
+    "league_id": 39,
+    "category": "Handball",
+    "country": "Germany",
+    "season": "2024"
+  },
+  {
+    "name": "Volleyball Nations League",
+    "sport_api": "volleyball",
+    "api_host": "v1.volleyball.api-sports.io",
+    "league_id": 183,
+    "category": "Volleyball",
+    "country": "World",
+    "season": "2025"
+  },
+  {
+    "name": "AFL",
+    "sport_api": "afl",
+    "api_host": "v1.afl.api-sports.io",
+    "league_id": 1,
+    "category": "AFL",
+    "country": "Australia",
+    "season": "2025"
   }
 ]
