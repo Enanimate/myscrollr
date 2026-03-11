@@ -3,7 +3,6 @@ import { useHandleSignInCallback, useLogto } from '@logto/react'
 import { useRef } from 'react'
 import { notifyExtensionAuthLogin } from '@/api/client'
 
-// const API_RESOURCE = import.meta.env.VITE_API_URL || 'https://api.myscrollr.enanimate.dev'
 const API_RESOURCE = import.meta.env.VITE_API_URL || 'https://api.myscrollr.relentnet.dev'
 
 export const Route = createFileRoute('/callback')({

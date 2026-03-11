@@ -79,7 +79,6 @@ const HUB_CARDS: HubCardDef[] = [
   {
     title: 'Security Node',
     desc: 'Manage password, MFA & linked accounts',
-    // href: `https://auth.myscrollr.enanimate.dev/account?${new URLSearchParams({ client_id: 'roazl2zldtcfscslysiuf' })}`,
     href: `https://auth.myscrollr.relentnet.dev/account?${new URLSearchParams({ client_id: 'ogbulfshvf934eeli4t9u' })}`,
     Icon: Lock,
     hex: HEX.secondary,

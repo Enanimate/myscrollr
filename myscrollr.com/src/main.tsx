@@ -12,14 +12,11 @@ import '@/styles.css'
 
 // Logto configuration — values come from VITE_ env vars (see .env.example)
 const logtoConfig: LogtoConfig = {
-  // endpoint: import.meta.env.VITE_LOGTO_ENDPOINT || 'https://auth.myscrollr.enanimate.dev/',
   endpoint:
     import.meta.env.VITE_LOGTO_ENDPOINT ||
     'https://auth.myscrollr.relentnet.dev/',
-  // appId: import.meta.env.VITE_LOGTO_APP_ID || 'roazl2zldtcfscslysiuf',
   appId: import.meta.env.VITE_LOGTO_APP_ID || 'ogbulfshvf934eeli4t9u',
   resources: [
-    // import.meta.env.VITE_LOGTO_RESOURCE || 'https://api.myscrollr.enanimate.dev',
     import.meta.env.VITE_LOGTO_RESOURCE ||
       'https://api.myscrollr.relentnet.dev',
   ],

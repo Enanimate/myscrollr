@@ -38,7 +38,6 @@ type logtoM2MConfig struct {
 func getM2MConfig() logtoM2MConfig {
 	endpoint := os.Getenv("LOGTO_ENDPOINT")
 	if endpoint == "" {
-		// endpoint = "https://auth.myscrollr.enanimate.dev"
 		endpoint = "https://auth.myscrollr.relentnet.dev"
 	}
 	endpoint = strings.TrimSuffix(endpoint, "/")
