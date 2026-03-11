@@ -1,4 +1,4 @@
-# Build context: myscrollr.com/ directory
+# Build context: monorepo root (Coolify deploys from repo root)
 
 # ── Stage 1: Build ──────────────────────────────────────────────
 FROM node:22-alpine AS builder
@@ -6,13 +6,15 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 
 # Copy package files first for better layer caching
-COPY package.json package-lock.json* ./
+COPY myscrollr.com/package.json myscrollr.com/package-lock.json* ./myscrollr.com/
 
 # Install dependencies
+WORKDIR /app/myscrollr.com
 RUN npm ci
 
-# Copy source
-COPY . .
+# Copy the rest of the frontend source
+WORKDIR /app
+COPY myscrollr.com/ ./myscrollr.com/
 
 # Accept build-time env vars
 ARG VITE_API_URL
@@ -27,13 +29,14 @@ ENV VITE_LOGTO_RESOURCE=${VITE_LOGTO_RESOURCE}
 ENV VITE_STRIPE_PUBLISHABLE_KEY=${VITE_STRIPE_PUBLISHABLE_KEY}
 
 # Build (vite build + tsc)
+WORKDIR /app/myscrollr.com
 RUN npm run build
 
 # ── Stage 2: Serve ──────────────────────────────────────────────
 FROM nginx:alpine
 
 # Copy built assets to nginx
-COPY --from=builder /app/dist /usr/share/nginx/html
+COPY --from=builder /app/myscrollr.com/dist /usr/share/nginx/html
 
 # SPA fallback: route all paths to index.html for client-side routing
 # Includes security headers, gzip compression, and proper caching
