@@ -8,6 +8,8 @@ import {
 } from "@tauri-apps/plugin-autostart";
 
 import clsx from "clsx";
+import { Trash2 } from "lucide-react";
+import { motion } from "motion/react";
 import TitleBar from "./components/TitleBar";
 import Sidebar from "./components/Sidebar";
 import type { SettingsTab } from "./components/Sidebar";
@@ -82,7 +84,9 @@ function getActiveItemName(
 export default function MainApp() {
   // ── Navigation ──────────────────────────────────────────────
   // activeItem: channel ID, widget ID, or "settings"
-  // configuring: when true and activeItem is a channel, show DashboardTab
+  // sourceTab: which tab is active for channels/widgets
+  type SourceTab = "feed" | "info" | "configuration";
+
   const [activeItem, setActiveItem] = useState<string>(() => {
     const saved = loadPref<string>("activeItem", "");
     // Migration: old values "feed" / "channels" / "dashboard" / "account"
@@ -92,7 +96,10 @@ export default function MainApp() {
     }
     return saved;
   });
-  const [configuring, setConfiguring] = useState(false);
+  const [sourceTab, setSourceTab] = useState<SourceTab>("feed");
+  const configuring = sourceTab === "configuration";
+  const [deleteArmed, setDeleteArmed] = useState(false);
+  const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [settingsTab, setSettingsTab] = useState<SettingsTab>(() => {
     const saved = loadPref<string>("settingsTab", "general");
@@ -353,24 +360,21 @@ export default function MainApp() {
 
   const handleSelectItem = useCallback((id: string) => {
     setActiveItem(id);
-    setConfiguring(false);
+    setDeleteArmed(false);
+    if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current);
     savePref("activeItem", id);
   }, []);
 
   const handleConfigureChannel = useCallback((channelType: string) => {
     setActiveItem(channelType);
-    setConfiguring(true);
+    setSourceTab("configuration");
     savePref("activeItem", channelType);
   }, []);
 
   const handleConfigureWidget = useCallback((widgetId: string) => {
     setActiveItem(widgetId);
-    setConfiguring(true);
+    setSourceTab("configuration");
     savePref("activeItem", widgetId);
-  }, []);
-
-  const handleBackToFeed = useCallback(() => {
-    setConfiguring(false);
   }, []);
 
   const handleSettingsTab = useCallback((tab: SettingsTab) => {
@@ -393,8 +397,8 @@ export default function MainApp() {
           setSessionExpired(false);
           return;
         }
-        if (configuring) {
-          setConfiguring(false);
+        if (sourceTab !== "feed") {
+          setSourceTab("feed");
           return;
         }
       }
@@ -437,13 +441,13 @@ export default function MainApp() {
       try {
         await channelsApi.update(
           channelType,
-          { enabled: visible, visible },
+          { enabled: true, visible },
           () => Promise.resolve(token),
         );
         setChannels((prev) =>
           prev.map((ch) =>
             ch.channel_type === channelType
-              ? { ...ch, enabled: visible, visible }
+              ? { ...ch, enabled: true, visible }
               : ch,
           ),
         );
@@ -467,7 +471,7 @@ export default function MainApp() {
         setChannels((prev) => [...prev, created]);
         // Navigate to the new channel
         setActiveItem(channelType);
-        setConfiguring(false);
+        setSourceTab("feed");
         savePref("activeItem", channelType);
       } catch (err) {
         console.error("[Scrollr] Channel add failed:", err);
@@ -494,7 +498,7 @@ export default function MainApp() {
               enabledWidgets[0] ??
               "settings";
             setActiveItem(fallback);
-            setConfiguring(false);
+            setSourceTab("feed");
             savePref("activeItem", fallback);
           }
           return remaining;
@@ -518,18 +522,40 @@ export default function MainApp() {
     [fetchDashboard],
   );
 
-  // ── Widget toggle handler ───────────────────────────────────
+  // ── Widget handlers ─────────────────────────────────────────
 
+  /** Toggle widget on/off the ticker (keep it in sidebar). */
+  const handleToggleWidgetTicker = useCallback(
+    (widgetId: string) => {
+      const onTicker = prefs.widgets.widgetsOnTicker;
+      const nextOnTicker = onTicker.includes(widgetId)
+        ? onTicker.filter((id) => id !== widgetId)
+        : [...onTicker, widgetId];
+
+      const next: AppPreferences = {
+        ...prefs,
+        widgets: { ...prefs.widgets, widgetsOnTicker: nextOnTicker },
+      };
+      setPrefs(next);
+      savePrefs(next);
+    },
+    [prefs],
+  );
+
+  /** Remove widget from sidebar entirely (also removes from ticker). */
   const handleToggleWidget = useCallback(
     (widgetId: string) => {
       const isEnabled = enabledWidgets.includes(widgetId);
       const nextEnabled = isEnabled
         ? enabledWidgets.filter((id) => id !== widgetId)
         : [...enabledWidgets, widgetId];
+      const nextOnTicker = isEnabled
+        ? prefs.widgets.widgetsOnTicker.filter((id) => id !== widgetId)
+        : [...prefs.widgets.widgetsOnTicker, widgetId];
 
       const next: AppPreferences = {
         ...prefs,
-        widgets: { ...prefs.widgets, enabledWidgets: nextEnabled },
+        widgets: { ...prefs.widgets, enabledWidgets: nextEnabled, widgetsOnTicker: nextOnTicker },
       };
       setPrefs(next);
       savePrefs(next);
@@ -537,7 +563,7 @@ export default function MainApp() {
       // If enabling, navigate to the widget
       if (!isEnabled) {
         setActiveItem(widgetId);
-        setConfiguring(false);
+        setSourceTab("feed");
         savePref("activeItem", widgetId);
       }
       // If disabling the active widget, navigate away
@@ -546,7 +572,7 @@ export default function MainApp() {
         const firstWidget = nextEnabled[0];
         const fallback = firstCh ?? firstWidget ?? "settings";
         setActiveItem(fallback);
-        setConfiguring(false);
+        setSourceTab("feed");
         savePref("activeItem", fallback);
       }
     },
@@ -581,9 +607,9 @@ export default function MainApp() {
       ...channels
         .filter((ch) => ch.enabled && ch.visible)
         .map((ch) => ch.channel_type),
-      ...prefs.widgets.enabledWidgets,
+      ...prefs.widgets.widgetsOnTicker,
     ],
-    [channels, prefs.widgets.enabledWidgets],
+    [channels, prefs.widgets.widgetsOnTicker],
   );
 
   // ── Widget ticker data (local polling for clock/weather/sysmon) ──
@@ -699,6 +725,73 @@ export default function MainApp() {
     // Fetch error (only for channel content)
     if (fetchError && isChannelActive) {
       return <ErrorState message={fetchError} onRetry={fetchDashboard} />;
+    }
+
+    // Info tab — channels and widgets
+    if (sourceTab === "info" && (isChannelActive || isWidgetActive)) {
+      const manifest = isChannelActive
+        ? allChannelManifests.find((m) => m.id === activeItem)
+        : activeWidget;
+      const info = manifest?.info;
+      const Icon = manifest && "icon" in manifest ? manifest.icon : null;
+      const hex = manifest?.hex ?? "var(--color-fg-3)";
+
+      return (
+        <div className="p-6 max-w-xl">
+          {/* Header */}
+          <div className="flex items-center gap-3 mb-6">
+            {Icon && (
+              <span
+                className="flex items-center justify-center w-10 h-10 rounded-xl"
+                style={{ backgroundColor: `${hex}15`, color: hex }}
+              >
+                <Icon size={20} />
+              </span>
+            )}
+            <div>
+              <h2 className="text-lg font-semibold">{manifest?.name}</h2>
+              <p className="text-sm text-fg-3">
+                {"description" in (manifest ?? {})
+                  ? (manifest as { description: string }).description
+                  : ""}
+              </p>
+            </div>
+          </div>
+
+          {/* About */}
+          {info && (
+            <div className="space-y-4">
+              <section>
+                <h3 className="text-xs font-mono font-bold text-fg-3 uppercase tracking-wider mb-2">
+                  About
+                </h3>
+                <p className="text-sm text-fg-2 leading-relaxed">
+                  {info.about}
+                </p>
+              </section>
+
+              <section>
+                <h3 className="text-xs font-mono font-bold text-fg-3 uppercase tracking-wider mb-2">
+                  How to use
+                </h3>
+                <ul className="space-y-2">
+                  {info.usage.map((step, i) => (
+                    <li key={i} className="flex gap-2.5 text-sm text-fg-2">
+                      <span
+                        className="flex items-center justify-center w-5 h-5 rounded-md text-[10px] font-bold shrink-0 mt-0.5"
+                        style={{ backgroundColor: `${hex}15`, color: hex }}
+                      >
+                        {i + 1}
+                      </span>
+                      <span className="leading-relaxed">{step}</span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            </div>
+          )}
+        </div>
+      );
     }
 
     // Channel — configure mode (DashboardTab)
@@ -888,29 +981,83 @@ export default function MainApp() {
         {/* Header */}
         <header className="flex items-center justify-between px-6 h-14 border-b border-edge shrink-0">
           <div className="flex items-center gap-3 min-w-0">
-            {/* Back arrow when configuring a channel or widget */}
-            {configuring && (isChannelActive || isWidgetActive) && (
-              <button
-                onClick={handleBackToFeed}
-                className="flex items-center gap-1.5 text-xs font-medium text-fg-3 hover:text-fg-2 transition-colors shrink-0"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M19 12H5M12 19l-7-7 7-7" />
-                </svg>
-                Feed
-              </button>
-            )}
             <h1 className="text-base font-semibold truncate">
               {activeItemName}
-              {configuring && (isChannelActive || isWidgetActive) && (
-                <span className="text-fg-3 font-normal ml-2 text-sm">
-                  Configuration
-                </span>
-              )}
             </h1>
+
+            {/* Channel ticker toggle — compact switch only */}
+            {isChannelActive && (() => {
+              const ch = channels.find((c) => c.channel_type === activeItem);
+              const manifest = allChannelManifests.find((m) => m.id === activeItem);
+              const active = ch?.visible ?? false;
+              const hex = manifest?.hex ?? "var(--color-fg-3)";
+              return (
+                <button
+                  onClick={() => handleToggleChannel(activeItem as ChannelType, !active)}
+                  className="shrink-0"
+                  title={active ? "On Ticker" : "Off Ticker"}
+                >
+                  <span
+                    className="block h-4 w-7 rounded-full relative transition-colors"
+                    style={{ background: active ? hex : undefined }}
+                  >
+                    {!active && <span className="absolute inset-0 rounded-full bg-fg-4/25" />}
+                    <motion.span
+                      className="absolute top-0.5 left-0.5 h-3 w-3 rounded-full bg-white"
+                      animate={{ x: active ? 12 : 0 }}
+                      transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                    />
+                  </span>
+                </button>
+              );
+            })()}
+
+            {/* Widget ticker toggle — compact switch only */}
+            {isWidgetActive && (() => {
+              const active = prefs.widgets.widgetsOnTicker.includes(activeItem);
+              const hex = activeWidget?.hex ?? "var(--color-fg-3)";
+              return (
+                <button
+                  onClick={() => handleToggleWidgetTicker(activeItem)}
+                  className="shrink-0"
+                  title={active ? "On Ticker" : "Off Ticker"}
+                >
+                  <span
+                    className="block h-4 w-7 rounded-full relative transition-colors"
+                    style={{ background: active ? hex : undefined }}
+                  >
+                    {!active && <span className="absolute inset-0 rounded-full bg-fg-4/25" />}
+                    <motion.span
+                      className="absolute top-0.5 left-0.5 h-3 w-3 rounded-full bg-white"
+                      animate={{ x: active ? 12 : 0 }}
+                      transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                    />
+                  </span>
+                </button>
+              );
+            })()}
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            {/* Settings tab switcher — only when viewing settings */}
+            {/* Feed / Info / Configuration tabs — channels and widgets */}
+            {(isChannelActive || isWidgetActive) && (
+              <div className="flex gap-1">
+                {(["feed", "info", "configuration"] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setSourceTab(tab)}
+                    className={clsx(
+                      "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors capitalize",
+                      sourceTab === tab
+                        ? "bg-accent/10 text-accent"
+                        : "text-fg-3 hover:text-fg-2 hover:bg-surface-hover",
+                    )}
+                  >
+                    {tab}
+                  </button>
+                ))}
+              </div>
+            )}
+            {/* Settings tab switcher */}
             {isSettingsActive && (
               <div className="flex gap-1">
                 {(["general", "ticker", "account"] as SettingsTab[]).map(
@@ -931,12 +1078,51 @@ export default function MainApp() {
                 )}
               </div>
             )}
-            {!authenticated && !isSettingsActive && (
+            {!authenticated && !isSettingsActive && !(isChannelActive || isWidgetActive) && (
               <button
                 onClick={handleLogin}
                 className="px-3 py-1.5 rounded-lg text-xs font-medium bg-accent/10 text-accent hover:bg-accent/20 transition-colors"
               >
                 Sign in
+              </button>
+            )}
+
+            {/* Delete — double-tap: first click arms (red), second click confirms */}
+            {(isChannelActive || isWidgetActive) && (
+              <button
+                onClick={() => {
+                  if (deleteArmed) {
+                    // Second click — execute
+                    if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current);
+                    if (isChannelActive) {
+                      handleDeleteChannel(activeItem as ChannelType);
+                    } else {
+                      handleToggleWidget(activeItem);
+                    }
+                    setDeleteArmed(false);
+                  } else {
+                    // First click — arm with 3s timeout
+                    setDeleteArmed(true);
+                    deleteTimerRef.current = setTimeout(() => {
+                      setDeleteArmed(false);
+                    }, 3000);
+                  }
+                }}
+                className={clsx(
+                  "p-2 rounded-lg transition-colors",
+                  deleteArmed
+                    ? "text-red-500 bg-red-500/10"
+                    : "text-fg-4/40 hover:text-red-500",
+                )}
+                title={
+                  deleteArmed
+                    ? "Click again to remove"
+                    : isChannelActive
+                      ? "Remove channel"
+                      : "Remove widget"
+                }
+              >
+                <Trash2 size={14} />
               </button>
             )}
           </div>
