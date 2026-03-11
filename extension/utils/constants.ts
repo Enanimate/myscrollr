@@ -1,8 +1,3 @@
-// FORK: enanimate.dev values (swap these in when developing on the fork):
-//   API_URL = 'https://api.myscrollr.enanimate.dev'
-//   FRONTEND_URL = 'https://myscrollr.enanimate.dev'
-//   LOGTO_ENDPOINT = 'https://auth.myscrollr.enanimate.dev'
-//   LOGTO_APP_ID = 'roazl2zldtcfscslysiuf'
 export const API_URL = 'https://api.myscrollr.relentnet.dev';
 export const SSE_URL = `${API_URL}/events`;
 export const FRONTEND_URL = 'https://myscrollr.relentnet.dev';
