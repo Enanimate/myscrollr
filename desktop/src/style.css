@@ -3,6 +3,8 @@
 @source "../../channels/*/extension/**/*.tsx";
 @source "../../channels/*/web/**/*.tsx";
 @source "../../extension/entrypoints/scrollbar.content/**/*.tsx";
+@source "../../extension/widgets/**/*.tsx";
+@source "./widgets/**/*.tsx";
 @source "../../myscrollr.com/src/channels/shared.tsx";
 @source "./components/**/*.tsx";
 
@@ -36,6 +38,12 @@
   --color-secondary: #ff4757;
   --color-info: #00d4ff;
   --color-accent-purple: #a855f7;
+
+  /* ── Widget colors ────────────────────────────────────────── */
+  --color-widget-clock: #6366f1;
+  --color-widget-timer: #f59e0b;
+  --color-widget-weather: #0ea5e9;
+  --color-widget-sysmon: #06b6d4;
 
   /* ── Text hierarchy ───────────────────────────────────────── */
   --color-fg: #e2e2ec;
@@ -183,8 +191,10 @@ body {
    min-height: 0 is critical — flexbox items default to min-height: auto,
    which prevents shrinking below content size. Without it, a tall
    DashboardTab makes this div grow beyond the viewport, and the inner
-   scroll container never overflows. */
-#desktop-shell > div:last-child {
+   scroll container never overflows.
+   :not(.ticker-container) prevents this from targeting ScrollrTicker rows,
+   which use flex-direction: row for pinned chip zones. */
+#desktop-shell > div:last-child:not(.ticker-container) {
   position: relative !important;
   top: auto !important;
   bottom: auto !important;
@@ -207,7 +217,7 @@ body {
    expands the element to fill available space. height: auto would
    leave the specified height ambiguous, causing Chromium to skip
    overflow detection even though flex layout assigns a real height. */
-#desktop-shell > div:last-child > .overflow-y-auto {
+#desktop-shell > div:last-child:not(.ticker-container) > .overflow-y-auto {
   flex: 1 1 0% !important;
   height: 0 !important;
   min-height: 0 !important;
@@ -219,11 +229,22 @@ body {
   flex-shrink: 0;
 }
 
-/* Hard-constrain the Ticker element to the container width.
+/* Scrolling area: fills remaining space between pinned zones.
+   flex: 1 1 0% grows to fill, min-width: 0 allows shrinking below
+   content width, overflow: hidden clips the ticker at zone edges. */
+.ticker-scroll-wrapper {
+  flex: 1 1 0%;
+  min-width: 0;
+  overflow: hidden;
+  height: 100%;
+  position: relative;
+}
+
+/* Hard-constrain the Ticker element to the wrapper width.
    Chromium (WebView2) + overflow-x: clip on a flex child does NOT
    establish a formatting context, so width: 100% alone can be
    overridden by content. max-width is a hard upper bound. */
-.ticker-container > * {
+.ticker-scroll-wrapper > * {
   max-width: 100% !important;
   min-width: 0 !important;
 }
@@ -397,6 +418,17 @@ body {
 
 .ekg-dot {
   animation: ekg-dot 2s ease-in-out infinite;
+}
+
+/* ── Widget card animations ──────────────────────────────────── */
+@keyframes widget-card-enter {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes widget-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.4; transform: scale(0.75); }
 }
 
 /* ── Toggle switch ──────────────────────────────────────────────── */

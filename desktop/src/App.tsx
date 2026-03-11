@@ -28,6 +28,8 @@ import {
   TICKER_HEIGHTS,
 } from "./preferences";
 import type { AppPreferences, TickerPosition } from "./preferences";
+import { getAllWidgets, getWidget } from "./widgets/registry";
+import { useWidgetTickerData } from "./hooks/useWidgetTickerData";
 
 // ── Constants ────────────────────────────────────────────────────
 
@@ -50,7 +52,7 @@ export default function App() {
 
   // Channel state
   const [channels, setChannels] = useState<Channel[]>([]);
-  const [activeTabs, setActiveTabs] = useState<string[]>(() =>
+  const [channelTabs, setChannelTabs] = useState<string[]>(() =>
     loadPref("activeFeedTabs", ["finance", "sports"]),
   );
   const channelsRef = useRef(channels);
@@ -90,23 +92,31 @@ export default function App() {
 
   const fetchFeed = useCallback(async () => {
     try {
+      // Always attempt to get a valid token — handles silent refresh
+      // even when the access token has expired but a refresh token exists.
+      const token = await getValidToken();
       let res: Response;
 
-      if (authenticatedRef.current) {
-        const token = await getValidToken();
-        if (!token) {
+      if (token) {
+        // Sync auth state (covers silent refresh from expired state)
+        if (!authenticatedRef.current) {
+          setAuthenticated(true);
+          const currentTier = getTier();
+          tierRef.current = currentTier;
+        }
+        res = await fetch(`${API_URL}/dashboard`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.status === 401) {
           setAuthenticated(false);
+          tierRef.current = "free";
           res = await fetch(`${API_URL}/public/feed`);
-        } else {
-          res = await fetch(`${API_URL}/dashboard`, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          if (res.status === 401) {
-            setAuthenticated(false);
-            res = await fetch(`${API_URL}/public/feed`);
-          }
         }
       } else {
+        if (authenticatedRef.current) {
+          setAuthenticated(false);
+          tierRef.current = "free";
+        }
         res = await fetch(`${API_URL}/public/feed`);
       }
 
@@ -121,7 +131,7 @@ export default function App() {
         const visible = channelList
           .filter((ch) => ch.enabled && ch.visible)
           .map((ch) => ch.channel_type);
-        setActiveTabs(visible);
+        setChannelTabs(visible);
         savePref("activeFeedTabs", visible);
       }
     } catch {
@@ -230,7 +240,7 @@ export default function App() {
       );
       if (channelRecords.length === 0) return;
 
-      setActiveTabs((prev) => {
+      setChannelTabs((prev) => {
         let next = [...prev];
 
         for (const cdc of channelRecords) {
@@ -265,14 +275,25 @@ export default function App() {
   // ── Initial data fetch + delivery start ────────────────────────
 
   useEffect(() => {
-    const tier = authenticated ? getTier() : "free";
-    tierRef.current = tier;
+    async function init() {
+      // Attempt silent token refresh to determine the real tier,
+      // even if checkAuth() returned false due to an expired access token.
+      const token = await getValidToken();
+      const tier = token ? getTier() : "free";
+      tierRef.current = tier;
 
-    startPolling(tier);
+      if (token && !authenticatedRef.current) {
+        setAuthenticated(true);
+      }
 
-    if (tier === "uplink_unlimited") {
-      startSSE();
+      startPolling(tier);
+
+      if (tier === "uplink_unlimited") {
+        startSSE();
+      }
     }
+
+    init();
 
     return () => {
       stopPolling();
@@ -465,8 +486,7 @@ export default function App() {
 
   const handleChipClick = useCallback(
     (channelType: string, _itemId: string | number) => {
-      savePref("activeTab", channelType);
-      savePref("appSection", "feed");
+      savePref("activeItem", channelType);
       invoke("show_app_window").catch(() => {});
     },
     [],
@@ -492,6 +512,48 @@ export default function App() {
     [fetchFeed],
   );
 
+  // ── Widget quick-toggle (for context menu) ─────────────────────
+
+  const handleWidgetToggle = useCallback(
+    (widgetId: string) => {
+      setPrefs((prev) => {
+        const enabled = prev.widgets.enabledWidgets;
+        const next = enabled.includes(widgetId)
+          ? enabled.filter((id) => id !== widgetId)
+          : [...enabled, widgetId];
+        const updated = {
+          ...prev,
+          widgets: { ...prev.widgets, enabledWidgets: next },
+        };
+        savePrefs(updated);
+        return updated;
+      });
+    },
+    [],
+  );
+
+  // ── Widget pin toggle (hover icon on consolidated chip) ─────────
+
+  const handleTogglePin = useCallback(
+    (widgetId: string) => {
+      setPrefs((prev) => {
+        const pinned = { ...prev.widgets.pinnedWidgets };
+        if (pinned[widgetId]) {
+          delete pinned[widgetId];
+        } else {
+          pinned[widgetId] = { side: "left" };
+        }
+        const updated = {
+          ...prev,
+          widgets: { ...prev.widgets, pinnedWidgets: pinned },
+        };
+        savePrefs(updated);
+        return updated;
+      });
+    },
+    [],
+  );
+
   // ── Ticker position toggle ─────────────────────────────────────
 
   const handleTogglePosition = useCallback(() => {
@@ -507,6 +569,19 @@ export default function App() {
     const h = TICKER_HEIGHTS[updated.ticker.tickerMode] * updated.appearance.tickerRows;
     invoke("position_ticker", { position: next, height: h }).catch(() => {});
   }, [tickerPosition]);
+
+  // ── Hide ticker from toolbar ───────────────────────────────────
+
+  const handleHideTicker = useCallback(() => {
+    setTickerCollapsed(true);
+    savePref("tickerCollapsed", true);
+    const updated = {
+      ...prefsRef.current,
+      ticker: { ...prefsRef.current.ticker, showTicker: false },
+    };
+    setPrefs(updated);
+    savePrefs(updated);
+  }, []);
 
   // ── Right-click → native context menu ──────────────────────────
 
@@ -529,6 +604,23 @@ export default function App() {
             checked: isVisible,
             action: () => {
               handleChannelToggle(channelType, !isVisible);
+            },
+          });
+          items.push(item);
+        }
+        items.push(await PredefinedMenuItem.new({ item: "Separator" }));
+      }
+
+      // Widget quick toggles
+      const allWidgets = getAllWidgets();
+      if (allWidgets.length > 0) {
+        for (const widget of allWidgets) {
+          const isEnabled = prefsRef.current.widgets.enabledWidgets.includes(widget.id);
+          const item = await CheckMenuItem.new({
+            text: widget.name,
+            checked: isEnabled,
+            action: () => {
+              handleWidgetToggle(widget.id);
             },
           });
           items.push(item);
@@ -603,7 +695,13 @@ export default function App() {
     }
     document.addEventListener("contextmenu", onContextMenu);
     return () => document.removeEventListener("contextmenu", onContextMenu);
-  }, [handleChannelToggle]);
+  }, [handleChannelToggle, handleWidgetToggle]);
+
+  // ── Merge channel + widget tabs ──────────────────────────────
+  const activeTabs = [...channelTabs, ...prefs.widgets.enabledWidgets];
+
+  // ── Widget ticker data (local polling for clock/weather/sysmon) ──
+  const widgetData = useWidgetTickerData(prefs.widgets);
 
   // ── Render ─────────────────────────────────────────────────────
 
@@ -621,13 +719,17 @@ export default function App() {
             position={tickerPosition}
             hovered={hovered}
             onTogglePosition={handleTogglePosition}
+            onHideTicker={handleHideTicker}
           />
           {Array.from({ length: prefs.appearance.tickerRows }, (_, i) => (
             <ScrollrTicker
               key={`row${i}-${prefs.ticker.tickerGap}-${prefs.ticker.tickerSpeed}-${prefs.ticker.hoverSpeed}-${prefs.ticker.tickerMode}-${prefs.ticker.mixMode}-${prefs.ticker.chipColors}-${prefs.ticker.tickerDirection}-${prefs.ticker.scrollMode}-${prefs.ticker.stepPause}-${prefs.appearance.tickerRows}`}
               dashboard={dashboard}
               activeTabs={activeTabs}
+              widgetData={widgetData}
               onChipClick={handleChipClick}
+              onTogglePin={handleTogglePin}
+              pinnedWidgets={prefs.widgets.pinnedWidgets}
               speed={prefs.ticker.tickerSpeed}
               gap={TICKER_GAPS[prefs.ticker.tickerGap]}
               pauseOnHover={prefs.ticker.pauseOnHover}
