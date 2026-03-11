@@ -15,7 +15,7 @@ import (
 // @title Scrollr API
 // @version 2.0
 // @description Gateway API for Scrollr — routes requests to self-registered channel services.
-// @host api.myscrollr.relentnet.dev
+// @host api.myscrollr.enanimate.dev
 // @BasePath /
 // @securityDefinitions.apikey LogtoAuth
 // @in header

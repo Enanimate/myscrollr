@@ -415,7 +415,7 @@ export const LEGAL_DOCUMENTS: LegalDocument[] = [
         heading: 'What the Extension Can Access',
         content: [
           'The extension requests the following permissions: "storage" (to save your preferences and authentication tokens locally), "identity" (to handle the OAuth authentication flow), and "alarms" (for periodic background tasks like token refresh).',
-          'The extension also has host permissions to communicate with our API server (api.myscrollr.relentnet.dev) and authentication server (auth.myscrollr.relentnet.dev). These are the only external servers the extension communicates with.',
+          'The extension also has host permissions to communicate with our API server (api.myscrollr.enanimate.dev) and authentication server (auth.myscrollr.enanimate.dev). These are the only external servers the extension communicates with.',
         ],
       },
       {
@@ -705,7 +705,7 @@ export const LEGAL_DOCUMENTS: LegalDocument[] = [
       {
         heading: 'API Usage',
         content: [
-          'The Scrollr API is intended for use by the official Scrollr website and browser extension. While the source code is open and you may operate your own instance, you may not use our hosted API endpoints (api.myscrollr.relentnet.dev) for unauthorized third-party applications without permission.',
+          'The Scrollr API is intended for use by the official Scrollr website and browser extension. While the source code is open and you may operate your own instance, you may not use our hosted API endpoints (api.myscrollr.enanimate.dev) for unauthorized third-party applications without permission.',
           'Excessive API requests that degrade service for other users may be rate-limited or blocked.',
         ],
       },
