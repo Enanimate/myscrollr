@@ -20,6 +20,10 @@ on:
 permissions:
   contents: write
 
+env:
+  # sccache-action v0.0.9 still uses Node 20 internally
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   # ── Resolve the build matrix based on the selected platform ────
   # Tag pushes and "all" both build every target. Selecting a single
@@ -79,6 +83,9 @@ jobs:
       matrix: ${{ fromJson(needs.matrix-setup.outputs.matrix) }}
 
     runs-on: ${{ matrix.platform }}
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: sccache
     defaults:
       run:
         working-directory: desktop
@@ -110,7 +117,7 @@ jobs:
       # cache backend. Unlike swatinem/rust-cache (which caches target/),
       # sccache works across branches and tag refs because it uses a
       # content-addressed key, not a branch-scoped one.
-      # The action automatically sets SCCACHE_GHA_ENABLED and RUSTC_WRAPPER.
+      # RUSTC_WRAPPER and SCCACHE_GHA_ENABLED are set at the job level.
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.9
 
