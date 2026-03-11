@@ -110,14 +110,9 @@ jobs:
       # cache backend. Unlike swatinem/rust-cache (which caches target/),
       # sccache works across branches and tag refs because it uses a
       # content-addressed key, not a branch-scoped one.
+      # The action automatically sets SCCACHE_GHA_ENABLED and RUSTC_WRAPPER.
       - name: Setup sccache
-        uses: mozilla-actions/sccache-action@v0.0.7
-
-      - name: Configure Rust to use sccache
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
-          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
-        working-directory: .
+        uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Prepare extension (generates .wxt/tsconfig.json needed by shared components)
         run: npm ci
