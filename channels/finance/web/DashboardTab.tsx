@@ -30,8 +30,8 @@ const HEX = "#34d399";
 // ── API helper ──────────────────────────────────────────────────
 
 const API_BASE =
-  // import.meta.env.VITE_API_URL || "https://api.myscrollr.relentnet.dev";
-  import.meta.env.VITE_API_URL || "https://api.myscrollr.enanimate.dev";
+  // import.meta.env.VITE_API_URL || "https://api.myscrollr.enanimate.dev";
+  import.meta.env.VITE_API_URL || "https://api.myscrollr.relentnet.dev";
 
 async function fetchCatalog(): Promise<TrackedSymbol[]> {
   const res = await fetch(`${API_BASE}/finance/symbols`);
