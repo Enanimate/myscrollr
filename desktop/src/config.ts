@@ -9,16 +9,12 @@
 
 // ── API ─────────────────────────────────────────────────────────
 
-// export const API_BASE = "https://api.myscrollr.relentnet.dev";
-// export const API_HOST = "api.myscrollr.relentnet.dev";
-export const API_BASE = "https://api.myscrollr.enanimate.dev";
-export const API_HOST = "api.myscrollr.enanimate.dev";
+export const API_BASE = "https://api.myscrollr.relentnet.dev";
+export const API_HOST = "api.myscrollr.relentnet.dev";
 
 // ── Auth (Logto PKCE) ───────────────────────────────────────────
 
-// export const AUTH_ENDPOINT = "https://auth.myscrollr.relentnet.dev";
-// export const LOGTO_APP_ID = "kq298uwwusrvw8m6yn6b4";
-export const AUTH_ENDPOINT = "https://auth.myscrollr.enanimate.dev";
-export const LOGTO_APP_ID = "roazl2zldtcfscslysiuf";
+export const AUTH_ENDPOINT = "https://auth.myscrollr.relentnet.dev";
+export const LOGTO_APP_ID = "kq298uwwusrvw8m6yn6b4";
 export const REDIRECT_URI = "http://127.0.0.1:19284/callback";
 export const REFRESH_BUFFER_MS = 60_000;

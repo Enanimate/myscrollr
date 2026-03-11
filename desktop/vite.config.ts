@@ -49,9 +49,8 @@ export default defineConfig({
 
   // Define env vars that DashboardTab components read via import.meta.env
   define: {
-    // "import.meta.env.VITE_API_URL": JSON.stringify("https://api.myscrollr.relentnet.dev"),
     "import.meta.env.VITE_API_URL": JSON.stringify(
-      "https://api.myscrollr.enanimate.dev",
+      "https://api.myscrollr.relentnet.dev",
     ),
   },
 
