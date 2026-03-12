@@ -33,13 +33,12 @@ export const weatherWidget: WidgetManifest = {
   info: {
     about:
       "The Weather widget shows current weather conditions for one or more " +
-      "locations on your ticker. Data is fetched from the Open-Meteo API " +
-      "with no API key required.",
+      "locations on your ticker. Weather data updates automatically.",
     usage: [
       "Search for a city in the feed view to add it to your weather locations.",
-      "Each location appears as a ticker chip with temperature, conditions, and an icon.",
+      "Each location appears on the ticker with temperature, conditions, and an icon.",
       "Add multiple cities to track weather across different locations.",
-      "Exclude specific cities from the ticker in the Configuration tab.",
+      "Hide specific cities from the ticker in the Settings tab.",
     ],
   },
   FeedTab: WeatherFeedTab,
@@ -98,7 +97,7 @@ function WeatherFeedTab({ mode: feedMode }: FeedTabProps) {
           }
           return {
             ...c,
-            error: "Failed to fetch",
+            error: "Couldn't get weather data",
             lastFetched: Date.now(),
           };
         }),
@@ -150,7 +149,7 @@ function WeatherFeedTab({ mode: feedMode }: FeedTabProps) {
         setCities((prev) =>
           prev.map((c) =>
             c.location.lat === lat && c.location.lon === lon
-              ? { ...c, error: "Failed to fetch", lastFetched: Date.now() }
+              ? { ...c, error: "Couldn't get weather data", lastFetched: Date.now() }
               : c,
           ),
         );
@@ -232,7 +231,7 @@ function WeatherFeedTab({ mode: feedMode }: FeedTabProps) {
             onClick={detectLocation}
             className="text-xs font-mono text-fg px-3 py-1.5 rounded-lg bg-surface-2 border border-edge hover:border-edge-2 transition-colors"
           >
-            Use Location
+            Use My Location
           </button>
         </div>
       </div>
@@ -259,7 +258,7 @@ function WeatherFeedTab({ mode: feedMode }: FeedTabProps) {
           <button
             onClick={detectLocation}
             className="text-xs font-mono text-widget-weather/70 hover:text-widget-weather transition-colors"
-            title="Detect location"
+            title="Use my location"
           >
             {"\u{1F4CD}"}
           </button>

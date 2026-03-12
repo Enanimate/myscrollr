@@ -116,10 +116,9 @@ function SysmonFeedTab({ mode: feedMode }: FeedTabProps) {
   // ── Loading state ───────────────────────────────────────────
   if (!info) {
     return (
-      <div className="p-4 flex items-center justify-center">
-        <span className="text-xs font-mono text-fg-3">
-          Loading system info...
-        </span>
+      <div className="flex flex-col items-center justify-center gap-2 py-12">
+        <Activity size={28} className="text-fg-4/40" />
+        <p className="text-xs text-fg-4">Loading system info&hellip;</p>
       </div>
     );
   }
@@ -138,7 +137,7 @@ function SysmonFeedTab({ mode: feedMode }: FeedTabProps) {
             System
           </span>
           <span className="text-xs font-mono text-fg-3">
-            up {formatUptime(info.uptime)}
+            Running for {formatUptime(info.uptime)}
           </span>
         </div>
 
@@ -218,7 +217,7 @@ function SysmonFeedTab({ mode: feedMode }: FeedTabProps) {
             System Monitor
           </span>
           <span className="text-xs font-mono text-fg-3">
-            up {formatUptime(info.uptime)}
+            Running for {formatUptime(info.uptime)}
           </span>
         </div>
         <div className="text-xs font-mono text-fg-2 truncate">
@@ -242,7 +241,7 @@ function SysmonFeedTab({ mode: feedMode }: FeedTabProps) {
             CPU
           </span>
           <div className="text-[10px] font-mono text-fg-3 uppercase tracking-wider -mt-1">
-            Utilization
+            Usage
           </div>
           <div
             className={`text-xl font-mono font-bold tabular-nums ${usageColorClass(info.cpuUsage)}`}
@@ -300,7 +299,7 @@ function SysmonFeedTab({ mode: feedMode }: FeedTabProps) {
           {info.gpuUsage !== null ? (
             <>
               <div className="text-[10px] font-mono text-fg-3 uppercase tracking-wider -mt-1">
-                Utilization
+                Usage
               </div>
               <div
                 className={`text-xl font-mono font-bold tabular-nums ${usageColorClass(info.gpuUsage)}`}
@@ -332,7 +331,7 @@ function SysmonFeedTab({ mode: feedMode }: FeedTabProps) {
               {info.gpuVramTotal !== null && info.gpuVramUsed !== null && (
                 <div className="text-xs font-mono text-fg-3 tabular-nums">
                   {formatBytes(info.gpuVramUsed)} /{" "}
-                  {formatBytes(info.gpuVramTotal)} VRAM
+                  {formatBytes(info.gpuVramTotal)} Video memory
                 </div>
               )}
             </>
@@ -343,7 +342,7 @@ function SysmonFeedTab({ mode: feedMode }: FeedTabProps) {
               {Math.round(gpuTemp.temp)}&deg;C
             </div>
           ) : (
-            <div className="text-sm font-mono text-fg-3">&mdash;</div>
+            <div className="text-xs font-mono text-fg-4">No GPU detected</div>
           )}
         </div>
 
@@ -371,7 +370,7 @@ function SysmonFeedTab({ mode: feedMode }: FeedTabProps) {
               ))}
             </div>
           ) : (
-            <div className="text-sm font-mono text-fg-3">&mdash;</div>
+            <div className="text-xs font-mono text-fg-4">No network connections found</div>
           )}
         </div>
       </div>
@@ -390,12 +389,12 @@ export const sysmonWidget: WidgetManifest = {
   icon: Activity,
   info: {
     about:
-      "The System Monitor widget displays live hardware metrics on your ticker, including CPU usage, memory consumption, and GPU stats. Available on the desktop app only.",
+      "The System Monitor widget shows live stats for your computer on the ticker, including CPU usage, memory, and GPU.",
     usage: [
-      "CPU, memory, and GPU usage appear as a consolidated chip on the ticker.",
-      "Toggle individual metrics (CPU, memory, GPU, GPU power) in the Configuration tab.",
-      "The feed view shows detailed real-time stats including temperatures and per-component breakdowns.",
-      "Pin the system monitor chip to keep it stationary on one side of the ticker.",
+      "CPU, memory, and GPU usage appear on the ticker.",
+      "Turn individual stats on or off in the Settings tab.",
+      "The feed view shows detailed real-time stats including temperatures and a full breakdown.",
+      "Keep the system monitor in a fixed spot on the ticker from the Settings tab.",
     ],
   },
   desktopOnly: true,

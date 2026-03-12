@@ -130,7 +130,7 @@ export default function AccountSettings({
               valueClass="text-[12px] text-accent font-semibold"
             />
             <ActionRow
-              label="Session"
+              label=""
               action="Sign out"
               actionClass="text-fg-4 hover:text-error hover:bg-error/10"
               onClick={onLogout}
@@ -148,7 +148,6 @@ export default function AccountSettings({
 
       <Section title="About">
         <DisplayRow label="Version" value={appVersion ? `v${appVersion}` : "\u2014"} />
-        <DisplayRow label="Runtime" value="Tauri v2" />
       </Section>
 
       <Section title="Updates">
@@ -160,14 +159,14 @@ export default function AccountSettings({
         />
       </Section>
 
-      <Section title="Danger zone">
+      <Section title="Reset">
         <div className="flex items-center justify-between px-3 py-2.5 rounded-lg">
           <div className="flex flex-col gap-0.5">
             <span className="text-[12px] text-fg-2 leading-tight">
               Reset all settings
             </span>
             <span className="text-[11px] text-fg-4 leading-tight">
-              Restore every setting to its factory default
+              Set everything back to the original settings
             </span>
           </div>
           <ResetButton label="Reset everything" onClick={() => setConfirmReset(true)} />
@@ -177,7 +176,7 @@ export default function AccountSettings({
       <ConfirmDialog
         open={confirmReset}
         title="Reset all settings?"
-        description="This will restore every setting to its factory default. Your account and channels will not be affected."
+        description="This will set everything back to the original settings. Your account and saved content won't change."
         confirmLabel="Reset everything"
         destructive
         onConfirm={() => {
@@ -324,7 +323,7 @@ function UpdateRow({ status, onCheck, onDownload, onRelaunch }: UpdateRowProps) 
         <div className="flex items-center justify-between px-3 py-2.5 rounded-lg">
           <div className="flex flex-col gap-0.5">
             <span className="text-[12px] text-error leading-tight">
-              Update check failed
+              Couldn't check for updates
             </span>
             <span className="text-[11px] text-fg-4 leading-tight line-clamp-1">
               {status.message}

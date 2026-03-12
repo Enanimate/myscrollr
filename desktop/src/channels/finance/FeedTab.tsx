@@ -22,12 +22,12 @@ export const financeChannel: ChannelManifest = {
   icon: TrendingUp,
   info: {
     about:
-      "Track stocks, ETFs, and cryptocurrencies with real-time price updates. " +
-      "Prices stream via CDC so your feed stays current without manual refresh.",
+      "Track stocks, ETFs, and cryptocurrencies with live price updates. " +
+      "Prices update automatically so your feed always shows the latest.",
     usage: [
-      "Add symbols from the Configuration tab to start tracking.",
-      "Prices update in real-time via SSE when connected.",
-      "Tap any symbol to view its chart on Google Finance.",
+      "Add symbols from the Settings tab to start tracking.",
+      "Prices update automatically when connected.",
+      "Click any symbol to view its chart on Google Finance.",
     ],
   },
   FeedTab: FinanceFeedTab,
@@ -47,11 +47,17 @@ function FinanceFeedTab({ mode, channelConfig }: FeedTabProps) {
     [],
   );
 
+  const sort = useCallback(
+    (a: Trade, b: Trade) => a.symbol.localeCompare(b.symbol),
+    [],
+  );
+
   const { items: trades } = useScrollrCDC<Trade>({
     table: "trades",
     initialItems,
     keyOf,
     validate,
+    sort,
   });
 
   return (
@@ -64,10 +70,20 @@ function FinanceFeedTab({ mode, channelConfig }: FeedTabProps) {
       )}
     >
       {trades.length === 0 && (
-        <div className="col-span-full text-center py-8 text-fg-3 text-xs font-mono">
-          {channelConfig.__dashboardLoaded && initialItems.length === 0
-            ? "No symbols selected \u2014 configure in Settings"
-            : "Waiting for trade data\u2026"}
+        <div className="col-span-full flex flex-col items-center justify-center gap-2 py-12 bg-surface">
+          <TrendingUp size={28} className="text-fg-4/40" />
+          {channelConfig.__dashboardLoaded && initialItems.length === 0 ? (
+            <>
+              <p className="text-sm font-medium text-fg-3">
+                No stocks or crypto picked yet
+              </p>
+              <p className="text-xs text-fg-4">
+                Go to the <span className="text-fg-3 font-medium">Settings</span> tab to choose what to track.
+              </p>
+            </>
+          ) : (
+            <p className="text-xs text-fg-4">Loading prices&hellip;</p>
+          )}
         </div>
       )}
       {trades.map((trade) => (
@@ -200,7 +216,7 @@ function TradeItem({ trade, mode }: TradeItemProps) {
         </span>
         {trade.previous_close != null && Number(trade.previous_close) > 0 && (
           <span className="text-[10px] font-mono text-fg-3 tabular-nums">
-            prev {formatPrice(trade.previous_close)}
+            Prev close {formatPrice(trade.previous_close)}
           </span>
         )}
       </div>

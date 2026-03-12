@@ -7,6 +7,7 @@
  */
 import { useMemo, useCallback } from "react";
 import { Rss } from "lucide-react";
+import { clsx } from "clsx";
 import { useScrollrCDC } from "../../hooks/useScrollrCDC";
 import type {
   RssItem as RssItemType,
@@ -26,12 +27,12 @@ export const rssChannel: ChannelManifest = {
   icon: Rss,
   info: {
     about:
-      "Aggregate articles from any RSS or Atom feed into a single stream. " +
-      "New articles appear in real-time via CDC as they are ingested.",
+      "Collect articles from your favorite websites into one place. " +
+      "New articles appear automatically as they are published.",
     usage: [
-      "Add feed URLs from the Configuration tab.",
+      "Add news sources from the Settings tab.",
       "Articles are sorted by publish date, newest first.",
-      "Tap any article to open it in your browser.",
+      "Click any article to open it in your browser.",
     ],
   },
   FeedTab: RssFeedTab,
@@ -73,12 +74,29 @@ function RssFeedTab({ mode, channelConfig }: FeedTabProps) {
   });
 
   return (
-    <div className="grid gap-px bg-edge grid-cols-1">
+    <div
+      className={clsx(
+        "grid gap-px bg-edge",
+        mode === "compact"
+          ? "grid-cols-1"
+          : "grid-cols-1 sm:grid-cols-2",
+      )}
+    >
       {rssItems.length === 0 && (
-        <div className="col-span-full text-center py-8 text-fg-3 text-xs font-mono">
-          {dashboardLoaded && initialItems.length === 0
-            ? "No feeds configured \u2014 add feeds in Settings"
-            : "Waiting for RSS articles\u2026"}
+        <div className="col-span-full flex flex-col items-center justify-center gap-2 py-12 bg-surface">
+          <Rss size={28} className="text-fg-4/40" />
+          {dashboardLoaded && initialItems.length === 0 ? (
+            <>
+              <p className="text-sm font-medium text-fg-3">
+                No feeds added yet
+              </p>
+              <p className="text-xs text-fg-4">
+                Go to the <span className="text-fg-3 font-medium">Settings</span> tab to add websites.
+              </p>
+            </>
+          ) : (
+            <p className="text-xs text-fg-4">Loading articles&hellip;</p>
+          )}
         </div>
       )}
       {rssItems.map((item) => (
