@@ -37,12 +37,7 @@ import { getAllChannels } from "../channels/registry";
 import { getAllWidgets, getWidget } from "../widgets/registry";
 
 // Data
-import {
-  dashboardQueryOptions,
-  useUpdateChannel,
-  useCreateChannel,
-  useDeleteChannel,
-} from "../api/queries";
+import { dashboardQueryOptions } from "../api/queries";
 import { channelsApi } from "../api/client";
 import type { ChannelType } from "../api/client";
 
@@ -75,7 +70,6 @@ import { useWidgetTickerData } from "../hooks/useWidgetTickerData";
 
 // Shell context
 import { ShellContext } from "../shell-context";
-import type { ShellState } from "../shell-context";
 
 // ── Route context ────────────────────────────────────────────────
 
@@ -171,7 +165,6 @@ function RootLayout() {
     refetch: fetchDashboard,
   } = useQuery(dashboardQueryOptions());
 
-  const fetchError = queryError?.message ?? null;
   const channels = useMemo(() => dashboard?.channels ?? [], [dashboard]);
 
   const sortedChannels = useMemo(() => {

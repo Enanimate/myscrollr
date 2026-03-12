@@ -18,7 +18,7 @@ const modules = import.meta.glob<Record<string, ChannelManifest>>(
 const channels = new Map<string, ChannelManifest>();
 
 /** Canonical display order for channel tabs. */
-export const CHANNEL_ORDER = ["finance", "sports", "fantasy", "rss"] as const;
+const CHANNEL_ORDER = ["finance", "sports", "fantasy", "rss"] as const;
 
 // Auto-register all discovered channels.
 for (const [, mod] of Object.entries(modules)) {
@@ -51,16 +51,4 @@ export function getAllChannels(): ChannelManifest[] {
   return [...known, ...unknown];
 }
 
-/**
- * Sort a list of channel IDs into the canonical tab order.
- * Unknown IDs are appended alphabetically at the end.
- */
-export function sortChannelOrder(ids: string[]): string[] {
-  const known = (CHANNEL_ORDER as readonly string[]).filter((id) =>
-    ids.includes(id),
-  );
-  const unknown = ids
-    .filter((id) => !(CHANNEL_ORDER as readonly string[]).includes(id))
-    .sort();
-  return [...known, ...unknown];
-}
+

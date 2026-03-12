@@ -34,7 +34,7 @@ interface TokenResponse {
   token_type: string;
 }
 
-export interface AuthState {
+interface AuthState {
   accessToken: string;
   refreshToken: string | null;
   expiresAt: number;
@@ -317,13 +317,6 @@ async function doRefresh(refreshToken: string): Promise<string | null> {
 export function isAuthenticated(): boolean {
   const auth = loadAuth();
   return auth !== null && auth.expiresAt > Date.now();
-}
-
-/**
- * Get the current auth state without refreshing.
- */
-export function getAuth(): AuthState | null {
-  return loadAuth();
 }
 
 /**
