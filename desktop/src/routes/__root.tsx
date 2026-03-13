@@ -209,7 +209,7 @@ function RootLayout() {
   const handleSelectItem = useCallback(
     (id: string) => {
       if (id === "settings") {
-        navigate({ to: "/settings" });
+        navigate({ to: "/settings", search: { tab: "general" } });
         return;
       }
       if (channelsRef.current.some((ch) => ch.channel_type === id)) {
@@ -226,7 +226,7 @@ function RootLayout() {
   );
 
   const handleNavigateToFeed = useCallback(() => navigate({ to: "/feed" }), [navigate]);
-  const handleNavigateToSettings = useCallback(() => navigate({ to: "/settings" }), [navigate]);
+  const handleNavigateToSettings = useCallback(() => navigate({ to: "/settings", search: { tab: "general" } }), [navigate]);
   const handleNavigateToAccount = useCallback(() => navigate({ to: "/account" }), [navigate]);
 
   // ── Keyboard shortcuts ──────────────────────────────────────
@@ -235,7 +235,7 @@ function RootLayout() {
       // Ctrl+, → open settings
       if ((e.ctrlKey || e.metaKey) && e.key === ",") {
         e.preventDefault();
-        navigate({ to: "/settings" });
+        navigate({ to: "/settings", search: { tab: "general" } });
         return;
       }
 

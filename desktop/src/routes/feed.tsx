@@ -323,7 +323,7 @@ function FeedDashboard() {
                   }
                   onRemove={() => onDeleteChannel(ch.channel_type as ChannelType)}
                   schema={CHANNEL_SCHEMAS[ch.channel_type]}
-                  editorValues={prefsKey ? cardPrefs[prefsKey] as Record<string, boolean | number> : undefined}
+                  editorValues={prefsKey ? cardPrefs[prefsKey] as unknown as Record<string, boolean | number> : undefined}
                   onEditorChange={prefsKey ? (key, value) => handleCardPrefChange(prefsKey, key, value) : undefined}
                 >
                   {renderChannelSummary(
@@ -381,7 +381,7 @@ function FeedDashboard() {
                   }
                   onRemove={() => onToggleWidget(widget.id)}
                   schema={WIDGET_SCHEMAS[widget.id]}
-                  editorValues={prefsKey ? cardPrefs[prefsKey] as Record<string, boolean | number> : undefined}
+                  editorValues={prefsKey ? cardPrefs[prefsKey] as unknown as Record<string, boolean | number> : undefined}
                   onEditorChange={prefsKey ? (key, value) => handleCardPrefChange(prefsKey, key, value) : undefined}
                 >
                   {renderWidgetSummary(widget.id, cardPrefs) ?? (
