@@ -13,7 +13,7 @@ import {
 } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   enable as enableAutostart,
   disable as disableAutostart,
@@ -58,7 +58,7 @@ import { useChannelActions } from "../hooks/useChannelActions";
 import { useWidgetActions } from "../hooks/useWidgetActions";
 
 // Shell context
-import { ShellContext } from "../shell-context";
+import { ShellContext, ShellDataContext } from "../shell-context";
 
 // ── Route context ────────────────────────────────────────────────
 
@@ -235,13 +235,18 @@ function RootLayout() {
 
   // ── Navigation handlers ─────────────────────────────────────
 
+  // Keep a ref to channels so handleSelectItem doesn't depend on
+  // the volatile `channels` array, which changes every dashboard refetch.
+  const channelsRef = useRef(channels);
+  channelsRef.current = channels;
+
   const handleSelectItem = useCallback(
     (id: string) => {
       if (id === "settings") {
         navigate({ to: "/settings" });
         return;
       }
-      if (channels.some((ch) => ch.channel_type === id)) {
+      if (channelsRef.current.some((ch) => ch.channel_type === id)) {
         navigate({ to: "/channel/$type/$tab", params: { type: id, tab: "feed" } });
         return;
       }
@@ -251,7 +256,7 @@ function RootLayout() {
       }
       navigate({ to: "/feed" });
     },
-    [channels, navigate],
+    [navigate],
   );
 
   const handleNavigateToFeed = useCallback(() => navigate({ to: "/feed" }), [navigate]);
@@ -332,9 +337,21 @@ function RootLayout() {
     savePrefs(next);
   }
 
-  // ── Shell context value ─────────────────────────────────────
+  // ── Stable callbacks for context ─────────────────────────────
 
-  const shellValue = useMemo(
+  const handleToggleAppTickerPref = useCallback((v: boolean) => {
+    setShowAppTicker(v);
+    savePref("showAppTicker", v);
+  }, []);
+
+  const handleToggleTaskbarPref = useCallback((v: boolean) => {
+    setShowTaskbar(v);
+    savePref("showTaskbar", v);
+  }, []);
+
+  // ── Shell context values (split: stable + volatile) ────────
+
+  const shellStableValue = useMemo(
     () => ({
       prefs,
       onPrefsChange: handlePrefsChange,
@@ -345,18 +362,10 @@ function RootLayout() {
       autostartEnabled: autostartOn,
       onAutostartChange: handleAutostartChange,
       showAppTicker,
-      onToggleAppTicker: (v: boolean) => {
-        setShowAppTicker(v);
-        savePref("showAppTicker", v);
-      },
+      onToggleAppTicker: handleToggleAppTickerPref,
       showTaskbar,
-      onToggleTaskbar: (v: boolean) => {
-        setShowTaskbar(v);
-        savePref("showTaskbar", v);
-      },
+      onToggleTaskbar: handleToggleTaskbarPref,
       appVersion,
-      channels,
-      dashboard,
       allChannelManifests,
       allWidgets,
       onToggleChannelTicker: channelActions.handleToggleChannel,
@@ -369,12 +378,18 @@ function RootLayout() {
     [
       prefs, handlePrefsChange, auth.authenticated, auth.tier,
       auth.handleLogin, auth.handleLogout, autostartOn, handleAutostartChange,
-      showAppTicker, showTaskbar, appVersion,
-      channels, dashboard, allChannelManifests, allWidgets,
+      showAppTicker, handleToggleAppTickerPref,
+      showTaskbar, handleToggleTaskbarPref,
+      appVersion, allChannelManifests, allWidgets,
       channelActions.handleToggleChannel, widgetActions.handleToggleWidgetTicker,
       channelActions.handleAddChannel, channelActions.handleDeleteChannel,
       widgetActions.handleToggleWidget, handleSelectItem,
     ],
+  );
+
+  const shellDataValue = useMemo(
+    () => ({ channels, dashboard }),
+    [channels, dashboard],
   );
 
   // ── Render ──────────────────────────────────────────────────
@@ -478,8 +493,10 @@ function RootLayout() {
           )}
 
           <div className="flex-1 overflow-y-auto scrollbar-thin">
-            <ShellContext.Provider value={shellValue}>
-              <Outlet />
+            <ShellContext.Provider value={shellStableValue}>
+              <ShellDataContext.Provider value={shellDataValue}>
+                <Outlet />
+              </ShellDataContext.Provider>
             </ShellContext.Provider>
           </div>
 

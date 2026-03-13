@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { memo, useState, useEffect, useRef } from "react";
 import { clsx } from "clsx";
 import type { Game } from "../../types";
 import type { ChipColorMode } from "../../preferences";
@@ -72,7 +72,7 @@ function chipStatus(game: Game): string {
 
 // ── Component ───────────────────────────────────────────────────
 
-export default function GameChip({
+const GameChip = memo(function GameChip({
   game,
   comfort,
   colorMode = "channel",
@@ -259,4 +259,24 @@ export default function GameChip({
       )}
     </button>
   );
-}
+}, (prev, next) =>
+  prev.comfort === next.comfort &&
+  prev.colorMode === next.colorMode &&
+  prev.onClick === next.onClick &&
+  prev.game.id === next.game.id &&
+  prev.game.sport === next.game.sport &&
+  prev.game.league === next.game.league &&
+  prev.game.away_team_name === next.game.away_team_name &&
+  prev.game.away_team_logo === next.game.away_team_logo &&
+  prev.game.away_team_score === next.game.away_team_score &&
+  prev.game.home_team_name === next.game.home_team_name &&
+  prev.game.home_team_logo === next.game.home_team_logo &&
+  prev.game.home_team_score === next.game.home_team_score &&
+  prev.game.state === next.game.state &&
+  prev.game.timer === next.game.timer &&
+  prev.game.status_short === next.game.status_short &&
+  prev.game.status_long === next.game.status_long &&
+  prev.game.start_time === next.game.start_time
+);
+
+export default GameChip;
