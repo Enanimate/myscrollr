@@ -1,14 +1,12 @@
 /**
- * Ticker route — consolidated ticker management.
+ * TickerSettings — ticker presentation settings.
  *
- * Combines: source toggles + Layout + Playback + Style settings.
- * Replaces the old Settings > Ticker tab.
+ * Controls how the ticker looks and behaves (layout, playback, style).
+ * Source management (what data appears on the ticker) lives in each
+ * channel/widget's own config tab, not here.
  */
-import { createFileRoute } from "@tanstack/react-router";
-import RouteError from "../components/RouteError";
-import { useShell, useShellData } from "../shell-context";
-import type { ChannelType } from "../api/client";
 import type {
+  AppPreferences,
   AppearancePrefs,
   TickerPrefs,
   TickerRows,
@@ -18,24 +16,22 @@ import type {
   ChipColorMode,
   TickerDirection,
   ScrollMode,
-} from "../preferences";
-import { resetCategory } from "../preferences";
+} from "../../preferences";
+import { resetCategory } from "../../preferences";
 import {
   Section,
   ToggleRow,
   SegmentedRow,
   SliderRow,
   ResetButton,
-} from "../components/settings/SettingsControls";
-import { CHANNEL_ORDER } from "../channels/registry";
-import { WIDGET_ORDER } from "../widgets/registry";
+} from "./SettingsControls";
 
-// ── Route ───────────────────────────────────────────────────────
+// ── Props ───────────────────────────────────────────────────────
 
-export const Route = createFileRoute("/ticker")({
-  component: TickerRoute,
-  errorComponent: RouteError,
-});
+interface TickerSettingsProps {
+  prefs: AppPreferences;
+  onPrefsChange: (prefs: AppPreferences) => void;
+}
 
 // ── Options ─────────────────────────────────────────────────────
 
@@ -89,12 +85,11 @@ function speedLabel(speed: number): string {
 
 // ── Component ───────────────────────────────────────────────────
 
-function TickerRoute() {
-  const shell = useShell();
-  const { channels } = useShellData();
-  const { prefs, onPrefsChange, allChannelManifests, allWidgets } = shell;
+export default function TickerSettings({
+  prefs,
+  onPrefsChange,
+}: TickerSettingsProps) {
   const { appearance, ticker } = prefs;
-  const enabledWidgets = prefs.widgets.enabledWidgets;
 
   const setTicker = <K extends keyof TickerPrefs>(
     key: K,
@@ -110,103 +105,8 @@ function TickerRoute() {
     onPrefsChange({ ...prefs, appearance: { ...appearance, [key]: value } });
   };
 
-  // Sort channels and widgets by canonical order
-  const sortedChannels = [...channels]
-    .filter((ch) => ch.enabled)
-    .sort(
-      (a, b) =>
-        CHANNEL_ORDER.indexOf(a.channel_type) -
-        CHANNEL_ORDER.indexOf(b.channel_type),
-    );
-
-  const sortedEnabledWidgets = enabledWidgets
-    .map((id) => allWidgets.find((w) => w.id === id))
-    .filter((w): w is NonNullable<typeof w> => w != null)
-    .sort(
-      (a, b) => WIDGET_ORDER.indexOf(a.id) - WIDGET_ORDER.indexOf(b.id),
-    );
-
   return (
-    <div className="p-6 max-w-2xl mx-auto">
-      {/* Sources — which channels/widgets show on the ticker */}
-      <Section title="Sources">
-        {sortedChannels.length === 0 && sortedEnabledWidgets.length === 0 && (
-          <p className="px-3 py-2 text-[11px] text-fg-4 italic">
-            No channels or widgets added yet
-          </p>
-        )}
-        {sortedChannels.map((ch) => {
-          const manifest = allChannelManifests.find(
-            (m) => m.id === ch.channel_type,
-          );
-          return (
-            <div key={ch.channel_type} className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-base-250/50 transition-colors">
-              <span
-                className="flex items-center justify-center w-5 h-5 rounded-md shrink-0"
-                style={{ backgroundColor: `${manifest?.hex}15`, color: manifest?.hex }}
-              >
-                {manifest?.icon && <manifest.icon size={12} />}
-              </span>
-              <span className="text-[12px] text-fg-2 flex-1">{manifest?.name ?? ch.channel_type}</span>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={ch.visible}
-                onClick={() => shell.onToggleChannelTicker(ch.channel_type as ChannelType, !ch.visible)}
-                className="cursor-pointer"
-              >
-                <span
-                  className="block h-4 w-7 rounded-full relative transition-colors"
-                  style={{ background: ch.visible ? (manifest?.hex ?? "var(--color-accent)") : undefined }}
-                >
-                  {!ch.visible && (
-                    <span className="absolute inset-0 rounded-full bg-fg-4/25" />
-                  )}
-                  <span
-                    className="absolute top-0.5 left-0.5 h-3 w-3 rounded-full bg-white transition-transform duration-200"
-                    style={{ transform: ch.visible ? "translateX(12px)" : "translateX(0)" }}
-                  />
-                </span>
-              </button>
-            </div>
-          );
-        })}
-        {sortedEnabledWidgets.map((widget) => {
-          const isOnTicker = prefs.widgets.widgetsOnTicker.includes(widget.id);
-          return (
-            <div key={widget.id} className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-base-250/50 transition-colors">
-              <span
-                className="flex items-center justify-center w-5 h-5 rounded-md shrink-0"
-                style={{ backgroundColor: `${widget.hex}15`, color: widget.hex }}
-              >
-                <widget.icon size={12} />
-              </span>
-              <span className="text-[12px] text-fg-2 flex-1">{widget.name}</span>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={isOnTicker}
-                onClick={() => shell.onToggleWidgetTicker(widget.id)}
-                className="cursor-pointer"
-              >
-                <span
-                  className="block h-4 w-7 rounded-full relative transition-colors"
-                  style={{ background: isOnTicker ? widget.hex : undefined }}
-                >
-                  {!isOnTicker && (
-                    <span className="absolute inset-0 rounded-full bg-fg-4/25" />
-                  )}
-                  <span
-                    className="absolute top-0.5 left-0.5 h-3 w-3 rounded-full bg-white transition-transform duration-200"
-                    style={{ transform: isOnTicker ? "translateX(12px)" : "translateX(0)" }}
-                  />
-                </span>
-              </button>
-            </div>
-          );
-        })}
-      </Section>
-
+    <div>
       {/* Layout */}
       <Section title="Layout">
         <ToggleRow

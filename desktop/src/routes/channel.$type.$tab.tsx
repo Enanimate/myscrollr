@@ -1,9 +1,12 @@
 /**
- * Channel route — renders channel feed, info, or configuration.
+ * Channel route — renders channel feed or configuration.
  *
  * URL: /channel/:type/:tab
  *   - type: "finance" | "sports" | "rss" | "fantasy"
- *   - tab: "feed" | "info" | "configuration"
+ *   - tab: "feed" | "configuration"
+ *
+ * Management actions (ticker toggle, remove) live on the dashboard
+ * card, not here. This route is for viewing data and configuring.
  */
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import RouteError from "../components/RouteError";
@@ -12,14 +15,18 @@ import { getChannel, getAllChannels } from "../channels/registry";
 import { dashboardQueryOptions } from "../api/queries";
 import { getTier } from "../auth";
 import ChannelConfigPanel from "../channels/ChannelConfigPanel";
-import ContentHeader from "../components/ContentHeader";
-import { useShell } from "../shell-context";
-import type { Channel, ChannelType } from "../api/client";
+import clsx from "clsx";
+import type { Channel } from "../api/client";
 import type { DashboardResponse, DeliveryMode } from "../types";
 import { loadPref } from "../preferences";
 
-const VALID_TABS = ["feed", "info", "configuration"] as const;
+const VALID_TABS = ["feed", "configuration"] as const;
 type ChannelTab = (typeof VALID_TABS)[number];
+
+const TABS: { key: ChannelTab; label: string }[] = [
+  { key: "feed", label: "Feed" },
+  { key: "configuration", label: "Configure" },
+];
 
 export const Route = createFileRoute("/channel/$type/$tab")({
   loader: ({ context: { queryClient } }) =>
@@ -37,11 +44,7 @@ function ChannelRoute() {
     : "feed";
 
   const channel = getChannel(type);
-  const shell = useShell();
   const { data: dashboard } = useQuery(dashboardQueryOptions());
-  const channelData = (dashboard?.channels ?? []).find(
-    (ch) => ch.channel_type === type,
-  );
 
   if (!channel) {
     return (
@@ -54,32 +57,46 @@ function ChannelRoute() {
     );
   }
 
-  const tickerEnabled = channelData?.visible ?? false;
-
   return (
     <div className="flex flex-col h-full">
-      <ContentHeader
-        name={channel.name}
-        icon={channel.icon}
-        hex={channel.hex}
-        activeTab={tab}
-        onTabChange={(t) =>
-          navigate({
-            to: "/channel/$type/$tab",
-            params: { type, tab: t },
-          })
-        }
-        tickerEnabled={tickerEnabled}
-        onToggleTicker={() =>
-          shell.onToggleChannelTicker(type as ChannelType, !tickerEnabled)
-        }
-        onDelete={() => shell.onDeleteChannel(type as ChannelType)}
-        onBack={() => navigate({ to: "/feed" })}
-      />
+      {/* Breadcrumb header */}
+      <header className="flex items-center justify-between px-5 h-12 border-b border-edge shrink-0">
+        <div className="flex items-center gap-1.5 min-w-0 text-sm">
+          <button
+            onClick={() => navigate({ to: "/feed" })}
+            aria-label="Back to dashboard"
+            className="text-fg-3 hover:text-fg-2 transition-colors shrink-0"
+          >
+            Dashboard
+          </button>
+          <span className="text-fg-4">/</span>
+          <span className="font-medium truncate">{channel.name}</span>
+        </div>
+        <div className="flex gap-1 shrink-0">
+          {TABS.map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() =>
+                navigate({
+                  to: "/channel/$type/$tab",
+                  params: { type, tab: key },
+                })
+              }
+              className={clsx(
+                "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
+                tab === key
+                  ? "bg-accent/10 text-accent"
+                  : "text-fg-3 hover:text-fg-2 hover:bg-surface-hover",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </header>
 
       <div className="flex-1 overflow-y-auto scrollbar-thin">
         {tab === "feed" && <ChannelFeedTab type={type} dashboard={dashboard} channel={channel} />}
-        {tab === "info" && <ChannelInfoTab channel={channel} />}
         {tab === "configuration" && <ChannelConfigTab type={type} dashboard={dashboard} />}
       </div>
     </div>
@@ -105,63 +122,6 @@ function ChannelFeedTab({
   return <channel.FeedTab mode="comfort" channelConfig={channelConfig} />;
 }
 
-function ChannelInfoTab({
-  channel,
-}: {
-  channel: NonNullable<ReturnType<typeof getChannel>>;
-}) {
-  const Icon = channel.icon;
-  return (
-    <div className="p-6 max-w-xl">
-      <div className="flex items-center gap-3 mb-6">
-        <span
-          className="flex items-center justify-center w-10 h-10 rounded-xl"
-          style={{ backgroundColor: `${channel.hex}15`, color: channel.hex }}
-        >
-          <Icon size={20} />
-        </span>
-        <div>
-          <h2 className="text-lg font-semibold">{channel.name}</h2>
-          <p className="text-sm text-fg-3">{channel.description}</p>
-        </div>
-      </div>
-
-      <div className="space-y-4">
-        <section>
-          <h3 className="text-xs font-mono font-bold text-fg-3 uppercase tracking-wider mb-2">
-            About
-          </h3>
-          <p className="text-sm text-fg-2 leading-relaxed">
-            {channel.info.about}
-          </p>
-        </section>
-
-        <section>
-          <h3 className="text-xs font-mono font-bold text-fg-3 uppercase tracking-wider mb-2">
-            How to use
-          </h3>
-          <ul className="space-y-2">
-            {channel.info.usage.map((step, i) => (
-              <li key={i} className="flex gap-2.5 text-sm text-fg-2">
-                <span
-                  className="flex items-center justify-center w-5 h-5 rounded-md text-[10px] font-bold shrink-0 mt-0.5"
-                  style={{
-                    backgroundColor: `${channel.hex}15`,
-                    color: channel.hex,
-                  }}
-                >
-                  {i + 1}
-                </span>
-                <span className="leading-relaxed">{step}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      </div>
-    </div>
-  );
-}
-
 function ChannelConfigTab({
   type,
   dashboard,
@@ -172,6 +132,9 @@ function ChannelConfigTab({
   const channelData = (dashboard?.channels ?? []).find(
     (ch) => ch.channel_type === type,
   );
+
+  const manifest = getAllChannels().find((m) => m.id === type);
+  const deliveryMode = loadPref<DeliveryMode>("deliveryMode", "polling");
 
   if (!channelData) {
     return (
@@ -186,11 +149,8 @@ function ChannelConfigTab({
     );
   }
 
-  const manifest = getAllChannels().find((m) => m.id === type);
-  const deliveryMode = loadPref<DeliveryMode>("deliveryMode", "polling");
-
   return (
-    <div className="flex-1 overflow-y-auto p-4 scrollbar-thin">
+    <div className="p-4">
       <ChannelConfigPanel
         channelType={type}
         channel={channelData as unknown as Channel}
@@ -226,5 +186,3 @@ function ChannelPending() {
     </div>
   );
 }
-
-
