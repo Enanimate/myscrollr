@@ -6,6 +6,7 @@
  *   - tab: "feed" | "info" | "configuration"
  */
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import RouteError from "../components/RouteError";
 import { getWidget } from "../widgets/registry";
 import WidgetConfigPanel from "../widgets/WidgetConfigPanel";
 import ContentHeader from "../components/ContentHeader";
@@ -16,6 +17,7 @@ type WidgetTab = (typeof VALID_TABS)[number];
 
 export const Route = createFileRoute("/widget/$id/$tab")({
   component: WidgetRoute,
+  errorComponent: RouteError,
 });
 
 function WidgetRoute() {

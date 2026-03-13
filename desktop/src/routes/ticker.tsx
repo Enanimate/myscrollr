@@ -5,6 +5,7 @@
  * Replaces the old Settings > Ticker tab.
  */
 import { createFileRoute } from "@tanstack/react-router";
+import RouteError from "../components/RouteError";
 import { useShell } from "../shell-context";
 import type { ChannelType } from "../api/client";
 import type {
@@ -26,11 +27,14 @@ import {
   SliderRow,
   ResetButton,
 } from "../components/settings/SettingsControls";
+import { CHANNEL_ORDER } from "../channels/registry";
+import { WIDGET_ORDER } from "../widgets/registry";
 
 // ── Route ───────────────────────────────────────────────────────
 
 export const Route = createFileRoute("/ticker")({
   component: TickerRoute,
+  errorComponent: RouteError,
 });
 
 // ── Options ─────────────────────────────────────────────────────
@@ -82,11 +86,6 @@ function speedLabel(speed: number): string {
   if (speed <= 100) return "Fast";
   return "Fastest";
 }
-
-// ── Display orders ──────────────────────────────────────────────
-
-const CHANNEL_ORDER = ["finance", "sports", "rss", "fantasy"];
-const WIDGET_ORDER = ["clock", "weather", "sysmon"];
 
 // ── Component ───────────────────────────────────────────────────
 

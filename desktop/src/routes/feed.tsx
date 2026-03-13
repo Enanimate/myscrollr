@@ -8,6 +8,7 @@
  */
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import RouteError from "../components/RouteError";
 import { Pencil, Check, ChevronDown, ChevronRight } from "lucide-react";
 import clsx from "clsx";
 import { useShell } from "../shell-context";
@@ -94,6 +95,7 @@ const WIDGET_PREFS_KEY: Record<string, keyof DashboardCardPrefs> = {
 
 export const Route = createFileRoute("/feed")({
   component: FeedDashboard,
+  errorComponent: RouteError,
 });
 
 function FeedDashboard() {
@@ -160,7 +162,7 @@ function FeedDashboard() {
 
   // Keep order in sync — only update if the set of active IDs changed
   const channelOrder = useMemo(() => {
-    const activeSet = new Set(activeChannelIds);
+    const activeSet: Set<string> = new Set(activeChannelIds);
     const current = cardOrder.channels.filter((id) => activeSet.has(id));
     const merged = mergedOrder.channels;
     return current.length === merged.length &&

@@ -4,12 +4,14 @@
  * Moved from Settings > Account tab to a top-level destination.
  */
 import { createFileRoute } from "@tanstack/react-router";
+import RouteError from "../components/RouteError";
 import { useShell } from "../shell-context";
 import AccountSettings from "../components/settings/AccountSettings";
 import { resetAll } from "../preferences";
 
 export const Route = createFileRoute("/account")({
   component: AccountRoute,
+  errorComponent: RouteError,
 });
 
 function AccountRoute() {

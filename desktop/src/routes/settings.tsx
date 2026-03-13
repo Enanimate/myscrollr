@@ -5,12 +5,14 @@
  * This page now contains Appearance, Window, and Startup settings.
  */
 import { createFileRoute } from "@tanstack/react-router";
+import RouteError from "../components/RouteError";
 import { useShell } from "../shell-context";
 import GeneralSettings from "../components/settings/GeneralSettings";
 import { resetCategory } from "../preferences";
 
 export const Route = createFileRoute("/settings")({
   component: SettingsRoute,
+  errorComponent: RouteError,
 });
 
 function SettingsRoute() {
