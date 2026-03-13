@@ -1,3 +1,13 @@
+/// Escape a window title for use inside a swaymsg `[title="..."]` criteria.
+/// Prevents injection via crafted window titles — `]` closes the criteria
+/// block in swaymsg's parser, so it must be escaped alongside `\` and `"`.
+fn escape_title(title: &str) -> String {
+    title
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace(']', "\\]")
+}
+
 /// Sway: `move absolute position` + `resize set` for floating windows.
 pub fn position(
     window: &tauri::Window,
@@ -6,7 +16,7 @@ pub fn position(
     width: f64,
     height: f64,
 ) -> Result<(), String> {
-    let title = window.title().unwrap_or_default();
+    let title = escape_title(&window.title().unwrap_or_default());
 
     std::process::Command::new("swaymsg")
         .arg(format!(
@@ -21,7 +31,7 @@ pub fn position(
 
 /// Sway: `sticky` enables/disables always-visible-on-all-workspaces.
 pub fn pin(window: &tauri::Window, pinned: bool) -> Result<(), String> {
-    let title = window.title().unwrap_or_default();
+    let title = escape_title(&window.title().unwrap_or_default());
     let action = if pinned {
         "sticky enable"
     } else {
