@@ -13,6 +13,7 @@ import { useState, useMemo, useCallback } from "react";
 import { useScrollrCDC } from "../../hooks/useScrollrCDC";
 import { loadPref, savePref } from "../../preferences";
 import clsx from "clsx";
+import Tooltip from "../Tooltip";
 import { timeAgo, truncate } from "../../utils/format";
 import type { RssItem, DashboardResponse } from "../../types";
 import type { RssCardPrefs } from "./dashboardPrefs";
@@ -106,31 +107,32 @@ function CompactHeadline({ article, prefs, onPromote }: CompactHeadlineProps) {
   const ago = timeAgo(article.published_at);
 
   return (
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        onPromote();
-      }}
-      className="flex items-center gap-1.5 w-full text-left px-1 py-1 rounded hover:bg-surface-3/40 transition-colors cursor-pointer group/headline"
-      title="Click to feature this article"
-    >
-      {fresh && (
-        <span className="w-1 h-1 rounded-full bg-accent shrink-0 animate-pulse" />
-      )}
-      {prefs.showSource && (
-        <span className="text-[9px] font-mono font-bold text-accent-purple uppercase tracking-wider shrink-0 max-w-[64px] truncate">
-          {article.source_name}
+    <Tooltip content="Click to feature this article">
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onPromote();
+        }}
+        className="flex items-center gap-1.5 w-full text-left px-1 py-1 rounded hover:bg-surface-3/40 transition-colors cursor-pointer group/headline"
+      >
+        {fresh && (
+          <span className="w-1 h-1 rounded-full bg-accent shrink-0 animate-pulse" />
+        )}
+        {prefs.showSource && (
+          <span className="text-[9px] font-mono font-bold text-accent-purple uppercase tracking-wider shrink-0 max-w-[64px] truncate">
+            {article.source_name}
+          </span>
+        )}
+        <span className="text-[11px] text-fg-3 group-hover/headline:text-fg-2 truncate flex-1 transition-colors">
+          {article.title}
         </span>
-      )}
-      <span className="text-[11px] text-fg-3 group-hover/headline:text-fg-2 truncate flex-1 transition-colors">
-        {article.title}
-      </span>
-      {prefs.showTime && ago && (
-        <span className="text-[9px] font-mono text-fg-4 tabular-nums shrink-0">
-          {ago}
-        </span>
-      )}
-    </button>
+        {prefs.showTime && ago && (
+          <span className="text-[9px] font-mono text-fg-4 tabular-nums shrink-0">
+            {ago}
+          </span>
+        )}
+      </button>
+    </Tooltip>
   );
 }
 
