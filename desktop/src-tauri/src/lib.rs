@@ -28,7 +28,14 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(
+            tauri_plugin_updater::Builder::new()
+                // Allow same-version updates so patched rebuilds (same version,
+                // new binary) are detected. The JS side filters out false
+                // positives by comparing pub_date against a stored value.
+                .default_version_comparator(|current, remote| remote.version >= current)
+                .build(),
+        )
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(

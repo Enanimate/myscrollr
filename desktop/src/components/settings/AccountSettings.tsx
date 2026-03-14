@@ -53,11 +53,28 @@ export default function AccountSettings({
         return;
       }
 
+      // Same-version patch detection: if the remote version matches the
+      // installed version AND the pub_date matches what we stored after
+      // our last install, the user already has this exact build.
+      const storedDate = localStorage.getItem("scrollr:lastUpdateDate");
+      if (
+        update.version === appVersion &&
+        storedDate &&
+        update.date === storedDate
+      ) {
+        pendingUpdate.current = null;
+        setStatus({ step: "up-to-date" });
+        return;
+      }
+
+      const isPatch = update.version === appVersion;
       pendingUpdate.current = update;
       setStatus({
         step: "available",
         version: update.version,
-        body: update.body ?? "",
+        body: isPatch
+          ? "A patched build of your current version is available."
+          : (update.body ?? ""),
       });
     } catch (err) {
       setStatus({
@@ -65,7 +82,7 @@ export default function AccountSettings({
         message: err instanceof Error ? err.message : String(err),
       });
     }
-  }, []);
+  }, [appVersion]);
 
   const handleDownloadAndInstall = useCallback(async () => {
     const update = pendingUpdate.current;
@@ -91,6 +108,12 @@ export default function AccountSettings({
           );
         }
       });
+
+      // Store the pub_date of the build we just installed so future
+      // same-version checks can tell we already have this build.
+      if (update.date) {
+        localStorage.setItem("scrollr:lastUpdateDate", update.date);
+      }
 
       setStatus({ step: "ready" });
     } catch (err) {
