@@ -1,7 +1,7 @@
 use std::{env, fs, sync::Arc};
 use reqwest::{Client, header};
 use tokio::sync::Mutex;
-use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, Utc};
+use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, Utc};
 use crate::log::{error, info, warn};
 use crate::database::{
     PgPool, create_tables, run_migrations, truncate_games,
@@ -312,36 +312,51 @@ async fn poll_league(
     Ok(cleaned_games)
 }
 
+/// Compute the current API season string from a format specifier.
+///
+/// Formats:
+///   "calendar"     → current year ("2026")
+///   "cross-year"   → "YYYY-YYYY" spanning Oct-Sep ("2025-2026")
+///   "fall-august"  → year the season started (Aug boundary)
+///   "fall-october" → year the season started (Oct boundary)
+///
+/// Unknown or empty formats default to "calendar".
+fn compute_season(format: &str) -> String {
+    let now = Utc::now();
+    let year = now.year();
+    let month = now.month();
+
+    match format {
+        "calendar" => year.to_string(),
+        "cross-year" => {
+            if month >= 10 {
+                format!("{}-{}", year, year + 1)
+            } else {
+                format!("{}-{}", year - 1, year)
+            }
+        }
+        "fall-august" => {
+            if month >= 8 { year.to_string() } else { (year - 1).to_string() }
+        }
+        "fall-october" => {
+            if month >= 10 { year.to_string() } else { (year - 1).to_string() }
+        }
+        _ => year.to_string(), // unknown → calendar
+    }
+}
+
 /// Build the correct API URL based on the sport type.
+/// Season is computed dynamically from `league.season_format`.
 fn build_api_url(league: &TrackedLeague, date: &str) -> String {
     let base = format!("https://{}", league.api_host);
+    let season = compute_season(league.season_format.as_deref().unwrap_or("calendar"));
 
     match league.sport_api.as_str() {
         "football" => {
-            // Soccer/Football API v3 uses /fixtures endpoint
-            let season = league.season.as_deref().unwrap_or("2025");
             format!("{}/fixtures?league={}&season={}&date={}", base, league.league_id, season, date)
         }
-        "american-football" => {
-            let season = league.season.as_deref().unwrap_or("2025");
-            format!("{}/games?league={}&season={}&date={}", base, league.league_id, season, date)
-        }
-        "basketball" => {
-            let season = league.season.as_deref().unwrap_or("2024-2025");
-            format!("{}/games?league={}&season={}&date={}", base, league.league_id, season, date)
-        }
-        "hockey" | "baseball" => {
-            // Hockey and baseball APIs require an integer season year
-            let season = league.season.as_deref().unwrap_or("2024");
-            format!("{}/games?league={}&season={}&date={}", base, league.league_id, season, date)
-        }
-        "rugby" | "handball" | "volleyball" => {
-            // These APIs share the same /games endpoint pattern with league + season + date
-            let season = league.season.as_deref().unwrap_or("2024");
-            format!("{}/games?league={}&season={}&date={}", base, league.league_id, season, date)
-        }
-        "afl" => {
-            let season = league.season.as_deref().unwrap_or("2025");
+        "american-football" | "basketball" | "hockey" | "baseball"
+        | "rugby" | "handball" | "volleyball" | "afl" => {
             format!("{}/games?league={}&season={}&date={}", base, league.league_id, season, date)
         }
         "mma" => {
@@ -349,7 +364,6 @@ fn build_api_url(league: &TrackedLeague, date: &str) -> String {
             format!("{}/fights?date={}", base, date)
         }
         "formula-1" => {
-            let season = league.season.as_deref().unwrap_or("2026");
             format!("{}/races?season={}", base, season)
         }
         other => {
@@ -456,7 +470,7 @@ fn parse_football_fixture(item: &serde_json::Value, league: &TrackedLeague) -> O
         status_long: status_long.map(|s| s.to_string()),
         timer,
         venue,
-        season: league.season.clone(),
+        season: Some(compute_season(league.season_format.as_deref().unwrap_or("calendar"))),
     })
 }
 
@@ -517,7 +531,7 @@ fn parse_american_football_game(item: &serde_json::Value, league: &TrackedLeague
         status_long: status_long.map(|s| s.to_string()),
         timer: timer_str,
         venue,
-        season: league.season.clone(),
+        season: Some(compute_season(league.season_format.as_deref().unwrap_or("calendar"))),
     })
 }
 
@@ -570,7 +584,7 @@ fn parse_basketball_game(item: &serde_json::Value, league: &TrackedLeague) -> Op
         status_long: status_long.map(|s| s.to_string()),
         timer: timer_str,
         venue: None,
-        season: league.season.clone(),
+        season: Some(compute_season(league.season_format.as_deref().unwrap_or("calendar"))),
     })
 }
 
@@ -624,7 +638,7 @@ fn parse_hockey_game(item: &serde_json::Value, league: &TrackedLeague) -> Option
         status_long: status_long.map(|s| s.to_string()),
         timer: timer_str,
         venue: None,
-        season: league.season.clone(),
+        season: Some(compute_season(league.season_format.as_deref().unwrap_or("calendar"))),
     })
 }
 
@@ -685,7 +699,7 @@ fn parse_baseball_game(item: &serde_json::Value, league: &TrackedLeague) -> Opti
         status_long: status_long.map(|s| s.to_string()),
         timer: timer_str,
         venue: None,
-        season: league.season.clone(),
+        season: Some(compute_season(league.season_format.as_deref().unwrap_or("calendar"))),
     })
 }
 
@@ -750,7 +764,7 @@ fn parse_f1_race(item: &serde_json::Value, league: &TrackedLeague) -> Option<Cle
         status_long: Some(status.to_string()),
         timer: None,
         venue: circuit_name,
-        season: league.season.clone(),
+        season: Some(compute_season(league.season_format.as_deref().unwrap_or("calendar"))),
     })
 }
 
@@ -806,7 +820,7 @@ fn parse_rugby_game(item: &serde_json::Value, league: &TrackedLeague) -> Option<
         status_long: status_long.map(|s| s.to_string()),
         timer: timer_str,
         venue: None,
-        season: league.season.clone(),
+        season: Some(compute_season(league.season_format.as_deref().unwrap_or("calendar"))),
     })
 }
 
@@ -859,7 +873,7 @@ fn parse_handball_game(item: &serde_json::Value, league: &TrackedLeague) -> Opti
         status_long: status_long.map(|s| s.to_string()),
         timer: None,
         venue: None,
-        season: league.season.clone(),
+        season: Some(compute_season(league.season_format.as_deref().unwrap_or("calendar"))),
     })
 }
 
@@ -935,7 +949,7 @@ fn parse_volleyball_game(item: &serde_json::Value, league: &TrackedLeague) -> Op
         status_long: status_long.map(|s| s.to_string()),
         timer: timer_str,
         venue: None,
-        season: league.season.clone(),
+        season: Some(compute_season(league.season_format.as_deref().unwrap_or("calendar"))),
     })
 }
 
@@ -1004,7 +1018,7 @@ fn parse_afl_game(item: &serde_json::Value, league: &TrackedLeague) -> Option<Cl
         status_long: status_long.map(|s| s.to_string()),
         timer: None,
         venue,
-        season: league.season.clone(),
+        season: Some(compute_season(league.season_format.as_deref().unwrap_or("calendar"))),
     })
 }
 
@@ -1067,7 +1081,7 @@ fn parse_mma_fight(item: &serde_json::Value, league: &TrackedLeague) -> Option<C
         status_long: status_long.map(|s| s.to_string()),
         timer: category,
         venue: slug,
-        season: league.season.clone(),
+        season: Some(compute_season(league.season_format.as_deref().unwrap_or("calendar"))),
     })
 }
 

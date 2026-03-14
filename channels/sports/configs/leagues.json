@@ -5,7 +5,8 @@
     "api_host": "v1.american-football.api-sports.io",
     "league_id": 1,
     "category": "Football",
-    "country": "USA"
+    "country": "USA",
+    "season_format": "fall-august"
   },
   {
     "name": "NCAA Football",
@@ -13,7 +14,8 @@
     "api_host": "v1.american-football.api-sports.io",
     "league_id": 2,
     "category": "Football",
-    "country": "USA"
+    "country": "USA",
+    "season_format": "fall-august"
   },
   {
     "name": "NBA",
@@ -21,7 +23,8 @@
     "api_host": "v1.basketball.api-sports.io",
     "league_id": 12,
     "category": "Basketball",
-    "country": "USA"
+    "country": "USA",
+    "season_format": "cross-year"
   },
   {
     "name": "NCAA Basketball",
@@ -29,7 +32,8 @@
     "api_host": "v1.basketball.api-sports.io",
     "league_id": 116,
     "category": "Basketball",
-    "country": "USA"
+    "country": "USA",
+    "season_format": "cross-year"
   },
   {
     "name": "NHL",
@@ -38,7 +42,7 @@
     "league_id": 57,
     "category": "Hockey",
     "country": "USA",
-    "season": "2024"
+    "season_format": "fall-october"
   },
   {
     "name": "MLB",
@@ -47,7 +51,7 @@
     "league_id": 1,
     "category": "Baseball",
     "country": "USA",
-    "season": "2025"
+    "season_format": "calendar"
   },
   {
     "name": "Premier League",
@@ -55,7 +59,8 @@
     "api_host": "v3.football.api-sports.io",
     "league_id": 39,
     "category": "Soccer",
-    "country": "England"
+    "country": "England",
+    "season_format": "fall-august"
   },
   {
     "name": "La Liga",
@@ -63,7 +68,8 @@
     "api_host": "v3.football.api-sports.io",
     "league_id": 140,
     "category": "Soccer",
-    "country": "Spain"
+    "country": "Spain",
+    "season_format": "fall-august"
   },
   {
     "name": "MLS",
@@ -71,7 +77,8 @@
     "api_host": "v3.football.api-sports.io",
     "league_id": 253,
     "category": "Soccer",
-    "country": "USA"
+    "country": "USA",
+    "season_format": "calendar"
   },
   {
     "name": "Champions League",
@@ -79,7 +86,8 @@
     "api_host": "v3.football.api-sports.io",
     "league_id": 2,
     "category": "Soccer",
-    "country": "World"
+    "country": "World",
+    "season_format": "fall-august"
   },
   {
     "name": "Formula 1",
@@ -87,7 +95,8 @@
     "api_host": "v1.formula-1.api-sports.io",
     "league_id": 1,
     "category": "Motorsport",
-    "country": "World"
+    "country": "World",
+    "season_format": "calendar"
   },
   {
     "name": "Six Nations",
@@ -96,7 +105,7 @@
     "league_id": 51,
     "category": "Rugby",
     "country": "Europe",
-    "season": "2025"
+    "season_format": "calendar"
   },
   {
     "name": "Rugby World Cup",
@@ -105,7 +114,7 @@
     "league_id": 69,
     "category": "Rugby",
     "country": "World",
-    "season": "2027"
+    "season_format": "calendar"
   },
   {
     "name": "Super Rugby",
@@ -114,7 +123,7 @@
     "league_id": 71,
     "category": "Rugby",
     "country": "World",
-    "season": "2026"
+    "season_format": "calendar"
   },
   {
     "name": "Premiership Rugby",
@@ -123,7 +132,7 @@
     "league_id": 13,
     "category": "Rugby",
     "country": "England",
-    "season": "2024"
+    "season_format": "fall-august"
   },
   {
     "name": "Top 14",
@@ -132,7 +141,7 @@
     "league_id": 16,
     "category": "Rugby",
     "country": "France",
-    "season": "2024"
+    "season_format": "fall-august"
   },
   {
     "name": "United Rugby Championship",
@@ -141,7 +150,7 @@
     "league_id": 76,
     "category": "Rugby",
     "country": "World",
-    "season": "2024"
+    "season_format": "fall-august"
   },
   {
     "name": "UFC",
@@ -150,7 +159,7 @@
     "league_id": 0,
     "category": "MMA",
     "country": "World",
-    "season": "2025"
+    "season_format": "calendar"
   },
   {
     "name": "Handball Champions League",
@@ -159,7 +168,7 @@
     "league_id": 131,
     "category": "Handball",
     "country": "Europe",
-    "season": "2024"
+    "season_format": "fall-august"
   },
   {
     "name": "Handball Bundesliga",
@@ -168,7 +177,7 @@
     "league_id": 39,
     "category": "Handball",
     "country": "Germany",
-    "season": "2024"
+    "season_format": "fall-august"
   },
   {
     "name": "Volleyball Nations League",
@@ -177,7 +186,7 @@
     "league_id": 183,
     "category": "Volleyball",
     "country": "World",
-    "season": "2025"
+    "season_format": "calendar"
   },
   {
     "name": "AFL",
@@ -186,6 +195,6 @@
     "league_id": 1,
     "category": "AFL",
     "country": "Australia",
-    "season": "2025"
+    "season_format": "calendar"
   }
 ]
