@@ -1,5 +1,5 @@
 /**
- * ConsolidatedChip — generic ticker chip for clock, weather, and sysmon widgets.
+ * ConsolidatedChip — generic ticker chip for clock, weather, sysmon, and uptime widgets.
  *
  * Replaces the three nearly-identical ClockConsolidatedChip,
  * WeatherConsolidatedChip, and SysmonConsolidatedChip components.
@@ -12,11 +12,12 @@ import type {
   ClockChipData,
   WeatherChipData,
   SysmonChipData,
+  UptimeChipData,
 } from "../../types";
 
 // ── Item shape union ────────────────────────────────────────────
 
-type ChipItem = ClockChipData | WeatherChipData | SysmonChipData;
+type ChipItem = ClockChipData | WeatherChipData | SysmonChipData | UptimeChipData;
 
 // ── Type guards ─────────────────────────────────────────────────
 
@@ -28,10 +29,45 @@ function isSysmon(item: ChipItem): item is SysmonChipData {
   return "hot" in item;
 }
 
+function isUptime(item: ChipItem): item is UptimeChipData {
+  return "status" in item && "uptime" in item;
+}
+
+// ── Uptime status dot color ─────────────────────────────────────
+
+const UPTIME_DOT_COLORS: Record<string, string> = {
+  up: "bg-up",
+  down: "bg-down",
+  pending: "bg-warning",
+  maintenance: "bg-info",
+};
+
+// ── Heartbeat mini bar ──────────────────────────────────────────
+
+const HB_COLORS: Record<number, string> = {
+  1: "bg-up",         // up
+  0: "bg-down",       // down
+  3: "bg-info",       // maintenance
+  2: "bg-warning",    // pending
+};
+
+function HeartbeatBar({ heartbeats }: { heartbeats: number[] }) {
+  return (
+    <span className="inline-flex items-center gap-px" aria-label="Recent heartbeat history">
+      {heartbeats.map((status, i) => (
+        <span
+          key={i}
+          className={clsx("w-[3px] h-2 rounded-[1px]", HB_COLORS[status] ?? "bg-fg-4/30")}
+        />
+      ))}
+    </span>
+  );
+}
+
 // ── Props ───────────────────────────────────────────────────────
 
 interface ConsolidatedChipProps {
-  type: "clock" | "weather" | "sysmon";
+  type: "clock" | "weather" | "sysmon" | "uptime";
   items: ChipItem[];
   comfort?: boolean;
   colorMode?: ChipColorMode;
@@ -56,6 +92,7 @@ export default function ConsolidatedChip({
   const c = getChipColors(colorMode, type);
   const PinIcon = pinned ? PinOff : Pin;
   const anyHot = type === "sysmon" && items.some((item) => isSysmon(item) && item.hot);
+  const anyDown = type === "uptime" && items.some((item) => isUptime(item) && item.status === "down");
 
   return (
     <button
@@ -67,6 +104,7 @@ export default function ConsolidatedChip({
         "transition-colors cursor-pointer",
         c.bg, c.border, c.hoverBorder,
         anyHot && "border-error/30",
+        anyDown && "border-down/30",
         comfort ? "flex flex-col items-start py-1.5 gap-0.5" : "flex items-center gap-2 py-1 text-[13px]",
       )}
     >
@@ -96,7 +134,12 @@ export default function ConsolidatedChip({
             <span className={clsx("font-semibold text-[11px] uppercase tracking-wider mr-1.5", c.textDim)}>
               {"label" in item ? item.label : ""}
             </span>
-            {isWeather(item) ? (
+            {isUptime(item) ? (
+              <>
+                <span className={clsx("w-1.5 h-1.5 rounded-full inline-block mr-1", UPTIME_DOT_COLORS[item.status] ?? "bg-fg-4")} />
+                <span className={c.text}>{item.uptime}</span>
+              </>
+            ) : isWeather(item) ? (
               <>
                 <span className={c.text}>{item.temp}</span>
                 <span className="text-[13px] leading-none ml-1">{item.icon}</span>
@@ -115,14 +158,23 @@ export default function ConsolidatedChip({
       {/* Row 2: detail (comfort only) */}
       {comfort && (
         <div className={clsx("flex items-center text-[10px]", type === "weather" && "min-h-4", c.textFaint)}>
-          {items.map((item, i) =>
-            item.detail ? (
+          {items.map((item, i) => {
+            const hasDetail = item.detail || (isUptime(item) && item.heartbeats?.length);
+            if (!hasDetail) return null;
+            return (
               <div key={"id" in item ? item.id : i} className="flex items-center">
                 {i > 0 && <span className="mx-2">|</span>}
-                <span>{item.detail}</span>
+                {isUptime(item) && item.heartbeats?.length ? (
+                  <span className="flex items-center gap-1.5">
+                    <HeartbeatBar heartbeats={item.heartbeats} />
+                    {item.detail && <span>{item.detail}</span>}
+                  </span>
+                ) : (
+                  <span>{item.detail}</span>
+                )}
               </div>
-            ) : null
-          )}
+            );
+          })}
         </div>
       )}
     </button>

@@ -3,15 +3,16 @@ import type { WidgetPrefs } from "../preferences";
 import type { TempUnit } from "../preferences";
 import { fetchSysmonData } from "./useSysmonData";
 import type { SystemInfo } from "./useSysmonData";
-import { LS_CLOCK_TIMEZONES, LS_CLOCK_FORMAT, LS_TIMER_STATE, LS_WEATHER_CITIES, LS_WEATHER_UNIT } from "../constants";
-import { formatBytes } from "../utils/format";
+import { LS_CLOCK_TIMEZONES, LS_CLOCK_FORMAT, LS_TIMER_STATE, LS_WEATHER_CITIES, LS_WEATHER_UNIT, LS_UPTIME_MONITORS } from "../constants";
+import { formatBytes, timeAgo } from "../utils/format";
 import { weatherCodeToIcon, weatherCodeToLabel, formatTemp } from "../widgets/weather/types";
 import { findCpuTemp, findGpuTemp, formatComponentTemp } from "../widgets/sysmon/utils";
-import type { ClockChipData, WeatherChipData, SysmonChipData, WidgetTickerData } from "../types";
+import type { ClockChipData, WeatherChipData, SysmonChipData, UptimeChipData, WidgetTickerData } from "../types";
 import type { TimerState } from "../widgets/clock/types";
 import type { SavedCity } from "../widgets/weather/types";
+import { loadMonitors } from "../widgets/uptime/types";
 
-const EMPTY: WidgetTickerData = { clock: [], weather: [], sysmon: [] };
+const EMPTY: WidgetTickerData = { clock: [], weather: [], sysmon: [], uptime: [] };
 
 // ── Time formatting helpers ─────────────────────────────────────
 
@@ -248,14 +249,49 @@ export function useWidgetTickerData(
     return chips;
   }, [widgetPrefs.sysmon, enabledWidgets]);
 
+  // ── Build uptime chips ────────────────────────────────────────
+  const buildUptimeChips = useCallback((): UptimeChipData[] => {
+    if (!enabledWidgets.has("uptime")) return [];
+    const monitors = loadMonitors();
+    if (monitors.length === 0) return [];
+
+    const cfg = widgetPrefs.uptime;
+    const chips: UptimeChipData[] = [];
+
+    for (const mon of monitors) {
+      if (cfg.ticker.excludedMonitors.includes(mon.id)) continue;
+
+      const uptimeStr = mon.uptimePercent != null
+        ? `${mon.uptimePercent.toFixed(mon.uptimePercent === 100 ? 0 : 1)}%`
+        : "--";
+
+      const statusLabel = mon.status.charAt(0).toUpperCase() + mon.status.slice(1);
+      const respTime = mon.responseTime != null ? `${mon.responseTime}ms` : "";
+      const checked = timeAgo(mon.lastChecked, { suffix: true });
+      const detail = [statusLabel, respTime, checked].filter(Boolean).join(" \u00B7 ");
+
+      chips.push({
+        id: `uptime-${mon.id}`,
+        label: mon.name.length > 20 ? mon.name.slice(0, 18) + "\u2026" : mon.name,
+        status: mon.status,
+        uptime: uptimeStr,
+        detail: detail || undefined,
+        heartbeats: mon.recentHeartbeats.length > 0 ? mon.recentHeartbeats : undefined,
+      });
+    }
+
+    return chips;
+  }, [widgetPrefs.uptime, enabledWidgets]);
+
   // ── Polling intervals ─────────────────────────────────────────
 
   useEffect(() => {
     const hasClock = enabledWidgets.has("clock");
     const hasWeather = enabledWidgets.has("weather");
     const hasSysmon = enabledWidgets.has("sysmon");
+    const hasUptime = enabledWidgets.has("uptime");
 
-    if (!hasClock && !hasWeather && !hasSysmon) {
+    if (!hasClock && !hasWeather && !hasSysmon && !hasUptime) {
       setData(EMPTY);
       return;
     }
@@ -266,6 +302,7 @@ export function useWidgetTickerData(
         clock: buildClockChips(),
         weather: buildWeatherChips(),
         sysmon: buildSysmonChips(),
+        uptime: buildUptimeChips(),
       });
     };
 
@@ -288,7 +325,13 @@ export function useWidgetTickerData(
       } catch { /* ignore IPC failures */ }
     }, sysmonMs) : null;
 
-    // Initial fetch for sysmon
+    // Uptime: re-read cached localStorage data at poll cadence (FeedTab does the actual fetching)
+    const uptimeMs = (widgetPrefs.uptime.pollInterval || 60) * 1000;
+    const uptimeInterval = hasUptime ? setInterval(() => {
+      setData((prev) => ({ ...prev, uptime: buildUptimeChips() }));
+    }, uptimeMs) : null;
+
+    // Initial fetch for sysmon (only widget that needs async init)
     if (hasSysmon) {
       fetchSysmonData()
         .then((info) => { sysInfoRef.current = info; })
@@ -302,6 +345,7 @@ export function useWidgetTickerData(
       if (clockInterval) clearInterval(clockInterval);
       if (weatherInterval) clearInterval(weatherInterval);
       if (sysmonInterval) clearInterval(sysmonInterval);
+      if (uptimeInterval) clearInterval(uptimeInterval);
     };
   // Suppressed: JSON.stringify stabilizes the dep by value instead of reference,
   // so the effect only re-runs when the array contents actually change.
@@ -309,9 +353,11 @@ export function useWidgetTickerData(
   }, [
     JSON.stringify(widgetPrefs.widgetsOnTicker),
     widgetPrefs.sysmon.refreshInterval,
+    widgetPrefs.uptime.pollInterval,
     buildClockChips,
     buildWeatherChips,
     buildSysmonChips,
+    buildUptimeChips,
   ]);
 
   return data;
