@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::Serialize;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 #[derive(Serialize, Clone)]
@@ -8,7 +9,7 @@ pub struct SportsHealth {
     pub last_poll: Option<DateTime<Utc>>,
     pub leagues_active: u32,
     pub leagues_live: u32,
-    pub rate_limit_remaining: Option<u32>,
+    pub rate_limits: Option<HashMap<String, u32>>,
     pub error_count: u64,
     pub last_error: Option<String>,
 }
@@ -20,7 +21,7 @@ impl SportsHealth {
             last_poll: None,
             leagues_active: 0,
             leagues_live: 0,
-            rate_limit_remaining: None,
+            rate_limits: None,
             error_count: 0,
             last_error: None,
         }
@@ -39,8 +40,8 @@ impl SportsHealth {
         self.status = String::from("degraded");
     }
 
-    pub fn set_rate_limit(&mut self, remaining: u32) {
-        self.rate_limit_remaining = Some(remaining);
+    pub fn set_rate_limits(&mut self, limits: HashMap<String, u32>) {
+        self.rate_limits = Some(limits);
     }
 
     pub fn get_health(&self) -> Self {
@@ -48,30 +49,52 @@ impl SportsHealth {
     }
 }
 
-/// Shared atomic counter for tracking remaining API requests across tasks.
-/// Updated from response headers after each api-sports.io call.
-pub struct RateLimitTracker {
-    remaining: AtomicU32,
+/// Per-sport rate limit tracker. Each sport API (basketball, football, etc.)
+/// has its own daily budget on api-sports.io, so we track them independently.
+/// The map keys are `sport_api` values (e.g. "basketball", "hockey").
+/// The map is built once at startup and never resized — only the atomic
+/// counters inside are updated from response headers.
+pub struct RateLimiter {
+    budgets: HashMap<String, AtomicU32>,
 }
 
-impl RateLimitTracker {
-    pub fn new(initial: u32) -> Self {
-        Self {
-            remaining: AtomicU32::new(initial),
+impl RateLimiter {
+    /// Create a rate limiter with one bucket per sport, each initialized
+    /// to `initial` remaining requests (typically 7,500 for Pro plan).
+    pub fn new(sports: &[String], initial: u32) -> Self {
+        let mut budgets = HashMap::new();
+        for sport in sports {
+            budgets.insert(sport.clone(), AtomicU32::new(initial));
+        }
+        Self { budgets }
+    }
+
+    /// Update the remaining count for a specific sport from an API response header.
+    pub fn update(&self, sport: &str, remaining: u32) {
+        if let Some(counter) = self.budgets.get(sport) {
+            counter.store(remaining, Ordering::Relaxed);
         }
     }
 
-    pub fn update(&self, remaining: u32) {
-        self.remaining.store(remaining, Ordering::Relaxed);
+    /// Get the remaining request count for a specific sport.
+    pub fn remaining(&self, sport: &str) -> u32 {
+        self.budgets
+            .get(sport)
+            .map(|c| c.load(Ordering::Relaxed))
+            .unwrap_or(0)
     }
 
-    pub fn remaining(&self) -> u32 {
-        self.remaining.load(Ordering::Relaxed)
-    }
-
-    /// Returns true if we have enough budget to make a request.
+    /// Returns true if the given sport has enough budget to make a request.
     /// Reserves a conservative buffer of 100 requests.
-    pub fn has_budget(&self) -> bool {
-        self.remaining() > 100
+    pub fn has_budget(&self, sport: &str) -> bool {
+        self.remaining(sport) > 100
+    }
+
+    /// Snapshot of all sport budgets for the health endpoint.
+    pub fn all_remaining(&self) -> HashMap<String, u32> {
+        self.budgets
+            .iter()
+            .map(|(k, v)| (k.clone(), v.load(Ordering::Relaxed)))
+            .collect()
     }
 }
