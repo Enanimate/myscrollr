@@ -97,5 +97,95 @@
     "category": "Motorsport",
     "country": "World",
     "season_format": "calendar"
+  },
+  {
+    "name": "Six Nations",
+    "sport_api": "rugby",
+    "api_host": "v1.rugby.api-sports.io",
+    "league_id": 51,
+    "category": "Rugby",
+    "country": "Europe",
+    "season_format": "calendar"
+  },
+  {
+    "name": "Super Rugby",
+    "sport_api": "rugby",
+    "api_host": "v1.rugby.api-sports.io",
+    "league_id": 71,
+    "category": "Rugby",
+    "country": "World",
+    "season_format": "calendar"
+  },
+  {
+    "name": "Premiership Rugby",
+    "sport_api": "rugby",
+    "api_host": "v1.rugby.api-sports.io",
+    "league_id": 13,
+    "category": "Rugby",
+    "country": "England",
+    "season_format": "cross-year"
+  },
+  {
+    "name": "UFC",
+    "sport_api": "mma",
+    "api_host": "v1.mma.api-sports.io",
+    "league_id": 0,
+    "category": "MMA",
+    "country": "World",
+    "season_format": "calendar"
+  },
+  {
+    "name": "Handball Champions League",
+    "sport_api": "handball",
+    "api_host": "v1.handball.api-sports.io",
+    "league_id": 131,
+    "category": "Handball",
+    "country": "Europe",
+    "season_format": "cross-year"
+  },
+  {
+    "name": "Handball Bundesliga",
+    "sport_api": "handball",
+    "api_host": "v1.handball.api-sports.io",
+    "league_id": 39,
+    "category": "Handball",
+    "country": "Germany",
+    "season_format": "cross-year"
+  },
+  {
+    "name": "Starligue",
+    "sport_api": "handball",
+    "api_host": "v1.handball.api-sports.io",
+    "league_id": 34,
+    "category": "Handball",
+    "country": "France",
+    "season_format": "cross-year"
+  },
+  {
+    "name": "Volleyball Champions League",
+    "sport_api": "volleyball",
+    "api_host": "v1.volleyball.api-sports.io",
+    "league_id": 248,
+    "category": "Volleyball",
+    "country": "Europe",
+    "season_format": "cross-year"
+  },
+  {
+    "name": "Volleyball Nations League",
+    "sport_api": "volleyball",
+    "api_host": "v1.volleyball.api-sports.io",
+    "league_id": 183,
+    "category": "Volleyball",
+    "country": "World",
+    "season_format": "calendar"
+  },
+  {
+    "name": "AFL",
+    "sport_api": "afl",
+    "api_host": "v1.afl.api-sports.io",
+    "league_id": 1,
+    "category": "Australian Football",
+    "country": "Australia",
+    "season_format": "calendar"
   }
 ]
