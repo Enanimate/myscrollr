@@ -10,7 +10,7 @@ export type TickerGap = "tight" | "normal" | "spacious";
 export type TickerMode = "compact" | "comfort";
 type DefaultView = "feed" | "dashboard" | "last";
 export type TickerRows = 1 | 2 | 3;
-export type MixMode = "grouped" | "weave" | "random";
+export type MixMode = "grouped" | "weave";
 export type ChipColorMode = "channel" | "accent" | "muted";
 export type TickerDirection = "left" | "right";
 export type ScrollMode = "continuous" | "step" | "flip";
@@ -175,12 +175,12 @@ const DEFAULT_APPEARANCE: AppearancePrefs = {
 
 const DEFAULT_TICKER: TickerPrefs = {
   showTicker: true,
-  tickerSpeed: 25,
+  tickerSpeed: 40,
   pauseOnHover: true,
   hoverSpeed: 0.3,
-  tickerGap: "normal",
-  tickerMode: "compact",
-  mixMode: "grouped",
+  tickerGap: "tight",
+  tickerMode: "comfort",
+  mixMode: "weave",
   chipColors: "channel",
   tickerDirection: "left",
   scrollMode: "continuous",
