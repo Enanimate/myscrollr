@@ -362,8 +362,15 @@ fn build_api_url(league: &TrackedLeague, date: &str) -> String {
         "formula-1" => {
             format!("{}/races?season={}", base, season)
         }
+        "mma" => {
+            // MMA has no leagues — query all fights for a given date
+            format!("{}/fights?date={}", base, date)
+        }
         other => {
-            if other != "basketball" && other != "hockey" && other != "baseball" && other != "american-football" {
+            if !matches!(other,
+                "basketball" | "hockey" | "baseball" | "american-football" |
+                "rugby" | "handball" | "volleyball" | "afl"
+            ) {
                 warn!("Unknown sport_api '{}', falling back to /games", other);
             }
             format!("{}/games?league={}&season={}&date={}", base, league.league_id, season, date)
@@ -383,6 +390,11 @@ fn parse_game(item: &serde_json::Value, league: &TrackedLeague) -> Option<Cleane
         "hockey" => parse_hockey_game(item, league),
         "baseball" => parse_baseball_game(item, league),
         "formula-1" => parse_f1_race(item, league),
+        "rugby" => parse_rugby_game(item, league),
+        "handball" => parse_handball_game(item, league),
+        "volleyball" => parse_volleyball_game(item, league),
+        "afl" => parse_afl_game(item, league),
+        "mma" => parse_mma_fight(item, league),
         _ => {
             warn!("[{}] No parser for sport_api '{}'", league.name, league.sport_api);
             None
@@ -757,6 +769,289 @@ fn parse_f1_race(item: &serde_json::Value, league: &TrackedLeague) -> Option<Cle
         status_long: Some(status.to_string()),
         timer: None,
         venue: circuit_name,
+        season: league.season.clone(),
+    })
+}
+
+// =============================================================================
+// Rugby — v1.rugby.api-sports.io
+// =============================================================================
+
+fn parse_rugby_game(item: &serde_json::Value, league: &TrackedLeague) -> Option<CleanedData> {
+    let game_id = item.get("id")?.as_i64()?.to_string();
+
+    let timestamp = item.get("timestamp").and_then(|t| t.as_i64());
+    let date_str = item.get("date").and_then(|d| d.as_str());
+    let start_time = parse_api_date(timestamp, date_str)?;
+
+    let status = item.get("status")?;
+    let status_short = status.get("short").and_then(|s| s.as_str()).unwrap_or("NS");
+    let status_long = status.get("long").and_then(|s| s.as_str());
+    let timer_str = status.get("timer").and_then(|t| t.as_str()).map(|s| s.to_string());
+
+    let teams = item.get("teams")?;
+    let scores = item.get("scores")?;
+
+    let home = teams.get("home")?;
+    let away = teams.get("away")?;
+
+    let home_score = scores.get("home").and_then(|s| s.as_i64()).map(|s| s as i32);
+    let away_score = scores.get("away").and_then(|s| s.as_i64()).map(|s| s as i32);
+
+    let detail = build_detail(status_short, status_long, timer_str.as_deref());
+
+    Some(CleanedData {
+        league: league.name.clone(),
+        sport: league.sport_api.clone(),
+        external_game_id: game_id,
+        link: None,
+        home_team: Team {
+            name: home.get("name").and_then(|n| n.as_str())?.to_string(),
+            logo: home.get("logo").and_then(|l| l.as_str()).map(|s| s.to_string()),
+            score: home_score,
+        },
+        away_team: Team {
+            name: away.get("name").and_then(|n| n.as_str())?.to_string(),
+            logo: away.get("logo").and_then(|l| l.as_str()).map(|s| s.to_string()),
+            score: away_score,
+        },
+        start_time,
+        short_detail: detail,
+        state: map_status_to_state(status_short).to_string(),
+        status_short: Some(status_short.to_string()),
+        status_long: status_long.map(|s| s.to_string()),
+        timer: timer_str,
+        venue: None,
+        season: league.season.clone(),
+    })
+}
+
+// =============================================================================
+// Handball — v1.handball.api-sports.io
+// =============================================================================
+
+fn parse_handball_game(item: &serde_json::Value, league: &TrackedLeague) -> Option<CleanedData> {
+    let game_id = item.get("id")?.as_i64()?.to_string();
+
+    let timestamp = item.get("timestamp").and_then(|t| t.as_i64());
+    let date_str = item.get("date").and_then(|d| d.as_str());
+    let start_time = parse_api_date(timestamp, date_str)?;
+
+    let status = item.get("status")?;
+    let status_short = status.get("short").and_then(|s| s.as_str()).unwrap_or("NS");
+    let status_long = status.get("long").and_then(|s| s.as_str());
+    let timer_str = status.get("timer").and_then(|t| t.as_str()).map(|s| s.to_string());
+
+    let teams = item.get("teams")?;
+    let scores = item.get("scores")?;
+
+    let home = teams.get("home")?;
+    let away = teams.get("away")?;
+
+    let home_score = scores.get("home").and_then(|s| s.as_i64()).map(|s| s as i32);
+    let away_score = scores.get("away").and_then(|s| s.as_i64()).map(|s| s as i32);
+
+    let detail = build_detail(status_short, status_long, timer_str.as_deref());
+
+    Some(CleanedData {
+        league: league.name.clone(),
+        sport: league.sport_api.clone(),
+        external_game_id: game_id,
+        link: None,
+        home_team: Team {
+            name: home.get("name").and_then(|n| n.as_str())?.to_string(),
+            logo: home.get("logo").and_then(|l| l.as_str()).map(|s| s.to_string()),
+            score: home_score,
+        },
+        away_team: Team {
+            name: away.get("name").and_then(|n| n.as_str())?.to_string(),
+            logo: away.get("logo").and_then(|l| l.as_str()).map(|s| s.to_string()),
+            score: away_score,
+        },
+        start_time,
+        short_detail: detail,
+        state: map_status_to_state(status_short).to_string(),
+        status_short: Some(status_short.to_string()),
+        status_long: status_long.map(|s| s.to_string()),
+        timer: timer_str,
+        venue: None,
+        season: league.season.clone(),
+    })
+}
+
+// =============================================================================
+// Volleyball — v1.volleyball.api-sports.io
+// =============================================================================
+
+fn parse_volleyball_game(item: &serde_json::Value, league: &TrackedLeague) -> Option<CleanedData> {
+    let game_id = item.get("id")?.as_i64()?.to_string();
+
+    let timestamp = item.get("timestamp").and_then(|t| t.as_i64());
+    let date_str = item.get("date").and_then(|d| d.as_str());
+    let start_time = parse_api_date(timestamp, date_str)?;
+
+    let status = item.get("status")?;
+    let status_short = status.get("short").and_then(|s| s.as_str()).unwrap_or("NS");
+    let status_long = status.get("long").and_then(|s| s.as_str());
+    let timer_str = status.get("timer").and_then(|t| t.as_str()).map(|s| s.to_string());
+
+    let teams = item.get("teams")?;
+    let scores = item.get("scores")?;
+
+    let home = teams.get("home")?;
+    let away = teams.get("away")?;
+
+    // Volleyball scores represent sets won
+    let home_score = scores.get("home").and_then(|s| s.as_i64()).map(|s| s as i32);
+    let away_score = scores.get("away").and_then(|s| s.as_i64()).map(|s| s as i32);
+
+    let detail = build_detail(status_short, status_long, timer_str.as_deref());
+
+    Some(CleanedData {
+        league: league.name.clone(),
+        sport: league.sport_api.clone(),
+        external_game_id: game_id,
+        link: None,
+        home_team: Team {
+            name: home.get("name").and_then(|n| n.as_str())?.to_string(),
+            logo: home.get("logo").and_then(|l| l.as_str()).map(|s| s.to_string()),
+            score: home_score,
+        },
+        away_team: Team {
+            name: away.get("name").and_then(|n| n.as_str())?.to_string(),
+            logo: away.get("logo").and_then(|l| l.as_str()).map(|s| s.to_string()),
+            score: away_score,
+        },
+        start_time,
+        short_detail: detail,
+        state: map_status_to_state(status_short).to_string(),
+        status_short: Some(status_short.to_string()),
+        status_long: status_long.map(|s| s.to_string()),
+        timer: timer_str,
+        venue: None,
+        season: league.season.clone(),
+    })
+}
+
+// =============================================================================
+// AFL (Australian Football League) — v1.afl.api-sports.io
+// =============================================================================
+
+fn parse_afl_game(item: &serde_json::Value, league: &TrackedLeague) -> Option<CleanedData> {
+    let game = item.get("game")?;
+    let game_id = game.get("id")?.as_i64()?.to_string();
+
+    // AFL returns timestamp as a string
+    let timestamp = item.get("timestamp")
+        .and_then(|t| t.as_i64().or_else(|| t.as_str().and_then(|s| s.parse::<i64>().ok())));
+    let date_str = item.get("date").and_then(|d| d.as_str());
+    let start_time = parse_api_date(timestamp, date_str)?;
+
+    let status = item.get("status")?;
+    let status_short = status.get("short").and_then(|s| s.as_str()).unwrap_or("NS");
+    let status_long = status.get("long").and_then(|s| s.as_str());
+    let timer_str = status.get("timer").and_then(|t| t.as_str()).map(|s| s.to_string());
+
+    let teams = item.get("teams")?;
+    let scores = item.get("scores")?;
+
+    let home = teams.get("home")?;
+    let away = teams.get("away")?;
+
+    // AFL scores: nested under scores.home.score / scores.away.score (total points)
+    let home_score = scores.get("home")
+        .and_then(|s| s.get("score"))
+        .and_then(|t| t.as_i64())
+        .map(|s| s as i32);
+    let away_score = scores.get("away")
+        .and_then(|s| s.get("score"))
+        .and_then(|t| t.as_i64())
+        .map(|s| s as i32);
+
+    let venue = item.get("venue")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let detail = build_detail(status_short, status_long, timer_str.as_deref());
+
+    Some(CleanedData {
+        league: league.name.clone(),
+        sport: league.sport_api.clone(),
+        external_game_id: game_id,
+        link: None,
+        home_team: Team {
+            name: home.get("name").and_then(|n| n.as_str())?.to_string(),
+            logo: home.get("logo").and_then(|l| l.as_str()).map(|s| s.to_string()),
+            score: home_score,
+        },
+        away_team: Team {
+            name: away.get("name").and_then(|n| n.as_str())?.to_string(),
+            logo: away.get("logo").and_then(|l| l.as_str()).map(|s| s.to_string()),
+            score: away_score,
+        },
+        start_time,
+        short_detail: detail,
+        state: map_status_to_state(status_short).to_string(),
+        status_short: Some(status_short.to_string()),
+        status_long: status_long.map(|s| s.to_string()),
+        timer: timer_str,
+        venue,
+        season: league.season.clone(),
+    })
+}
+
+// =============================================================================
+// MMA (Mixed Martial Arts) — v1.mma.api-sports.io
+// =============================================================================
+
+fn parse_mma_fight(item: &serde_json::Value, league: &TrackedLeague) -> Option<CleanedData> {
+    let fight_id = item.get("id")?.as_i64()?.to_string();
+
+    let timestamp = item.get("timestamp").and_then(|t| t.as_i64());
+    let date_str = item.get("date").and_then(|d| d.as_str());
+    let start_time = parse_api_date(timestamp, date_str)?;
+
+    let status = item.get("status")?;
+    let status_short = status.get("short").and_then(|s| s.as_str()).unwrap_or("NS");
+    let status_long = status.get("long").and_then(|s| s.as_str());
+
+    let fighters = item.get("fighters")?;
+    let first = fighters.get("first")?;
+    let second = fighters.get("second")?;
+
+    // Weight class as category context, event name as venue
+    let category = item.get("category").and_then(|c| c.as_str());
+    let event_name = item.get("slug").and_then(|s| s.as_str()).map(|s| s.to_string());
+
+    // Build a detail string: weight class for pre-fight, status for finished
+    let detail = match map_status_to_state(status_short) {
+        "final" => status_long.map(|s| s.to_string()),
+        "in" => Some("Live".to_string()),
+        _ => category.map(|c| c.to_string()),
+    };
+
+    Some(CleanedData {
+        league: league.name.clone(),
+        sport: league.sport_api.clone(),
+        external_game_id: fight_id,
+        link: None,
+        home_team: Team {
+            name: first.get("name").and_then(|n| n.as_str())?.to_string(),
+            logo: first.get("logo").and_then(|l| l.as_str()).map(|s| s.to_string()),
+            score: None,
+        },
+        away_team: Team {
+            name: second.get("name").and_then(|n| n.as_str())?.to_string(),
+            logo: second.get("logo").and_then(|l| l.as_str()).map(|s| s.to_string()),
+            score: None,
+        },
+        start_time,
+        short_detail: detail,
+        state: map_status_to_state(status_short).to_string(),
+        status_short: Some(status_short.to_string()),
+        status_long: status_long.map(|s| s.to_string()),
+        timer: category.map(|c| c.to_string()),
+        venue: event_name,
         season: league.season.clone(),
     })
 }
