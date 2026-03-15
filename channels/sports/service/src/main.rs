@@ -5,7 +5,7 @@ use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use sports_service::{
     init_sports_service, poll_live, poll_schedule,
-    SportsHealth, RateLimitTracker,
+    SportsHealth, RateLimiter,
     log::init_async_logger, database::initialize_pool,
 };
 
@@ -38,9 +38,6 @@ async fn main() {
     };
     let health = Arc::new(Mutex::new(SportsHealth::new()));
 
-    // Pro plan: 7,500 requests/day per sport API. Start with that as the initial budget.
-    let rate_limiter = Arc::new(RateLimitTracker::new(7500));
-
     // Cancellation token for coordinated shutdown
     let cancel = CancellationToken::new();
 
@@ -61,6 +58,16 @@ async fn main() {
             return;
         }
     };
+
+    // Pro plan: 7,500 requests/day per sport API. Each sport host
+    // (basketball, football, hockey, etc.) has its own independent budget.
+    let sports: Vec<String> = leagues
+        .iter()
+        .map(|l| l.sport_api.clone())
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+    let rate_limiter = Arc::new(RateLimiter::new(&sports, 7500));
 
     let client = Arc::new(client);
     let leagues = Arc::new(leagues);
@@ -99,7 +106,7 @@ async fn main() {
         }
     });
 
-    // ── Slow poll: schedule + cleanup (yesterday + 7 days, every 30 min) ──
+    // ── Slow poll: schedule + cleanup (today + 7 days, every 30 min) ──
     let pool_sched = pool.clone();
     let client_sched = client.clone();
     let leagues_sched = leagues.clone();

@@ -8,7 +8,7 @@ use crate::database::{
     get_tracked_leagues, seed_tracked_leagues, disable_stale_leagues,
     cleanup_old_games, LeagueConfig, TrackedLeague, upsert_game, CleanedData, Team,
 };
-pub use crate::types::{SportsHealth, RateLimitTracker};
+pub use crate::types::{SportsHealth, RateLimiter};
 
 pub mod log;
 pub mod database;
@@ -104,7 +104,7 @@ pub async fn poll_live(
     client: &Client,
     leagues: &[TrackedLeague],
     health_state: &Arc<Mutex<SportsHealth>>,
-    rate_limiter: &Arc<RateLimitTracker>,
+    rate_limiter: &Arc<RateLimiter>,
 ) {
     let today = Utc::now().format("%Y-%m-%d").to_string();
 
@@ -113,8 +113,9 @@ pub async fn poll_live(
     let mut leagues_with_live = 0u32;
 
     for league in leagues {
-        if !rate_limiter.has_budget() {
-            warn!("[{}] Skipping live poll — rate limit budget low ({})", league.name, rate_limiter.remaining());
+        if !rate_limiter.has_budget(&league.sport_api) {
+            warn!("[{}] Skipping live poll — rate limit budget low for {} ({})",
+                league.name, league.sport_api, rate_limiter.remaining(&league.sport_api));
             continue;
         }
 
@@ -136,7 +137,7 @@ pub async fn poll_live(
 
     let mut health = health_state.lock().await;
     health.record_success(leagues.len() as u32, leagues_with_live);
-    health.set_rate_limit(rate_limiter.remaining());
+    health.set_rate_limits(rate_limiter.all_remaining());
 
     if total_failed > 0 {
         info!("Live poll complete: {} upserted, {} failed across {} leagues", total_upserted, total_failed, leagues.len());
@@ -144,22 +145,21 @@ pub async fn poll_live(
 }
 
 // =============================================================================
-// Schedule polling (slow — yesterday + today + 7 days ahead, every 30 min)
+// Schedule polling (slow — today + 7 days ahead, every 30 min)
 // =============================================================================
 
-/// Poll yesterday through 7 days ahead to populate the upcoming schedule.
-/// Also cleans up finished games older than 24 hours.
+/// Poll today through 7 days ahead to populate the upcoming schedule.
+/// Also cleans up finished games older than 12 hours.
 pub async fn poll_schedule(
     pool: &Arc<PgPool>,
     client: &Client,
     leagues: &[TrackedLeague],
-    rate_limiter: &Arc<RateLimitTracker>,
+    rate_limiter: &Arc<RateLimiter>,
 ) {
     let now = Utc::now();
-    let yesterday = (now - Duration::days(1)).format("%Y-%m-%d").to_string();
 
-    // Build list of dates: yesterday, today, +1 ... +7
-    let mut dates = vec![yesterday];
+    // Build list of dates: today, +1 ... +7
+    let mut dates = Vec::with_capacity((SCHEDULE_DAYS_AHEAD + 1) as usize);
     for offset in 0..=SCHEDULE_DAYS_AHEAD {
         dates.push((now + Duration::days(offset)).format("%Y-%m-%d").to_string());
     }
@@ -177,8 +177,9 @@ pub async fn poll_schedule(
         }
 
         for date in &dates {
-            if !rate_limiter.has_budget() {
-                warn!("[{}] Skipping schedule poll — rate limit budget low ({})", league.name, rate_limiter.remaining());
+            if !rate_limiter.has_budget(&league.sport_api) {
+                warn!("[{}] Skipping schedule poll — rate limit budget low for {} ({})",
+                    league.name, league.sport_api, rate_limiter.remaining(&league.sport_api));
                 break;
             }
 
@@ -267,19 +268,19 @@ async fn poll_league(
     client: &Client,
     league: &TrackedLeague,
     date: &str,
-    rate_limiter: &RateLimitTracker,
+    rate_limiter: &RateLimiter,
 ) -> anyhow::Result<Vec<CleanedData>> {
     let url = build_api_url(league, date);
 
     let resp = client.get(&url).send().await?;
 
-    // Extract rate limit info from headers
+    // Extract rate limit info from headers — update only this sport's bucket
     if let Some(remaining) = resp.headers()
         .get("x-ratelimit-requests-remaining")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.parse::<u32>().ok())
     {
-        rate_limiter.update(remaining);
+        rate_limiter.update(&league.sport_api, remaining);
     }
 
     let status = resp.status();
@@ -722,7 +723,7 @@ fn parse_f1_race(item: &serde_json::Value, league: &TrackedLeague) -> Option<Cle
     };
 
     // Skip old completed races — they'd be cleaned up anyway and waste DB writes
-    if state == "final" && start_time < Utc::now() - Duration::hours(24) {
+    if state == "final" && start_time < Utc::now() - Duration::hours(12) {
         return None;
     }
 
