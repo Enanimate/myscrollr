@@ -14,8 +14,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { onStoreChange } from "../../lib/store";
 import { HeartPulse, RefreshCw, Unlink, Loader2 } from "lucide-react";
 import type { FeedTabProps, WidgetManifest } from "../../types";
-import type { KumaMonitor, MonitorStatus } from "./types";
-import { fetchKumaStatus, loadMonitors, saveMonitors } from "./types";
+import QueryErrorBanner from "../../components/QueryErrorBanner";
+import type { KumaMonitor } from "./types";
+import { fetchKumaStatus, loadMonitors, saveMonitors, MONITOR_STATUS_LABELS, MONITOR_STATUS_COLORS, MONITOR_STATUS_TEXT } from "./types";
 import { useShell } from "../../shell-context";
 import { savePrefs } from "../../preferences";
 import type { AppPreferences } from "../../preferences";
@@ -42,29 +43,6 @@ export const uptimeWidget: WidgetManifest = {
     ],
   },
   FeedTab: UptimeFeedTab,
-};
-
-// ── Status helpers ──────────────────────────────────────────────
-
-const STATUS_LABELS: Record<MonitorStatus, string> = {
-  up: "Up",
-  down: "Down",
-  pending: "Pending",
-  maintenance: "Maintenance",
-};
-
-const STATUS_COLORS: Record<MonitorStatus, string> = {
-  up: "bg-up",
-  down: "bg-down",
-  pending: "bg-warning",
-  maintenance: "bg-info",
-};
-
-const STATUS_TEXT_COLORS: Record<MonitorStatus, string> = {
-  up: "text-up",
-  down: "text-down",
-  pending: "text-warning",
-  maintenance: "text-info",
 };
 
 // ── FeedTab ─────────────────────────────────────────────────────
@@ -267,11 +245,7 @@ function UptimeFeedTab({ mode: feedMode }: FeedTabProps) {
       </div>
 
       {/* Error banner */}
-      {error && (
-        <div className="px-2 py-1.5 text-[11px] font-mono text-error/80 bg-error/5 border border-error/15 rounded">
-          Failed to refresh: {error.message}
-        </div>
-      )}
+      <QueryErrorBanner error={error} />
 
       {/* Monitor list */}
       <div className={compact ? "space-y-1" : "space-y-1.5"}>
@@ -297,7 +271,7 @@ function MonitorRow({
       className={`flex items-center gap-2 px-2 rounded-md border border-edge/50 bg-surface-2/30 ${compact ? "py-1.5" : "py-2"}`}
     >
       {/* Status dot */}
-      <span className={`w-2 h-2 rounded-full shrink-0 ${STATUS_COLORS[monitor.status]}${monitor.status === "down" ? " animate-pulse" : ""}`} />
+      <span className={`w-2 h-2 rounded-full shrink-0 ${MONITOR_STATUS_COLORS[monitor.status]}${monitor.status === "down" ? " animate-pulse" : ""}`} />
 
       {/* Name */}
       <span className="text-xs font-mono text-fg truncate flex-1">
@@ -319,8 +293,8 @@ function MonitorRow({
       )}
 
       {/* Status label */}
-      <span className={`text-[10px] font-mono font-semibold uppercase tracking-wider shrink-0 ${STATUS_TEXT_COLORS[monitor.status]}`}>
-        {STATUS_LABELS[monitor.status]}
+      <span className={`text-[10px] font-mono font-semibold uppercase tracking-wider shrink-0 ${MONITOR_STATUS_TEXT[monitor.status]}`}>
+        {MONITOR_STATUS_LABELS[monitor.status]}
       </span>
     </div>
   );

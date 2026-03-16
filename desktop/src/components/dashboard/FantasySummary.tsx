@@ -4,51 +4,17 @@
  * Shows best league with matchup score, rank, and record.
  * Respects per-card display preferences from the dashboard editor.
  */
+import { SPORT_EMOJI } from "../../channels/fantasy/types";
 import type { DashboardResponse } from "../../types";
 import type { FantasyCardPrefs } from "./dashboardPrefs";
+import type { LeagueResponse } from "../../channels/fantasy/types";
+import DashboardEmptyState from "./DashboardEmptyState";
 
 interface FantasySummaryProps {
   dashboard: DashboardResponse | undefined;
   prefs: FantasyCardPrefs;
   onConfigure?: () => void;
 }
-
-interface LeagueResponse {
-  league_key: string;
-  name: string;
-  game_code: string;
-  season: string;
-  team_name: string;
-  data?: {
-    num_teams?: number;
-    current_week?: number;
-  };
-  standings?: Array<{
-    team_key: string;
-    name: string;
-    rank: number;
-    wins: number;
-    losses: number;
-    ties: number;
-  }>;
-  matchups?: Array<{
-    week: number;
-    status: string;
-    teams: Array<{
-      team_key: string;
-      name: string;
-      points: number;
-      projected_points: number;
-    }>;
-  }>;
-}
-
-const SPORT_EMOJI: Record<string, string> = {
-  nfl: "\uD83C\uDFC8",
-  nba: "\uD83C\uDFC0",
-  nhl: "\uD83C\uDFD2",
-  mlb: "\u26BE",
-};
 
 export default function FantasySummary({ dashboard, prefs, onConfigure }: FantasySummaryProps) {
   // Fantasy data is stored in channel config (not CDC like other channels)
@@ -60,17 +26,11 @@ export default function FantasySummary({ dashboard, prefs, onConfigure }: Fantas
 
   if (leagues.length === 0) {
     return (
-      <div className="flex flex-col gap-2 py-1">
-        <p className="text-[11px] text-fg-4">No leagues connected</p>
-        {onConfigure && (
-          <button
-            onClick={onConfigure}
-            className="text-[11px] font-medium text-accent hover:text-accent/80 transition-colors self-start"
-          >
-            Connect Yahoo &rarr;
-          </button>
-        )}
-      </div>
+      <DashboardEmptyState
+        message="No leagues connected"
+        actionLabel={onConfigure ? "Connect Yahoo \u2192" : undefined}
+        onAction={onConfigure}
+      />
     );
   }
 
@@ -95,11 +55,11 @@ export default function FantasySummary({ dashboard, prefs, onConfigure }: Fantas
         <div className="flex items-center justify-between gap-2 py-0.5">
           <div className="flex items-center gap-1.5 min-w-0">
             <span className="text-[12px] font-mono font-bold text-fg tabular-nums">
-              {currentMatchup.teams[0].points.toFixed(1)}
+              {(currentMatchup.teams[0].points ?? 0).toFixed(1)}
             </span>
             <span className="text-[10px] text-fg-4">vs</span>
             <span className="text-[12px] font-mono font-bold text-fg tabular-nums">
-              {currentMatchup.teams[1].points.toFixed(1)}
+              {(currentMatchup.teams[1].points ?? 0).toFixed(1)}
             </span>
           </div>
           <span className="text-[9px] font-mono text-fg-3 uppercase shrink-0">

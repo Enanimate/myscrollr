@@ -20,6 +20,8 @@ import {
   savePrefs,
   TICKER_GAPS,
   TICKER_HEIGHTS,
+  toggleWidgetOnTicker,
+  toggleWidgetPin,
 } from "./preferences";
 import type { SubscriptionTier } from "./auth";
 import type { ChannelType } from "./api/client";
@@ -401,14 +403,7 @@ export default function App() {
   const handleWidgetToggle = useCallback(
     (widgetId: string) => {
       setPrefs((prev) => {
-        const onTicker = prev.widgets.widgetsOnTicker;
-        const next = onTicker.includes(widgetId)
-          ? onTicker.filter((id) => id !== widgetId)
-          : [...onTicker, widgetId];
-        const updated = {
-          ...prev,
-          widgets: { ...prev.widgets, widgetsOnTicker: next },
-        };
+        const updated = toggleWidgetOnTicker(prev, widgetId);
         savePrefs(updated);
         return updated;
       });
@@ -421,16 +416,7 @@ export default function App() {
   const handleTogglePin = useCallback(
     (widgetId: string) => {
       setPrefs((prev) => {
-        const pinned = { ...prev.widgets.pinnedWidgets };
-        if (pinned[widgetId]) {
-          delete pinned[widgetId];
-        } else {
-          pinned[widgetId] = { side: "left" };
-        }
-        const updated = {
-          ...prev,
-          widgets: { ...prev.widgets, pinnedWidgets: pinned },
-        };
+        const updated = toggleWidgetPin(prev, widgetId);
         savePrefs(updated);
         return updated;
       });
@@ -465,6 +451,19 @@ export default function App() {
     };
     setPrefs(updated);
     savePrefs(updated);
+  }, []);
+
+  const handleToggleWindowPin = useCallback(() => {
+    const next = !prefsRef.current.window.pinned;
+    setPinned(next);
+    savePref("feedPinned", next);
+    const updated = {
+      ...prefsRef.current,
+      window: { ...prefsRef.current.window, pinned: next },
+    };
+    setPrefs(updated);
+    savePrefs(updated);
+    invoke("pin_window", { pinned: next }).catch(() => {});
   }, []);
 
   // ── Right-click → native context menu ──────────────────────────
@@ -526,23 +525,11 @@ export default function App() {
       items.push(await PredefinedMenuItem.new({ item: "Separator" }));
 
       // Pin on Top
-      const isPinned = prefsRef.current.window.pinned;
       items.push(
         await CheckMenuItem.new({
           text: "Pin on Top",
-          checked: isPinned,
-          action: () => {
-            const next = !isPinned;
-            setPinned(next);
-            savePref("feedPinned", next);
-            const updated = {
-              ...prefsRef.current,
-              window: { ...prefsRef.current.window, pinned: next },
-            };
-            setPrefs(updated);
-            savePrefs(updated);
-            invoke("pin_window", { pinned: next }).catch(() => {});
-          },
+          checked: prefsRef.current.window.pinned,
+          action: handleToggleWindowPin,
         }),
       );
 
@@ -550,16 +537,7 @@ export default function App() {
       items.push(
         await MenuItem.new({
           text: "Hide Ticker",
-          action: () => {
-            setTickerCollapsed(true);
-            savePref("tickerCollapsed", true);
-            const updated = {
-              ...prefsRef.current,
-              ticker: { ...prefsRef.current.ticker, showTicker: false },
-            };
-            setPrefs(updated);
-            savePrefs(updated);
-          },
+          action: handleHideTicker,
         }),
       );
 

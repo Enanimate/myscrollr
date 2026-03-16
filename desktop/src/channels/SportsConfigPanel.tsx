@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { Trophy } from "lucide-react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { SetupBrowser } from "../components/settings/SetupBrowser";
-import { channelsApi } from "../api/client";
-import { sportsCatalogOptions, queryKeys } from "../api/queries";
+import { useChannelConfig } from "../hooks/useChannelConfig";
+import { formatCountdown } from "../utils/gameHelpers";
+import { sportsCatalogOptions } from "../api/queries";
 import type { TrackedLeague } from "../api/queries";
 import type { Channel } from "../api/client";
 
@@ -20,40 +21,17 @@ interface SportsConfigPanelProps {
   hex: string;
 }
 
-// ── Helpers ──────────────────────────────────────────────────────
-
-function formatNextGame(dateStr: string | null): string | null {
-  if (!dateStr) return null;
-  const d = new Date(dateStr);
-  const diff = d.getTime() - Date.now();
-  if (diff <= 0) return "Starting";
-  const h = Math.floor(diff / 3_600_000);
-  if (h < 24) {
-    const m = Math.floor((diff % 3_600_000) / 60_000);
-    return h > 0 ? `in ${h}h ${m}m` : `in ${m}m`;
-  }
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
 // ── Component ────────────────────────────────────────────────────
 
 export default function SportsConfigPanel({
   channel,
   hex,
 }: SportsConfigPanelProps) {
-  const queryClient = useQueryClient();
-  const [error, setError] = useState<string | null>(null);
+  const { error, setError, saving, updateItems } = useChannelConfig<string[]>("sports", "leagues");
 
   const config = channel.config as SportsChannelConfig;
   const leagues = Array.isArray(config?.leagues) ? config.leagues : [];
   const leagueSet = useMemo(() => new Set(leagues), [leagues]);
-
-  // Auto-dismiss errors
-  useEffect(() => {
-    if (!error) return;
-    const t = setTimeout(() => setError(null), 4000);
-    return () => clearTimeout(t);
-  }, [error]);
 
   // ── Catalog query ──────────────────────────────────────────────
   const {
@@ -73,36 +51,19 @@ export default function SportsConfigPanel({
     [catalog],
   );
 
-  // ── Update mutation ────────────────────────────────────────────
-  const updateMutation = useMutation({
-    mutationFn: (nextLeagues: string[]) =>
-      channelsApi.update("sports", { config: { leagues: nextLeagues } }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard });
-    },
-    onError: () => {
-      setError("Failed to save — try again");
-    },
-  });
-
-  const updateLeagues = useCallback(
-    (next: string[]) => updateMutation.mutate(next),
-    [updateMutation],
-  );
-
   const addLeague = useCallback(
     (name: string) => {
       if (leagueSet.has(name)) return;
-      updateLeagues([...leagues, name]);
+      updateItems([...leagues, name]);
     },
-    [leagues, leagueSet, updateLeagues],
+    [leagues, leagueSet, updateItems],
   );
 
   const removeLeague = useCallback(
     (name: string) => {
-      updateLeagues(leagues.filter((l) => l !== name));
+      updateItems(leagues.filter((l) => l !== name));
     },
-    [leagues, updateLeagues],
+    [leagues, updateItems],
   );
 
   return (
@@ -150,8 +111,8 @@ export default function SportsConfigPanel({
                   )}
                   {item.game_count === 0 && (
                     <span className="text-fg-4/60">
-                      {formatNextGame(item.next_game)
-                        ? `Next: ${formatNextGame(item.next_game)}`
+                      {item.next_game
+                        ? `Next: ${formatCountdown(item.next_game)}`
                         : "Off-season"}
                     </span>
                   )}
@@ -171,15 +132,15 @@ export default function SportsConfigPanel({
         onDismissError={() => setError(null)}
         loading={catalogLoading}
         catalogError={catalogError}
-        saving={updateMutation.isPending}
+        saving={saving}
         onAdd={addLeague}
         onRemove={removeLeague}
-        onBulkAdd={(keys: string[]) => updateLeagues([...leagues, ...keys])}
+        onBulkAdd={(keys: string[]) => updateItems([...leagues, ...keys])}
         onBulkRemove={(keys: string[]) => {
           const toRemove = new Set(keys);
-          updateLeagues(leagues.filter((l) => !toRemove.has(l)));
+          updateItems(leagues.filter((l) => !toRemove.has(l)));
         }}
-        onClearAll={() => updateLeagues([])}
+        onClearAll={() => updateItems([])}
       />
     </div>
   );

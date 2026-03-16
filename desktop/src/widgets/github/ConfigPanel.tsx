@@ -1,70 +1,27 @@
-import { useState, useEffect, useCallback } from "react";
+import { useCallback } from "react";
 import {
   Section,
   ToggleRow,
-  SliderRow,
   SegmentedRow,
-  ResetButton,
+  SliderRow,
 } from "../../components/settings/SettingsControls";
-import type {
-  AppPreferences,
-  GitHubWidgetConfig,
-  GitHubTickerConfig,
-} from "../../preferences";
-import { DEFAULT_GITHUB_TICKER, savePrefs } from "../../preferences";
-import { useWidgetPin } from "../../hooks/useWidgetPin";
-import { LS_GITHUB_REPOS, PIN_SIDE_OPTIONS } from "../../constants";
-import { onStoreChange } from "../../lib/store";
-import { loadRepoData, repoKey } from "./types";
+import ConfigPanelLayout from "../../components/settings/ConfigPanelLayout";
+import TickerPinSection from "../../components/settings/TickerPinSection";
+import { useWidgetConfig } from "../../hooks/useWidgetConfig";
+import { useStoreData } from "../../hooks/useStoreData";
+import { DEFAULT_GITHUB_TICKER } from "../../preferences";
+import { formatPollInterval } from "../../utils/format";
+import { LS_GITHUB_REPOS } from "../../constants";
+import { loadRepoData, repoKey, CI_STATUS_LABELS } from "./types";
 import type { GitHubRepo } from "./types";
-
-interface GitHubConfigPanelProps {
-  prefs: AppPreferences;
-  onPrefsChange: (prefs: AppPreferences) => void;
-}
-
-const STATUS_LABELS: Record<string, string> = {
-  success: "Passing",
-  failure: "Failing",
-  in_progress: "Running",
-  unavailable: "Unavailable",
-};
+import type { WidgetConfigPanelProps } from "../../hooks/useWidgetConfig";
 
 export default function GitHubConfigPanel({
   prefs,
   onPrefsChange,
-}: GitHubConfigPanelProps) {
-  const config = prefs.widgets.github;
-  const [repoData, setRepoData] = useState<GitHubRepo[]>(loadRepoData);
-
-  const { isPinned, pinSide, togglePin, setPinSide } = useWidgetPin("github", prefs, onPrefsChange);
-
-  // Re-read when store changes (FeedTab refreshes data)
-  useEffect(() => {
-    return onStoreChange(LS_GITHUB_REPOS, () => setRepoData(loadRepoData()));
-  }, []);
-
-  const update = useCallback(
-    (patch: Partial<GitHubWidgetConfig>) => {
-      const next: AppPreferences = {
-        ...prefs,
-        widgets: {
-          ...prefs.widgets,
-          github: { ...config, ...patch },
-        },
-      };
-      onPrefsChange(next);
-      savePrefs(next);
-    },
-    [prefs, config, onPrefsChange],
-  );
-
-  const setTicker = useCallback(
-    (patch: Partial<GitHubTickerConfig>) => {
-      update({ ticker: { ...config.ticker, ...patch } });
-    },
-    [update, config.ticker],
-  );
+}: WidgetConfigPanelProps) {
+  const { config, update, setTicker } = useWidgetConfig("github", prefs, onPrefsChange);
+  const [repoData] = useStoreData(LS_GITHUB_REPOS, loadRepoData);
 
   const isRepoExcluded = (key: string) =>
     config.ticker.excludedRepos.includes(key);
@@ -87,30 +44,24 @@ export default function GitHubConfigPanel({
     });
   }, [update]);
 
-  // Status summary
   const passCount = repoData.filter((r) => r.status === "success").length;
   const failCount = repoData.filter((r) => r.status === "failure").length;
 
-  return (
-    <div className="w-full max-w-2xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center gap-3 mb-6 px-3">
-        <div
-          className="w-8 h-8 rounded-lg flex items-center justify-center"
-          style={{ background: "color-mix(in srgb, var(--color-widget-github) 15%, transparent)" }}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-widget-github)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4" />
-            <path d="M9 18c-4.51 2-5-2-7-2" />
-          </svg>
-        </div>
-        <div>
-          <h2 className="text-sm font-bold text-fg">GitHub Settings</h2>
-          <p className="text-[11px] text-fg-4">CI/Actions status for your repos</p>
-        </div>
-      </div>
+  const githubIcon = (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-widget-github)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4" />
+      <path d="M9 18c-4.51 2-5-2-7-2" />
+    </svg>
+  );
 
-      {/* Toolbar Preview */}
+  return (
+    <ConfigPanelLayout
+      icon={githubIcon}
+      hex="var(--color-widget-github)"
+      title="GitHub Settings"
+      subtitle="CI/Actions status for your repos"
+      onReset={resetAll}
+    >
       <Section title="Toolbar Preview">
         {repoData.length > 0 ? (
           <div className="px-3 py-2.5 text-[11px] text-fg-3 font-mono">
@@ -128,12 +79,11 @@ export default function GitHubConfigPanel({
         )}
       </Section>
 
-      {/* Ticker */}
       <Section title="Ticker">
         {config.repos.map((r) => {
           const key = repoKey(r);
           const rd = repoData.find((d) => repoKey(d) === key);
-          const statusLabel = rd ? STATUS_LABELS[rd.status] ?? "Unknown" : "Loading";
+          const statusLabel = rd ? CI_STATUS_LABELS[rd.status] ?? "Unknown" : "Loading";
           const workflow = rd?.workflowName ? ` \u00B7 ${rd.workflowName}` : "";
           return (
             <ToggleRow
@@ -150,23 +100,9 @@ export default function GitHubConfigPanel({
             Add repos in the GitHub tab to choose what shows on the ticker.
           </div>
         )}
-        <ToggleRow
-          label="Keep in a fixed spot"
-          description="Stay on one side instead of scrolling across"
-          checked={isPinned}
-          onChange={togglePin}
-        />
-        {isPinned && (
-          <SegmentedRow
-            label="Which side"
-            value={pinSide}
-            options={PIN_SIDE_OPTIONS}
-            onChange={setPinSide}
-          />
-        )}
+        <TickerPinSection widgetId="github" prefs={prefs} onPrefsChange={onPrefsChange} />
       </Section>
 
-      {/* Polling */}
       <Section title="Polling">
         <SliderRow
           label="Refresh interval"
@@ -175,17 +111,10 @@ export default function GitHubConfigPanel({
           min={60}
           max={300}
           step={30}
-          displayValue={config.pollInterval >= 60
-            ? `${Math.floor(config.pollInterval / 60)}m${config.pollInterval % 60 ? ` ${config.pollInterval % 60}s` : ""}`
-            : `${config.pollInterval}s`}
+          displayValue={formatPollInterval(config.pollInterval)}
           onChange={(v) => update({ pollInterval: v })}
         />
       </Section>
-
-      {/* Reset */}
-      <div className="flex items-center justify-end pt-2 px-3">
-        <ResetButton onClick={resetAll} />
-      </div>
-    </div>
+    </ConfigPanelLayout>
   );
 }

@@ -11,12 +11,13 @@
  */
 import { useState, useMemo, useCallback } from "react";
 import { useScrollrCDC } from "../../hooks/useScrollrCDC";
-import { isCloseGame } from "../chips/GameChip";
+import { isLive, isFinal, isPre, isCloseGame, getWinner, gameStatusLabel, formatCountdown } from "../../utils/gameHelpers";
 import { loadPref, savePref } from "../../preferences";
 import clsx from "clsx";
 import Tooltip from "../Tooltip";
 import type { Game, DashboardResponse } from "../../types";
 import type { SportsCardPrefs } from "./dashboardPrefs";
+import DashboardEmptyState from "./DashboardEmptyState";
 
 // ── Pinned game storage ─────────────────────────────────────────
 
@@ -31,52 +32,7 @@ function savePinned(pinned: PinnedMap): void {
   savePref(PINNED_KEY, pinned);
 }
 
-// ── Game state helpers ──────────────────────────────────────────
-
-function isLive(g: Game): boolean {
-  return g.state === "in" || g.state === "in_progress";
-}
-
-function isFinal(g: Game): boolean {
-  return g.state === "final" || g.state === "post";
-}
-
-function isPre(g: Game): boolean {
-  return g.state === "pre";
-}
-
-function getWinner(g: Game): "home" | "away" | null {
-  if (!isFinal(g)) return null;
-  const a = Number(g.away_team_score);
-  const h = Number(g.home_team_score);
-  if (isNaN(a) || isNaN(h) || a === h) return null;
-  return h > a ? "home" : "away";
-}
-
-function gameStatus(game: Game): string {
-  if (isLive(game)) return game.timer || game.status_short || "Live";
-  if (isFinal(game)) return game.status_long || "Final";
-  if (isPre(game)) return formatCountdown(game.start_time);
-  if (game.state === "postponed") return "PPD";
-  return "";
-}
-
-function formatCountdown(startTime: string): string {
-  const diff = new Date(startTime).getTime() - Date.now();
-  if (diff <= 0) return "Starting";
-  const h = Math.floor(diff / 3_600_000);
-  const m = Math.floor((diff % 3_600_000) / 60_000);
-  if (h >= 48) {
-    return new Date(startTime).toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-    });
-  }
-  if (h >= 24) return "Tomorrow";
-  if (h > 0) return `in ${h}h ${m}m`;
-  if (m > 0) return `in ${m}m`;
-  return "Soon";
-}
+// Game state helpers imported from utils/gameHelpers.ts
 
 function abbreviate(name: string): string {
   return name.slice(0, 3).toUpperCase();
@@ -142,7 +98,7 @@ function PrimaryGame({ game, prefs }: PrimaryGameProps) {
   const live = isLive(game);
   const pre = isPre(game);
   const winner = getWinner(game);
-  const status = gameStatus(game);
+  const status = gameStatusLabel(game);
 
   return (
     <div
@@ -426,17 +382,11 @@ export default function SportsSummary({ dashboard, prefs, onConfigure }: SportsS
 
   if (items.length === 0) {
     return (
-      <div className="flex flex-col gap-2 py-1">
-        <p className="text-[11px] text-fg-4">No games right now</p>
-        {onConfigure && (
-          <button
-            onClick={onConfigure}
-            className="text-[11px] font-medium text-accent hover:text-accent/80 transition-colors self-start"
-          >
-            Add leagues &rarr;
-          </button>
-        )}
-      </div>
+      <DashboardEmptyState
+        message="No games right now"
+        actionLabel={onConfigure ? "Add leagues \u2192" : undefined}
+        onAction={onConfigure}
+      />
     );
   }
 

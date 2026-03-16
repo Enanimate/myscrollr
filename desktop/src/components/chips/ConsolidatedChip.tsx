@@ -7,7 +7,9 @@
 import { clsx } from "clsx";
 import { Pin, PinOff } from "lucide-react";
 import type { ChipColorMode } from "../../preferences";
-import { getChipColors } from "./chipColors";
+import { getChipColors, chipBaseClasses } from "./chipColors";
+import { MONITOR_STATUS_COLORS } from "../../widgets/uptime/types";
+import { CI_STATUS_COLORS } from "../../widgets/github/types";
 import type {
   ClockChipData,
   WeatherChipData,
@@ -37,24 +39,6 @@ function isUptime(item: ChipItem): item is UptimeChipData {
 function isGithub(item: ChipItem): item is GitHubChipData {
   return "workflowName" in item;
 }
-
-// ── Uptime status dot color ─────────────────────────────────────
-
-const UPTIME_DOT_COLORS: Record<string, string> = {
-  up: "bg-up",
-  down: "bg-down",
-  pending: "bg-warning",
-  maintenance: "bg-info",
-};
-
-// ── GitHub CI status dot color ───────────────────────────────────
-
-const CI_DOT_COLORS: Record<string, string> = {
-  success: "bg-up",
-  failure: "bg-down",
-  in_progress: "bg-warning",
-  unavailable: "bg-fg-4",
-};
 
 // ── Heartbeat mini bar ──────────────────────────────────────────
 
@@ -113,15 +97,10 @@ export default function ConsolidatedChip({
     <button
       onClick={onClick}
       className={clsx(
-        "ticker-chip group relative",
-        "px-3 rounded-sm border",
-        "font-mono whitespace-nowrap",
-        "transition-colors cursor-pointer",
-        c.bg, c.border, c.hoverBorder,
+        chipBaseClasses(comfort, c, "relative font-mono whitespace-nowrap"),
         anyHot && "border-error/30",
         anyDown && "border-down/30",
         anyFailing && "border-down/30",
-        comfort ? "flex flex-col items-start py-1.5 gap-0.5" : "flex items-center gap-2 py-1 text-[13px]",
       )}
     >
       {/* Pin toggle (hover-only) */}
@@ -152,12 +131,12 @@ export default function ConsolidatedChip({
             </span>
             {isGithub(item) ? (
               <>
-                <span className={clsx("w-1.5 h-1.5 rounded-full inline-block mr-1", CI_DOT_COLORS[item.status] ?? "bg-fg-4")} />
+                <span className={clsx("w-1.5 h-1.5 rounded-full inline-block mr-1", CI_STATUS_COLORS[item.status] ?? "bg-fg-4")} />
                 <span className={c.text}>{item.workflowName}</span>
               </>
             ) : isUptime(item) ? (
               <>
-                <span className={clsx("w-1.5 h-1.5 rounded-full inline-block mr-1", UPTIME_DOT_COLORS[item.status] ?? "bg-fg-4")} />
+                <span className={clsx("w-1.5 h-1.5 rounded-full inline-block mr-1", MONITOR_STATUS_COLORS[item.status] ?? "bg-fg-4")} />
                 <span className={c.text}>{item.uptime}</span>
               </>
             ) : isWeather(item) ? (
