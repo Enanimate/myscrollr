@@ -47,7 +47,7 @@ All paid tiers include a 7-day free trial.
 - [ ] Update CI workflow to use OS-level signing credentials (currently only has minisign for updater artifacts)
 
 ### Billing & Monetization
-> **Backend role gap:** Pro tier has no backend role — it maps to the same `uplink` role as Uplink. `tierFromRoles()` only knows `free`, `uplink`, `uplink_unlimited`. The backend cannot distinguish Uplink from Pro users. Also: rename `uplink_unlimited` → `uplink_ultimate` everywhere (Logto, Go backend, TypeScript types, DB).
+> Resolved: all four tiers (free / uplink / uplink_pro / uplink_ultimate) now have distinct backend roles, Stripe products, and frontend types.
 - [x] Rename `uplink_unlimited` → `uplink_ultimate` across codebase (Logto role, `tierFromRoles()`, `planFromPriceID()`, TypeScript `SubscriptionTier` type, DB values) and display name to "Uplink Ultimate"
 - [x] Add `uplink_pro` backend role to Logto and update `tierFromRoles()` / `planFromPriceID()` to distinguish all four tiers
 - [x] Create Stripe products/prices for all tiers (Uplink, Pro, Ultimate, Lifetime) and 50% off lifetime coupon in Stripe sandbox
@@ -55,7 +55,7 @@ All paid tiers include a 7-day free trial.
 - [ ] Handle Stripe Customer Portal browser handoff from desktop app (can't embed — needs browser redirect)
 - [ ] Add webhook event idempotency (deduplicate redelivered Stripe events)
 - [ ] Handle failed payments / dunning (grace period + user notification — `invoice.payment_failed` currently sets `past_due` but does nothing else)
-- [ ] Verify 7-day free trial is implemented in Stripe checkout flow (promised on pricing page)
+- [ ] Implement 7-day free trial in Stripe checkout flow (not currently active — Stripe charges immediately; needs `subscription_data.trial_period_days` in checkout session params)
 - [ ] Test full billing lifecycle (subscribe → use → upgrade → downgrade → cancel → resubscribe)
 - [ ] Billing UI in desktop app (current plan, usage, manage subscription link)
 
@@ -65,7 +65,8 @@ All paid tiers include a 7-day free trial.
 ### Legal Doc Sync
 > **Pricing page and legal documents are out of sync.** Legal docs reference old pricing and quarterly billing that no longer exists.
 - [ ] Update legal documents to match current pricing and tier names (Terms of Service, Privacy Policy)
-- [ ] Remove quarterly billing references from legal docs and `SubscriptionStatus` type (`quarterly`, `unlimited_quarterly`, `legacy_quarterly`)
+- [x] Remove quarterly billing references from `SubscriptionStatus` type and `planFromPriceID` (removed in tier rename PR)
+- [ ] Remove quarterly billing references from legal docs text
 
 ### Phase 1 Validation
 - [x] Auto-updater implemented with progress UI and GitHub releases endpoint
@@ -119,11 +120,11 @@ All paid tiers include a 7-day free trial.
 
 ### Pricing Page
 > **No "Coming Soon" labels exist on the pricing page.** Unbuilt features are presented as included. Pricing page also needs to reflect the new tier names, limits, and structure.
-- [ ] Rewrite pricing page to reflect new tier names (Uplink / Uplink Pro / Uplink Ultimate), limits, and structure
+- [x] Rewrite pricing page to reflect new tier names (Uplink / Uplink Pro / Uplink Ultimate), limits, and structure
 - [ ] Mark post-v1 features as "Coming Soon": Custom alerts, Feed profiles, Webhooks, Data export, API access
 - [ ] Remove feed retention from pricing page (internal concern, not a user-facing feature)
 - [ ] Remove referral program from pricing page (no backend support exists)
-- [ ] Verify lifetime deal page reflects correct tier name (Uplink Ultimate) and current pricing
+- [x] Verify lifetime deal page reflects correct tier name (Uplink Ultimate) and current pricing
 
 ### Stability & Error Handling
 - [ ] Test and fix auth token expiry / silent refresh behavior
