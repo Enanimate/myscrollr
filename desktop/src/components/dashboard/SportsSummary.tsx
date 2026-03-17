@@ -11,32 +11,19 @@
  */
 import { useState, useMemo, useCallback } from "react";
 import { useScrollrCDC } from "../../hooks/useScrollrCDC";
-import { isLive, isFinal, isPre, isCloseGame, getWinner, gameStatusLabel, formatCountdown } from "../../utils/gameHelpers";
-import { loadPref, savePref } from "../../preferences";
+import { isLive, isFinal, isPre, isCloseGame, getWinner, gameStatusLabel, formatCountdown, abbreviateTeam } from "../../utils/gameHelpers";
+import { useDashboardPin } from "../../hooks/useDashboardPin";
 import clsx from "clsx";
 import Tooltip from "../Tooltip";
 import type { Game, DashboardResponse } from "../../types";
 import type { SportsCardPrefs } from "./dashboardPrefs";
 import DashboardEmptyState from "./DashboardEmptyState";
 
-// ── Pinned game storage ─────────────────────────────────────────
-
-const PINNED_KEY = "dashboard:sports:pinnedGames";
 type PinnedMap = Record<string, string>;
-
-function loadPinned(): PinnedMap {
-  return loadPref<PinnedMap>(PINNED_KEY, {});
-}
-
-function savePinned(pinned: PinnedMap): void {
-  savePref(PINNED_KEY, pinned);
-}
 
 // Game state helpers imported from utils/gameHelpers.ts
 
-function abbreviate(name: string): string {
-  return name.slice(0, 3).toUpperCase();
-}
+
 
 /** Score difference — lower = closer = more exciting. */
 function scoreDiff(g: Game): number {
@@ -251,7 +238,7 @@ function CompactChip({ game, onPromote, showFinals, showUpcoming }: CompactChipP
           <span className="w-1 h-1 rounded-full bg-live shrink-0 animate-pulse" />
         )}
         <span className={live ? "font-semibold" : ""}>
-          {abbreviate(game.away_team_name)}
+          {abbreviateTeam(game.away_team_name)}
         </span>
         {pre ? (
           <span className="text-fg-4">vs</span>
@@ -263,7 +250,7 @@ function CompactChip({ game, onPromote, showFinals, showUpcoming }: CompactChipP
           </>
         )}
         <span className={live ? "font-semibold" : ""}>
-          {abbreviate(game.home_team_name)}
+          {abbreviateTeam(game.home_team_name)}
         </span>
         {final && <span className="text-fg-4 text-[9px]">F</span>}
         {pre && <span className="text-fg-4 text-[9px]">{formatCountdown(game.start_time)}</span>}
@@ -346,15 +333,11 @@ export default function SportsSummary({ dashboard, prefs, onConfigure }: SportsS
     maxItems: 200,
   });
 
-  const [pinned, setPinned] = useState<PinnedMap>(loadPinned);
+  const [pinned, setPinned] = useDashboardPin<PinnedMap>("dashboard:sports:pinnedGames", {});
 
   const handlePin = useCallback((league: string, gameId: string) => {
-    setPinned((prev) => {
-      const next = { ...prev, [league]: gameId };
-      savePinned(next);
-      return next;
-    });
-  }, []);
+    setPinned({ ...pinned, [league]: gameId });
+  }, [pinned, setPinned]);
 
   // Group and sort — same logic as the full FeedTab
   const grouped = useMemo(() => {

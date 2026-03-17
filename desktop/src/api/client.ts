@@ -120,6 +120,23 @@ export const channelsApi = {
     ),
 };
 
+// ── Channel visibility toggle ───────────────────────────────────
+
+/**
+ * Toggle a channel's visibility (and optionally mark it enabled).
+ * Returns a promise that resolves when the API call completes.
+ * Callers are responsible for invalidating queries afterward.
+ */
+export async function toggleChannelVisibility(
+  channelType: ChannelType,
+  visible: boolean,
+  enabled?: boolean,
+): Promise<void> {
+  const payload: { visible: boolean; enabled?: boolean } = { visible };
+  if (enabled !== undefined) payload.enabled = enabled;
+  await channelsApi.update(channelType, payload);
+}
+
 // ── RSS Types & API ─────────────────────────────────────────────
 
 export interface TrackedFeed {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useCallback } from "react";
 import {
   Section,
   ToggleRow,
@@ -8,28 +8,16 @@ import {
 import ConfigPanelLayout from "../../components/settings/ConfigPanelLayout";
 import TickerPinSection from "../../components/settings/TickerPinSection";
 import { useWidgetConfig } from "../../hooks/useWidgetConfig";
+import { useTickerExclusion } from "../../hooks/useTickerExclusion";
 import { useStoreData } from "../../hooks/useStoreData";
-import { getStore, setStore } from "../../lib/store";
+import { setStore } from "../../lib/store";
 import { DEFAULT_CLOCK_TICKER, DEFAULT_CLOCK_POMODORO } from "../../preferences";
 import { LS_CLOCK_FORMAT, LS_CLOCK_TIMEZONES } from "../../constants";
+import { loadTimezones, loadFormat, tzLabel } from "./storage";
 import type { ClockPomodoroConfig } from "../../preferences";
 import type { WidgetConfigPanelProps } from "../../hooks/useWidgetConfig";
 
 type ClockFormat = "12h" | "24h";
-
-function loadTimezones(): string[] {
-  const tzs = getStore<string[]>(LS_CLOCK_TIMEZONES, ["America/New_York", "Europe/London", "Asia/Tokyo"]);
-  return Array.isArray(tzs) ? tzs : ["America/New_York", "Europe/London", "Asia/Tokyo"];
-}
-
-function loadFormat(): ClockFormat {
-  const f = getStore<string>(LS_CLOCK_FORMAT, "12h");
-  return f === "12h" || f === "24h" ? (f as ClockFormat) : "12h";
-}
-
-function tzLabel(tz: string): string {
-  return tz.split("/").pop()?.replace(/_/g, " ") ?? tz;
-}
 
 const FORMAT_OPTIONS: { value: ClockFormat; label: string }[] = [
   { value: "12h", label: "12h" },
@@ -51,6 +39,8 @@ export default function ClockConfigPanel({
   const { config, update, setTicker } = useWidgetConfig("clock", prefs, onPrefsChange);
   const [format, setFormatState] = useStoreData(LS_CLOCK_FORMAT, loadFormat);
   const [timezones] = useStoreData(LS_CLOCK_TIMEZONES, loadTimezones);
+  const { isExcluded: isTimezoneExcluded, toggle: toggleTimezone } =
+    useTickerExclusion(config.ticker.excludedTimezones, "excludedTimezones", setTicker);
 
   const setPomodoro = useCallback(
     (patch: Partial<ClockPomodoroConfig>) => {
@@ -65,20 +55,6 @@ export default function ClockConfigPanel({
       setStore(LS_CLOCK_FORMAT, v);
     },
     [],
-  );
-
-  const isTimezoneExcluded = (tz: string) =>
-    config.ticker.excludedTimezones.includes(tz);
-
-  const toggleTimezone = useCallback(
-    (tz: string) => {
-      const excluded = config.ticker.excludedTimezones;
-      const next = excluded.includes(tz)
-        ? excluded.filter((t) => t !== tz)
-        : [...excluded, tz];
-      setTicker({ excludedTimezones: next });
-    },
-    [config.ticker.excludedTimezones, setTicker],
   );
 
   const resetAll = useCallback(() => {

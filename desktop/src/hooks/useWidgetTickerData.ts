@@ -7,7 +7,8 @@ import { LS_CLOCK_TIMEZONES, LS_CLOCK_FORMAT, LS_TIMER_STATE, LS_WEATHER_CITIES,
 import { getStore } from "../lib/store";
 import { formatBytes, timeAgo } from "../utils/format";
 import { weatherCodeToIcon, weatherCodeToLabel, formatTemp } from "../widgets/weather/types";
-import { findCpuTemp, findGpuTemp, formatComponentTemp } from "../widgets/sysmon/utils";
+import { findCpuTemp, findGpuTemp } from "../widgets/sysmon/utils";
+import { tzLabel } from "../widgets/clock/storage";
 import type { ClockChipData, WeatherChipData, SysmonChipData, UptimeChipData, GitHubChipData, WidgetTickerData } from "../types";
 import type { TimerState } from "../widgets/clock/types";
 import type { SavedCity } from "../widgets/weather/types";
@@ -45,7 +46,7 @@ function formatDetail(date: Date, tz: string | undefined): string {
 }
 
 function tzShortLabel(tz: string): string {
-  const city = tz.split("/").pop()?.replace(/_/g, " ") ?? tz;
+  const city = tzLabel(tz);
   // Abbreviate long city names for compact ticker chips
   if (city.length > 10) {
     const words = city.split(" ");
@@ -190,7 +191,7 @@ export function useWidgetTickerData(
       const pct = Math.round(info.cpuUsage);
       const freq = info.cpuFreqMhz ? `${(info.cpuFreqMhz / 1000).toFixed(1)} GHz` : "";
       const sensor = findCpuTemp(info.components);
-      const temp = sensor ? formatComponentTemp(sensor.temp, tu) : "";
+      const temp = sensor ? formatTemp(sensor.temp, tu, true) : "";
       chips.push({
         id: "sysmon-cpu",
         label: "CPU",
@@ -217,7 +218,7 @@ export function useWidgetTickerData(
       const pct = Math.round(info.gpuUsage);
       const clock = info.gpuClockMhz ? `${info.gpuClockMhz} MHz` : "";
       const sensor = findGpuTemp(info.components);
-      const temp = sensor ? formatComponentTemp(sensor.temp, tu) : "";
+      const temp = sensor ? formatTemp(sensor.temp, tu, true) : "";
       chips.push({
         id: "sysmon-gpu",
         label: "GPU",

@@ -7,7 +7,7 @@
 import { useCallback } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { channelsApi } from "../api/client";
+import { channelsApi, toggleChannelVisibility } from "../api/client";
 import { queryKeys } from "../api/queries";
 import type { ChannelType } from "../api/client";
 
@@ -24,7 +24,7 @@ export function useChannelActions(): ChannelActions {
   const handleToggleChannel = useCallback(
     async (channelType: ChannelType, visible: boolean) => {
       try {
-        await channelsApi.update(channelType, { enabled: true, visible });
+        await toggleChannelVisibility(channelType, visible, true);
         queryClient.invalidateQueries({ queryKey: queryKeys.dashboard });
       } catch (err) {
         console.error("[Scrollr] Channel toggle failed:", err);
