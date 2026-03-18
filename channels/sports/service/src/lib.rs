@@ -15,7 +15,7 @@ pub mod database;
 pub mod types;
 
 /// Number of days ahead to poll in the schedule task.
-const SCHEDULE_DAYS_AHEAD: i64 = 7;
+const SCHEDULE_DAYS_AHEAD: i64 = 0;
 
 // =============================================================================
 // Service initialization (runs once on startup)
@@ -148,7 +148,7 @@ pub async fn poll_live(
 // Schedule polling (slow — today + 7 days ahead, every 30 min)
 // =============================================================================
 
-/// Poll today through 7 days ahead to populate the upcoming schedule.
+/// Poll today's games to populate the upcoming schedule.
 /// Also cleans up finished games older than 12 hours.
 pub async fn poll_schedule(
     pool: &Arc<PgPool>,
@@ -198,11 +198,11 @@ pub async fn poll_schedule(
 
     info!("Schedule poll complete: {} upserted, {} failed", total_upserted, total_failed);
 
-    // Clean up old finished games
+    // Clean up stale games
     match cleanup_old_games(pool).await {
         Ok(count) => {
             if count > 0 {
-                info!("Cleaned up {} old finished games", count);
+                info!("Cleaned up {} stale games", count);
             }
         }
         Err(e) => warn!("Failed to clean up old games: {}", e),

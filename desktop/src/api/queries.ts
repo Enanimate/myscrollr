@@ -69,6 +69,7 @@ export interface TrackedLeague {
   game_count: number;
   live_count: number;
   next_game: string | null;
+  is_offseason: boolean;
 }
 
 export interface TrackedSymbol {

@@ -61,6 +61,8 @@ pub struct LeagueConfig {
     pub season: Option<String>,
     #[serde(default)]
     pub season_format: Option<String>,
+    #[serde(default)]
+    pub offseason_months: Option<Vec<i32>>,
 }
 
 /// Stored league row read back from the database.
@@ -75,6 +77,7 @@ pub struct TrackedLeague {
     pub logo_url: Option<String>,
     pub season: Option<String>,
     pub season_format: Option<String>,
+    pub offseason_months: Option<Vec<i32>>,
 }
 
 // =============================================================================
@@ -150,6 +153,7 @@ pub async fn create_tables(pool: &Arc<PgPool>) -> Result<()> {
             logo_url VARCHAR(500),
             season VARCHAR(20),
             season_format VARCHAR(20),
+            offseason_months INTEGER[],
             is_enabled BOOLEAN DEFAULT TRUE,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
@@ -188,6 +192,7 @@ pub async fn run_migrations(pool: &Arc<PgPool>) -> Result<()> {
         "ALTER TABLE tracked_leagues ADD COLUMN IF NOT EXISTS logo_url VARCHAR(500)",
         "ALTER TABLE tracked_leagues ADD COLUMN IF NOT EXISTS season VARCHAR(20)",
         "ALTER TABLE tracked_leagues ADD COLUMN IF NOT EXISTS season_format VARCHAR(20)",
+        "ALTER TABLE tracked_leagues ADD COLUMN IF NOT EXISTS offseason_months INTEGER[]",
     ];
 
     let mut connection = pool.acquire().await?;
@@ -207,7 +212,7 @@ pub async fn run_migrations(pool: &Arc<PgPool>) -> Result<()> {
 
 pub async fn get_tracked_leagues(pool: Arc<PgPool>) -> Vec<TrackedLeague> {
     let statement = "
-        SELECT name, sport_api, api_host, league_id, category, country, logo_url, season, season_format
+        SELECT name, sport_api, api_host, league_id, category, country, logo_url, season, season_format, offseason_months
         FROM tracked_leagues
         WHERE is_enabled = TRUE
     ";
@@ -228,8 +233,8 @@ pub async fn get_tracked_leagues(pool: Arc<PgPool>) -> Vec<TrackedLeague> {
 
 pub async fn seed_tracked_leagues(pool: Arc<PgPool>, leagues: Vec<LeagueConfig>) -> Result<()> {
     let statement = "
-        INSERT INTO tracked_leagues (name, sport_api, api_host, league_id, category, country, logo_url, season, season_format)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        INSERT INTO tracked_leagues (name, sport_api, api_host, league_id, category, country, logo_url, season, season_format, offseason_months)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         ON CONFLICT (name) DO UPDATE SET
             sport_api = EXCLUDED.sport_api,
             api_host = EXCLUDED.api_host,
@@ -238,7 +243,8 @@ pub async fn seed_tracked_leagues(pool: Arc<PgPool>, leagues: Vec<LeagueConfig>)
             country = EXCLUDED.country,
             logo_url = EXCLUDED.logo_url,
             season = EXCLUDED.season,
-            season_format = EXCLUDED.season_format
+            season_format = EXCLUDED.season_format,
+            offseason_months = EXCLUDED.offseason_months
     ";
     let mut connection = pool.acquire().await?;
     for league in leagues {
@@ -252,6 +258,7 @@ pub async fn seed_tracked_leagues(pool: Arc<PgPool>, leagues: Vec<LeagueConfig>)
             .bind(&league.logo_url)
             .bind(&league.season)
             .bind(&league.season_format)
+            .bind(&league.offseason_months)
             .execute(&mut *connection)
             .await?;
     }
@@ -281,11 +288,14 @@ pub async fn truncate_games(pool: &Arc<PgPool>) -> Result<()> {
     Ok(())
 }
 
-/// Delete finished games older than 12 hours. Returns the number of rows deleted.
+/// Delete stale games. Final/postponed games older than 12h, and live games
+/// not seen in 4h (API stopped returning them).
 pub async fn cleanup_old_games(pool: &Arc<PgPool>) -> Result<u64> {
     let mut connection = pool.acquire().await?;
     let result = query(
-        "DELETE FROM games WHERE state IN ('final', 'post') AND start_time < NOW() - INTERVAL '12 hours'"
+        "DELETE FROM games WHERE
+            (state IN ('final', 'postponed') AND start_time < NOW() - INTERVAL '12 hours')
+            OR (state = 'in' AND updated_at < NOW() - INTERVAL '4 hours')"
     )
     .execute(&mut *connection)
     .await?;
