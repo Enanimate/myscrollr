@@ -234,8 +234,6 @@ services:
       - "3004:3004"
     environment:
       - DATABASE_URL=postgres://myscrollr_test:myscrollr_test@test-postgres:5432/myscrollr_test?sslmode=disable
-    volumes:
-      - ./channels/rss/service/configs/feeds.test.json:/app/configs/feeds.json:ro
     restart: unless-stopped
 
   # =============================================================================
