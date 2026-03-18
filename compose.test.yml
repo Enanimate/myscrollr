@@ -1,0 +1,273 @@
+# compose.test.yml — Full isolated test stack for dev.enanimate.dev
+#
+# Deploy this as a single Coolify Docker Compose application.
+# All services share the same Docker network. No real third-party APIs are called.
+#
+# Setup in Coolify:
+#   1. Create a new Docker Compose app pointing at this repo
+#   2. Set the compose path to: compose.test.yml
+#   3. Set the following Build Pack / Dockerfile override:
+#      - Core API: api/Dockerfile.test  (ARG: COOLIFY_FQDN=dev.enanimate.dev)
+#      - All other services: use their default Dockerfiles
+#   4. Add all Environment Variables below to Coolify's env config
+#   5. Deploy
+#
+# To rebuild after code changes: trigger a new build in Coolify.
+# The mock servers in testing/mocks/ are built automatically from their Dockerfiles.
+
+name: myscrollr-test
+
+services:
+
+  # =============================================================================
+  # Infrastructure
+  # =============================================================================
+
+  test-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: myscrollr_test
+      POSTGRES_USER: myscrollr_test
+      POSTGRES_PASSWORD: myscrollr_test
+    ports:
+      - "5433:5432"
+    volumes:
+      - test-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U myscrollr_test -d myscrollr_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  test-redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # =============================================================================
+  # Mock third-party APIs
+  # =============================================================================
+
+  mock-logto:
+    build:
+      context: ./testing/mocks/logto
+      dockerfile: Dockerfile
+    ports:
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9001/oidc/jwks || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mock-twelvedata:
+    build:
+      context: ./testing/mocks/twelvedata
+      dockerfile: Dockerfile
+    ports:
+      - "9002:9002"  # REST
+      - "9003:9003"  # WebSocket
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9002/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mock-apisports:
+    build:
+      context: ./testing/mocks/apisports
+      dockerfile: Dockerfile
+    ports:
+      - "9004:9004"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9004/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mock-yahoo:
+    build:
+      context: ./testing/mocks/yahoo
+      dockerfile: Dockerfile
+    ports:
+      - "9005:9005"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9005/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mock-stripe:
+    image: stripe/stripe-mock:v0.182.0
+    ports:
+      - "12111:12111"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:12111 || exit 0"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # =============================================================================
+  # Core Gateway API
+  # =============================================================================
+  #
+  # Build from api/Dockerfile.test with COOLIFY_FQDN=dev.enanimate.dev baked in.
+  # The LOGTO_* and YAHOO_CALLBACK_URL env vars below override the image's
+  # baked-in values so the service points at the mock containers.
+
+  core-api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile.test
+      args:
+        COOLIFY_FQDN: dev.enanimate.dev
+    ports:
+      - "8080:8080"
+    environment:
+      - DATABASE_URL=postgres://myscrollr_test:myscrollr_test@test-postgres:5432/myscrollr_test?sslmode=disable
+      - REDIS_URL=redis://test-redis:6379/0
+      - LOGTO_ENDPOINT=http://mock-logto:9001
+      - LOGTO_JWKS_URL=http://mock-logto:9001/oidc/jwks
+      - LOGTO_URL=http://dev.enanimate.dev/oidc
+      - LOGTO_M2M_RESOURCE=http://dev.enanimate.dev/api
+      - LOGTO_M2M_APP_ID=${LOGTO_M2M_APP_ID:-mock_app_id}
+      - LOGTO_M2M_APP_SECRET=${LOGTO_M2M_APP_SECRET:-mock_app_secret}
+      - LOGTO_UPLINK_ROLE_ID=${LOGTO_UPLINK_ROLE_ID:-mock_uplink_role}
+      - LOGTO_PRO_ROLE_ID=${LOGTO_PRO_ROLE_ID:-mock_pro_role}
+      - LOGTO_ULTIMATE_ROLE_ID=${LOGTO_ULTIMATE_ROLE_ID:-mock_ultimate_role}
+      - STRIPE_SECRET_KEY=sk_test_mock
+      - STRIPE_API_URL=http://mock-stripe:12111
+      - STRIPE_PUBLISHABLE_KEY=pk_test_mock
+      - STRIPE_WEBHOOK_SECRET=whsec_test_mock
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://dev.enanimate.dev,http://localhost:5174}
+    restart: unless-stopped
+
+  # =============================================================================
+  # Finance Channel
+  # =============================================================================
+
+  scrollr-finance-api:
+    build:
+      context: ./channels/finance/api
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8081"
+    environment:
+      - DATABASE_URL=postgres://myscrollr_test:myscrollr_test@test-postgres:5432/myscrollr_test?sslmode=disable
+      - REDIS_URL=redis://test-redis:6379/0
+      - INTERNAL_FINANCE_URL=http://scrollr-finance-service:3001
+      - CHANNEL_URL=http://localhost:8081
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://dev.enanimate.dev,http://localhost:5174}
+    restart: unless-stopped
+
+  scrollr-finance-service:
+    build:
+      context: ./channels/finance/service
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      - DATABASE_URL=postgres://myscrollr_test:myscrollr_test@test-postgres:5432/myscrollr_test?sslmode=disable
+      - TWELVEDATA_API_KEY=${TWELVEDATA_API_KEY:-test_twelvedata_key}
+      - TWELVEDATA_WS_URL=http://mock-twelvedata:9003/v1/quotes/price
+      - TWELVEDATA_REST_URL=http://mock-twelvedata:9002
+    restart: unless-stopped
+
+  # =============================================================================
+  # Sports Channel
+  # =============================================================================
+
+  scrollr-sports-api:
+    build:
+      context: ./channels/sports/api
+      dockerfile: Dockerfile
+    ports:
+      - "8082:8082"
+    environment:
+      - DATABASE_URL=postgres://myscrollr_test:myscrollr_test@test-postgres:5432/myscrollr_test?sslmode=disable
+      - REDIS_URL=redis://test-redis:6379/0
+      - INTERNAL_SPORTS_URL=http://scrollr-sports-service:3002
+      - CHANNEL_URL=http://localhost:8082
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://dev.enanimate.dev,http://localhost:5174}
+    restart: unless-stopped
+
+  scrollr-sports-service:
+    build:
+      context: ./channels/sports/service
+      dockerfile: Dockerfile
+    ports:
+      - "3002:3002"
+    environment:
+      - DATABASE_URL=postgres://myscrollr_test:myscrollr_test@test-postgres:5432/myscrollr_test?sslmode=disable
+      - API_SPORTS_KEY=${API_SPORTS_KEY:-test_api_sports_key}
+      - API_SPORTS_BASE_URL=http://mock-apisports:9004
+    restart: unless-stopped
+
+  # =============================================================================
+  # RSS Channel
+  # =============================================================================
+
+  scrollr-rss-api:
+    build:
+      context: ./channels/rss/api
+      dockerfile: Dockerfile
+    ports:
+      - "8083:8083"
+    environment:
+      - DATABASE_URL=postgres://myscrollr_test:myscrollr_test@test-postgres:5432/myscrollr_test?sslmode=disable
+      - REDIS_URL=redis://test-redis:6379/0
+      - INTERNAL_RSS_URL=http://scrollr-rss-service:3004
+      - CHANNEL_URL=http://localhost:8083
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://dev.enanimate.dev,http://localhost:5174}
+    restart: unless-stopped
+
+  scrollr-rss-service:
+    build:
+      context: ./channels/rss/service
+      dockerfile: Dockerfile
+    ports:
+      - "3004:3004"
+    environment:
+      - DATABASE_URL=postgres://myscrollr_test:myscrollr_test@test-postgres:5432/myscrollr_test?sslmode=disable
+    volumes:
+      - ./channels/rss/service/configs/feeds.test.json:/app/configs/feeds.json:ro
+    restart: unless-stopped
+
+  # =============================================================================
+  # Fantasy Channel
+  # =============================================================================
+
+  scrollr-fantasy-api:
+    build:
+      context: ./channels/fantasy/api
+      dockerfile: Dockerfile
+    ports:
+      - "8084:8084"
+    environment:
+      - DATABASE_URL=postgres://myscrollr_test:myscrollr_test@test-postgres:5432/myscrollr_test?sslmode=disable
+      - REDIS_URL=redis://test-redis:6379/0
+      - COOLIFY_FQDN=dev.enanimate.dev
+      - YAHOO_CLIENT_ID=${YAHOO_CLIENT_ID:-test_yahoo_client_id}
+      - YAHOO_CLIENT_SECRET=${YAHOO_CLIENT_SECRET:-test_yahoo_client_secret}
+      - YAHOO_CALLBACK_URL=http://dev.enanimate.dev/yahoo/callback
+      - YAHOO_API_BASE_URL=http://mock-yahoo:9005
+      - YAHOO_TOKEN_URL=http://mock-yahoo:9005/oauth2/get_token
+      - YAHOO_AUTH_URL=http://mock-yahoo:9005/oauth2/request_auth
+      - FRONTEND_URL=${FRONTEND_URL:-http://dev.enanimate.dev}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://dev.enanimate.dev,http://localhost:5174}
+      - SYNC_ENABLED=${SYNC_ENABLED:-false}
+      - SYNC_INTERVAL_SECS=${SYNC_INTERVAL_SECS:-120}
+      - SYNC_CONCURRENCY=${SYNC_CONCURRENCY:-40}
+    restart: unless-stopped
+
+# =============================================================================
+# Volumes
+# =============================================================================
+
+volumes:
+  test-postgres-data:
