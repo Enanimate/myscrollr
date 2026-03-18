@@ -1,4 +1,5 @@
 FROM golang:1.21-alpine AS builder
+RUN apk add --no-cache ca-certificates curl
 
 WORKDIR /app
 COPY go.mod ./

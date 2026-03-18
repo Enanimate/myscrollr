@@ -69,7 +69,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:9001/oidc/jwks || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:9001/oidc/jwks || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -85,7 +85,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:9002/health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:9002/health || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -100,7 +100,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:9004/health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:9004/health || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -115,7 +115,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:9005/health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:9005/health || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -128,7 +128,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:12111 || exit 0"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:12111 || exit 0"]
       interval: 5s
       timeout: 5s
       retries: 10
