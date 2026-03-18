@@ -1,21 +1,19 @@
-name: myscrollr-test
+version: "3.8"
 
 services:
   core-api:
     build:
       context: ./api
-      dockerfile: Dockerfile.test
+      dockerfile: Dockerfile
       args:
-        COOLIFY_FQDN: dev.enanimate.dev
-    ports:
-      - "8080:8080"
+        COOLIFY_FQDN: core.api.myscrollr.enanimate.dev
     environment:
-      - DATABASE_URL=postgres://myscrollr_test:myscrollr_test@test-postgres:5432/myscrollr_test?sslmode=disable
-      - REDIS_URL=redis://test-redis:6379/0
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
       - LOGTO_ENDPOINT=http://mock-logto:9001
       - LOGTO_JWKS_URL=http://mock-logto:9001/oidc/jwks
-      - LOGTO_URL=http://dev.enanimate.dev/oidc
-      - LOGTO_M2M_RESOURCE=http://dev.enanimate.dev/api
+      - LOGTO_URL=https://core.api.myscrollr.enanimate.dev/oidc
+      - LOGTO_M2M_RESOURCE=https://core.api.myscrollr.enanimate.dev/api
       - LOGTO_M2M_APP_ID=${LOGTO_M2M_APP_ID:-mock_app_id}
       - LOGTO_M2M_APP_SECRET=${LOGTO_M2M_APP_SECRET:-mock_app_secret}
       - LOGTO_UPLINK_ROLE_ID=${LOGTO_UPLINK_ROLE_ID:-mock_uplink_role}
@@ -25,14 +23,5 @@ services:
       - STRIPE_API_URL=http://mock-stripe:12111
       - STRIPE_PUBLISHABLE_KEY=pk_test_mock
       - STRIPE_WEBHOOK_SECRET=whsec_test_mock
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://dev.enanimate.dev,http://localhost:5174}
-    depends_on:
-      test-postgres:
-        condition: service_healthy
-      test-redis:
-        condition: service_healthy
-      mock-logto:
-        condition: service_healthy
-      mock-stripe:
-        condition: service_healthy
+      - ALLOWED_ORIGINS=https://*.myscrollr.enanimate.dev,http://localhost:5174
     restart: unless-stopped
