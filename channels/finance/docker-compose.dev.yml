@@ -24,5 +24,5 @@ services:
       - DATABASE_URL=${DATABASE_URL}
       - TWELVEDATA_API_KEY=${TWELVEDATA_API_KEY:-test_twelvedata_key}
       - TWELVEDATA_REST_URL=http://mock-twelvedata:9002
-      - TWELVEDATA_WS_URL=http://mock-twelvedata:9003/v1/quotes/price
+      - TWELVEDATA_WS_URL=ws://mock-twelvedata:9003/v1/quotes/price
     restart: unless-stopped
