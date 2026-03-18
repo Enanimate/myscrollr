@@ -10,8 +10,8 @@ services:
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL}
-      - LOGTO_ENDPOINT=http://mock-logto:9001
-      - LOGTO_JWKS_URL=http://mock-logto:9001/oidc/jwks
+      - LOGTO_ENDPOINT=${LOGTO_ENDPOINT:-http://logto-wgooksk48o0gowwk4k8ckc48:3000}
+      - LOGTO_JWKS_URL=${LOGTO_JWKS_URL:-http://logto-wgooksk48o0gowwk4k8ckc48:3000/oidc/jwks}
       - LOGTO_URL=https://core.api.myscrollr.enanimate.dev/oidc
       - LOGTO_M2M_RESOURCE=https://core.api.myscrollr.enanimate.dev/api
       - LOGTO_M2M_APP_ID=${LOGTO_M2M_APP_ID:-mock_app_id}
