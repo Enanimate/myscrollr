@@ -140,7 +140,7 @@ func (m *mockLogto) userRolesHandler(c *fiber.Ctx) error {
 			log.Printf("[mock-logto] Failed to parse role request: %v", err)
 		}
 		log.Printf("[mock-logto] Assigned roles to user %s: %v", userID, req.RoleIDs)
-		_ = json.Marshal(req.RoleIDs)
+		_, _ = json.Marshal(req.RoleIDs)
 		return c.JSON(fiber.Map{
 			"id":        userID,
 			"roleIds":   req.RoleIDs,

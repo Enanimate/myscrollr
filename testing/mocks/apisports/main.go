@@ -155,7 +155,7 @@ func handleAPI(w http.ResponseWriter, r *http.Request) {
 
 	sport := sportFromHost(r.Host)
 	ep := endpointFromPath(r.URL.Path)
-	resp := buildResponse(sport, ep, r.URL.Query(), scenario)
+	resp := buildResponse(sport, ep, "", scenario)
 
 	w.Header().Set("Content-Type", "application/json")
 	// Simulate rate limit headers

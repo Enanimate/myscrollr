@@ -7,7 +7,7 @@
 *.out
 
 # Go modules
-go.sum
+# go.sum is intentionally NOT ignored — required for reproducible Docker builds
 
 # Docker
 vendor/
