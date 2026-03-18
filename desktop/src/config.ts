@@ -16,6 +16,6 @@ export const API_HOST = new URL(API_BASE).host;
 // ── Auth (Logto PKCE) ───────────────────────────────────────────
 
 export const AUTH_ENDPOINT = "https://auth.myscrollr.enanimate.dev";
-export const LOGTO_APP_ID = "kq298uwwusrvw8m6yn6b4";
+export const LOGTO_APP_ID = "roazl2zldtcfscslysiuf";
 export const REDIRECT_URI = "http://127.0.0.1:19284/callback";
 export const REFRESH_BUFFER_MS = 60_000;
