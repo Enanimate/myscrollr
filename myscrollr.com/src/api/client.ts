@@ -276,6 +276,8 @@ export const billingApi = {
       amount_due: number
       currency: string
       proration_date: number
+      is_downgrade: boolean
+      scheduled_date: number
     }>(
       `/users/me/subscription/preview?price_id=${encodeURIComponent(priceId)}`,
       {},

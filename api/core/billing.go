@@ -13,6 +13,7 @@ import (
 	stripecustomer "github.com/stripe/stripe-go/v82/customer"
 	stripeinvoice "github.com/stripe/stripe-go/v82/invoice"
 	stripesubscription "github.com/stripe/stripe-go/v82/subscription"
+	subscriptionschedule "github.com/stripe/stripe-go/v82/subscriptionschedule"
 )
 
 // =============================================================================
@@ -71,6 +72,19 @@ func isUltimatePlan(plan string) bool {
 		return true
 	}
 	return false
+}
+
+// planRank returns a numeric rank for comparing plan tiers.
+// Higher rank = higher tier. Used to determine upgrade vs downgrade.
+func planRank(plan string) int {
+	switch {
+	case isUltimatePlan(plan):
+		return 3
+	case isProPlan(plan):
+		return 2
+	default:
+		return 1 // uplink (monthly, annual, lifetime)
+	}
 }
 
 // getOrCreateStripeCustomer looks up or creates a Stripe customer for the user.
@@ -487,55 +501,109 @@ func HandleChangePlan(c *fiber.Ctx) error {
 	}
 
 	itemID := sub.Items.Data[0].ID
-
-	// Update the subscription: swap the price on the existing item
-	// ProrationBehavior: create_prorations charges the difference immediately on upgrade
-	// and applies credit on downgrade
-	updateParams := &stripe.SubscriptionParams{
-		ProrationBehavior: stripe.String("create_prorations"),
-		Items: []*stripe.SubscriptionItemsParams{
-			{
-				ID:    stripe.String(itemID),
-				Price: stripe.String(req.PriceID),
-			},
-		},
-	}
-
-	// Use the proration date from preview so the charge matches exactly
-	if req.ProrationDate > 0 {
-		updateParams.ProrationDate = stripe.Int64(req.ProrationDate)
-	}
-
-	// If the subscription was set to cancel at period end, undo that
-	if sub.CancelAtPeriodEnd {
-		updateParams.CancelAtPeriodEnd = stripe.Bool(false)
-	}
-
-	updatedSub, err := stripesubscription.Update(*subID, updateParams)
-	if err != nil {
-		log.Printf("[Billing] Failed to change plan for %s from %s to %s: %v", userID, currentPlan, newPlan, err)
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
-			Status: "error", Error: "Failed to change plan",
-		})
-	}
-
-	// Update DB optimistically (webhook will also fire and sync)
+	currentPriceID := sub.Items.Data[0].Price.ID
 	var periodEndUnix int64
-	if updatedSub.Items != nil && len(updatedSub.Items.Data) > 0 {
-		periodEndUnix = updatedSub.Items.Data[0].CurrentPeriodEnd
+	if sub.Items != nil && len(sub.Items.Data) > 0 {
+		periodEndUnix = sub.Items.Data[0].CurrentPeriodEnd
 	}
 	periodEnd := time.Unix(periodEndUnix, 0)
 
-	_, _ = DBPool.Exec(context.Background(),
-		`UPDATE stripe_customers SET plan = $2, status = 'active', current_period_end = $3, updated_at = now()
-		 WHERE logto_sub = $1`,
-		userID, newPlan, periodEnd,
-	)
+	isUpgrade := planRank(newPlan) > planRank(currentPlan)
 
-	log.Printf("[Billing] Plan changed for %s: %s → %s", userID, currentPlan, newPlan)
+	if isUpgrade {
+		// ── UPGRADE: immediate charge via always_invoice ───────────
+		updateParams := &stripe.SubscriptionParams{
+			ProrationBehavior: stripe.String("always_invoice"),
+			Items: []*stripe.SubscriptionItemsParams{
+				{
+					ID:    stripe.String(itemID),
+					Price: stripe.String(req.PriceID),
+				},
+			},
+		}
 
+		// Use the proration date from preview so the charge matches exactly
+		if req.ProrationDate > 0 {
+			updateParams.ProrationDate = stripe.Int64(req.ProrationDate)
+		}
+
+		// If the subscription was set to cancel at period end, undo that
+		if sub.CancelAtPeriodEnd {
+			updateParams.CancelAtPeriodEnd = stripe.Bool(false)
+		}
+
+		updatedSub, err := stripesubscription.Update(*subID, updateParams)
+		if err != nil {
+			log.Printf("[Billing] Failed to upgrade plan for %s from %s to %s: %v", userID, currentPlan, newPlan, err)
+			return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
+				Status: "error", Error: "Failed to upgrade plan",
+			})
+		}
+
+		// Update DB optimistically (webhook will also fire and sync)
+		var newPeriodEnd int64
+		if updatedSub.Items != nil && len(updatedSub.Items.Data) > 0 {
+			newPeriodEnd = updatedSub.Items.Data[0].CurrentPeriodEnd
+		}
+		pe := time.Unix(newPeriodEnd, 0)
+
+		_, _ = DBPool.Exec(context.Background(),
+			`UPDATE stripe_customers SET plan = $2, status = 'active', current_period_end = $3, updated_at = now()
+			 WHERE logto_sub = $1`,
+			userID, newPlan, pe,
+		)
+
+		log.Printf("[Billing] Plan upgraded for %s: %s → %s", userID, currentPlan, newPlan)
+
+		return c.JSON(SubscriptionResponse{
+			Plan:             newPlan,
+			Status:           "active",
+			CurrentPeriodEnd: &pe,
+			Lifetime:         false,
+		})
+	}
+
+	// ── DOWNGRADE: schedule change at end of billing cycle ────────
+	// Create a subscription schedule from the existing subscription, then set
+	// two phases: current price until period end, then new (lower) price after.
+	schedule, err := subscriptionschedule.New(&stripe.SubscriptionScheduleParams{
+		FromSubscription: stripe.String(*subID),
+	})
+	if err != nil {
+		log.Printf("[Billing] Failed to create schedule for %s: %v", userID, err)
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
+			Status: "error", Error: "Failed to schedule downgrade",
+		})
+	}
+
+	_, err = subscriptionschedule.Update(schedule.ID, &stripe.SubscriptionScheduleParams{
+		EndBehavior: stripe.String("release"),
+		Phases: []*stripe.SubscriptionSchedulePhaseParams{
+			{
+				Items: []*stripe.SubscriptionSchedulePhaseItemParams{
+					{Price: stripe.String(currentPriceID)},
+				},
+				EndDate: stripe.Int64(periodEndUnix),
+			},
+			{
+				Items: []*stripe.SubscriptionSchedulePhaseItemParams{
+					{Price: stripe.String(req.PriceID)},
+				},
+			},
+		},
+	})
+	if err != nil {
+		log.Printf("[Billing] Failed to update schedule for %s: %v", userID, err)
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
+			Status: "error", Error: "Failed to schedule downgrade",
+		})
+	}
+
+	log.Printf("[Billing] Downgrade scheduled for %s: %s → %s at %s", userID, currentPlan, newPlan, periodEnd.Format(time.RFC3339))
+
+	// Return current plan (unchanged until period end)
 	return c.JSON(SubscriptionResponse{
-		Plan:             newPlan,
+		Plan:             currentPlan,
 		Status:           "active",
 		CurrentPeriodEnd: &periodEnd,
 		Lifetime:         false,
@@ -570,9 +638,10 @@ func HandlePreviewPlanChange(c *fiber.Ctx) error {
 	// Get the current subscription from DB
 	var subID *string
 	var customerID string
+	var currentPlan string
 	err := DBPool.QueryRow(context.Background(),
-		`SELECT stripe_subscription_id, stripe_customer_id FROM stripe_customers WHERE logto_sub = $1`, userID,
-	).Scan(&subID, &customerID)
+		`SELECT stripe_subscription_id, stripe_customer_id, plan FROM stripe_customers WHERE logto_sub = $1`, userID,
+	).Scan(&subID, &customerID, &currentPlan)
 	if err != nil || subID == nil {
 		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
 			Status: "error", Error: "No active subscription found",
@@ -594,10 +663,29 @@ func HandlePreviewPlanChange(c *fiber.Ctx) error {
 		})
 	}
 
+	// Check if this is a downgrade
+	isDowngrade := planRank(newPlan) < planRank(currentPlan)
+
+	if isDowngrade {
+		// Downgrade: no charge, just return the scheduled date (current period end)
+		var periodEndUnix int64
+		if sub.Items != nil && len(sub.Items.Data) > 0 {
+			periodEndUnix = sub.Items.Data[0].CurrentPeriodEnd
+		}
+
+		return c.JSON(PlanPreviewResponse{
+			AmountDue:     0,
+			Currency:      "usd",
+			ProrationDate: 0,
+			IsDowngrade:   true,
+			ScheduledDate: periodEndUnix,
+		})
+	}
+
+	// Upgrade: get exact proration amount from Stripe
 	itemID := sub.Items.Data[0].ID
 	prorationDate := time.Now().Unix()
 
-	// Create a preview invoice to see the proration amount
 	previewParams := &stripe.InvoiceCreatePreviewParams{
 		Customer:     stripe.String(customerID),
 		Subscription: stripe.String(*subID),
@@ -608,7 +696,7 @@ func HandlePreviewPlanChange(c *fiber.Ctx) error {
 					Price: stripe.String(priceID),
 				},
 			},
-			ProrationBehavior: stripe.String("create_prorations"),
+			ProrationBehavior: stripe.String("always_invoice"),
 			ProrationDate:     stripe.Int64(prorationDate),
 		},
 	}
@@ -625,5 +713,6 @@ func HandlePreviewPlanChange(c *fiber.Ctx) error {
 		AmountDue:     inv.AmountDue,
 		Currency:      string(inv.Currency),
 		ProrationDate: prorationDate,
+		IsDowngrade:   false,
 	})
 }

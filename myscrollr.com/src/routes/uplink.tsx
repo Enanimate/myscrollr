@@ -911,6 +911,8 @@ function UplinkPage() {
     amountDue: number
     currency: string
     prorationDate: number
+    isDowngrade: boolean
+    scheduledDate: number
   } | null>(null)
   const isLifetime = billingView === 'lifetime'
   const billingPeriod: PlanKey = isLifetime ? 'annual' : billingView
@@ -975,6 +977,8 @@ function UplinkPage() {
           amountDue: preview.amount_due,
           currency: preview.currency,
           prorationDate: preview.proration_date,
+          isDowngrade: preview.is_downgrade,
+          scheduledDate: preview.scheduled_date,
         })
       } catch (err) {
         setPlanChangeError(
@@ -1067,15 +1071,34 @@ function UplinkPage() {
             className="relative w-full max-w-sm mx-4 bg-base-200 border border-base-content/10 rounded-xl p-6"
           >
             <h3 className="text-sm font-semibold text-base-content/80 mb-4">
-              {activeTier &&
-              TIER_RANK[pendingChange.tier] > TIER_RANK[activeTier]
-                ? 'Upgrade'
-                : 'Downgrade'}{' '}
-              to {TIER_NAMES[pendingChange.tier]}
+              {pendingChange.isDowngrade ? 'Downgrade' : 'Upgrade'} to{' '}
+              {TIER_NAMES[pendingChange.tier]}
             </h3>
 
             <div className="space-y-3 mb-6">
-              {pendingChange.amountDue > 0 ? (
+              {pendingChange.isDowngrade ? (
+                <>
+                  <p className="text-xs text-base-content/50">
+                    Your {activeTier ? TIER_NAMES[activeTier] : ''} access
+                    continues until{' '}
+                    <span className="font-semibold text-base-content/80">
+                      {new Date(
+                        pendingChange.scheduledDate * 1000,
+                      ).toLocaleDateString('en-US', {
+                        month: 'long',
+                        day: 'numeric',
+                        year: 'numeric',
+                      })}
+                    </span>
+                    .
+                  </p>
+                  <p className="text-[10px] text-base-content/30">
+                    After that, your plan switches to{' '}
+                    {TIER_NAMES[pendingChange.tier]} at your next renewal. No
+                    charge or refund — your current billing cycle is unaffected.
+                  </p>
+                </>
+              ) : pendingChange.amountDue > 0 ? (
                 <>
                   <p className="text-xs text-base-content/50">
                     You will be charged{' '}
@@ -1089,23 +1112,9 @@ function UplinkPage() {
                     your current billing cycle.
                   </p>
                 </>
-              ) : pendingChange.amountDue < 0 ? (
-                <>
-                  <p className="text-xs text-base-content/50">
-                    You will receive a{' '}
-                    <span className="font-semibold text-success">
-                      ${(Math.abs(pendingChange.amountDue) / 100).toFixed(2)}
-                    </span>{' '}
-                    credit.
-                  </p>
-                  <p className="text-[10px] text-base-content/30">
-                    This credit will be applied to your next invoice, reducing
-                    your next charge.
-                  </p>
-                </>
               ) : (
                 <p className="text-xs text-base-content/50">
-                  No charge or credit — your new plan starts immediately.
+                  No charge — your new plan starts immediately.
                 </p>
               )}
             </div>
@@ -1122,7 +1131,11 @@ function UplinkPage() {
                 disabled={planChanging}
                 className="flex-1 py-2.5 text-[10px] font-semibold bg-primary/10 border border-primary/30 text-primary rounded-lg hover:bg-primary/20 hover:border-primary/50 transition-colors disabled:opacity-50"
               >
-                {planChanging ? 'Processing...' : 'Confirm'}
+                {planChanging
+                  ? 'Processing...'
+                  : pendingChange.isDowngrade
+                    ? 'Confirm Downgrade'
+                    : 'Confirm Upgrade'}
               </button>
             </div>
           </motion.div>
