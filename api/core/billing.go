@@ -11,6 +11,7 @@ import (
 	"github.com/stripe/stripe-go/v82"
 	checkoutsession "github.com/stripe/stripe-go/v82/checkout/session"
 	stripecustomer "github.com/stripe/stripe-go/v82/customer"
+	stripeinvoice "github.com/stripe/stripe-go/v82/invoice"
 	stripesubscription "github.com/stripe/stripe-go/v82/subscription"
 )
 
@@ -430,7 +431,7 @@ func HandleChangePlan(c *fiber.Ctx) error {
 		})
 	}
 
-	var req CheckoutRequest
+	var req PlanChangeRequest
 	if err := c.BodyParser(&req); err != nil || req.PriceID == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
 			Status: "error", Error: "price_id is required",
@@ -500,6 +501,11 @@ func HandleChangePlan(c *fiber.Ctx) error {
 		},
 	}
 
+	// Use the proration date from preview so the charge matches exactly
+	if req.ProrationDate > 0 {
+		updateParams.ProrationDate = stripe.Int64(req.ProrationDate)
+	}
+
 	// If the subscription was set to cancel at period end, undo that
 	if sub.CancelAtPeriodEnd {
 		updateParams.CancelAtPeriodEnd = stripe.Bool(false)
@@ -533,5 +539,91 @@ func HandleChangePlan(c *fiber.Ctx) error {
 		Status:           "active",
 		CurrentPeriodEnd: &periodEnd,
 		Lifetime:         false,
+	})
+}
+
+// HandlePreviewPlanChange previews the proration cost of changing plans.
+// Returns the exact amount that would be charged or credited today.
+func HandlePreviewPlanChange(c *fiber.Ctx) error {
+	userID := GetUserID(c)
+	if userID == "" {
+		return c.Status(fiber.StatusUnauthorized).JSON(ErrorResponse{
+			Status: "unauthorized", Error: "Authentication required",
+		})
+	}
+
+	priceID := c.Query("price_id")
+	if priceID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
+			Status: "error", Error: "price_id query parameter is required",
+		})
+	}
+
+	// Validate the price
+	newPlan := planFromPriceID(priceID)
+	if newPlan == "unknown" || newPlan == "lifetime" {
+		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
+			Status: "error", Error: "Invalid price_id for plan change",
+		})
+	}
+
+	// Get the current subscription from DB
+	var subID *string
+	var customerID string
+	err := DBPool.QueryRow(context.Background(),
+		`SELECT stripe_subscription_id, stripe_customer_id FROM stripe_customers WHERE logto_sub = $1`, userID,
+	).Scan(&subID, &customerID)
+	if err != nil || subID == nil {
+		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
+			Status: "error", Error: "No active subscription found",
+		})
+	}
+
+	// Get the current subscription item ID
+	sub, err := stripesubscription.Get(*subID, nil)
+	if err != nil {
+		log.Printf("[Billing] Failed to retrieve subscription %s for preview: %v", *subID, err)
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
+			Status: "error", Error: "Failed to retrieve subscription",
+		})
+	}
+
+	if sub.Items == nil || len(sub.Items.Data) == 0 {
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
+			Status: "error", Error: "Subscription has no items",
+		})
+	}
+
+	itemID := sub.Items.Data[0].ID
+	prorationDate := time.Now().Unix()
+
+	// Create a preview invoice to see the proration amount
+	previewParams := &stripe.InvoiceCreatePreviewParams{
+		Customer:     stripe.String(customerID),
+		Subscription: stripe.String(*subID),
+		SubscriptionDetails: &stripe.InvoiceCreatePreviewSubscriptionDetailsParams{
+			Items: []*stripe.InvoiceCreatePreviewSubscriptionDetailsItemParams{
+				{
+					ID:    stripe.String(itemID),
+					Price: stripe.String(priceID),
+				},
+			},
+			ProrationBehavior: stripe.String("create_prorations"),
+			ProrationDate:     stripe.Int64(prorationDate),
+		},
+	}
+
+	inv, err := stripeinvoice.CreatePreview(previewParams)
+	if err != nil {
+		log.Printf("[Billing] Failed to preview plan change for %s: %v", userID, err)
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
+			Status: "error", Error: "Failed to preview plan change",
+		})
+	}
+
+	return c.JSON(PlanPreviewResponse{
+		AmountDue:     inv.AmountDue,
+		Currency:      string(inv.Currency),
+		ProrationDate: prorationDate,
 	})
 }

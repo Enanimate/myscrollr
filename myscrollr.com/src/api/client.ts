@@ -267,9 +267,25 @@ export const billingApi = {
       getToken,
     ),
 
+  /** Preview the proration cost of a plan change */
+  previewPlanChange: (
+    priceId: string,
+    getToken: () => Promise<string | null>,
+  ) =>
+    authenticatedFetch<{
+      amount_due: number
+      currency: string
+      proration_date: number
+    }>(
+      `/users/me/subscription/preview?price_id=${encodeURIComponent(priceId)}`,
+      {},
+      getToken,
+    ),
+
   /** Change subscription plan (upgrade/downgrade with proration) */
   changePlan: (
     priceId: string,
+    prorationDate: number,
     getToken: () => Promise<string | null>,
   ) =>
     authenticatedFetch<SubscriptionStatus>(
@@ -277,7 +293,10 @@ export const billingApi = {
       {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ price_id: priceId }),
+        body: JSON.stringify({
+          price_id: priceId,
+          proration_date: prorationDate,
+        }),
       },
       getToken,
     ),

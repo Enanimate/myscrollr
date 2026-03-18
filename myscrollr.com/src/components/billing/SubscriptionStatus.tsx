@@ -39,8 +39,16 @@ export default function SubscriptionStatus({
   const [canceling, setCanceling] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const isUltimate = tier === 'uplink_ultimate'
-  const isPro = tier === 'uplink_pro'
+  // Derive tier from both JWT-based preferences AND the plan string directly
+  // (plan updates immediately in DB, JWT roles may take a few seconds to sync)
+  const isUltimate =
+    tier === 'uplink_ultimate' ||
+    subscription?.plan === 'ultimate_monthly' ||
+    subscription?.plan === 'ultimate_annual'
+  const isPro =
+    tier === 'uplink_pro' ||
+    subscription?.plan === 'pro_monthly' ||
+    subscription?.plan === 'pro_annual'
 
   useEffect(() => {
     loadSubscription()

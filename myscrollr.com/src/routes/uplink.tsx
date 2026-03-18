@@ -903,6 +903,15 @@ function UplinkPage() {
   const [currentSub, setCurrentSub] = useState<SubscriptionStatus | null>(null)
   const [planChanging, setPlanChanging] = useState(false)
   const [planChangeError, setPlanChangeError] = useState<string | null>(null)
+  const [loadingPreview, setLoadingPreview] = useState(false)
+  const [pendingChange, setPendingChange] = useState<{
+    tier: TierKey
+    plan: PlanKey
+    priceId: string
+    amountDue: number
+    currency: string
+    prorationDate: number
+  } | null>(null)
   const isLifetime = billingView === 'lifetime'
   const billingPeriod: PlanKey = isLifetime ? 'annual' : billingView
 
@@ -953,20 +962,26 @@ function UplinkPage() {
 
     setPlanChangeError(null)
 
-    // If user has an active subscription on a different tier, use plan change API
+    // If user has an active subscription on a different tier, show preview first
     if (activeTier && activeTier !== tier) {
-      setPlanChanging(true)
+      setLoadingPreview(true)
       try {
         const priceId = getPriceId(tier, plan)
-        const updated = await billingApi.changePlan(priceId, getToken)
-        setCurrentSub(updated)
-        setCheckoutSuccess(true)
+        const preview = await billingApi.previewPlanChange(priceId, getToken)
+        setPendingChange({
+          tier,
+          plan,
+          priceId,
+          amountDue: preview.amount_due,
+          currency: preview.currency,
+          prorationDate: preview.proration_date,
+        })
       } catch (err) {
         setPlanChangeError(
-          err instanceof Error ? err.message : 'Failed to change plan',
+          err instanceof Error ? err.message : 'Failed to preview plan change',
         )
       } finally {
-        setPlanChanging(false)
+        setLoadingPreview(false)
       }
       return
     }
@@ -975,6 +990,27 @@ function UplinkPage() {
     setSelectedPlan(plan)
     setSelectedTier(tier)
     setShowCheckout(true)
+  }
+
+  const handleConfirmChange = async () => {
+    if (!pendingChange) return
+    setPlanChanging(true)
+    setPendingChange(null)
+    try {
+      const updated = await billingApi.changePlan(
+        pendingChange.priceId,
+        pendingChange.prorationDate,
+        getToken,
+      )
+      setCurrentSub(updated)
+      setCheckoutSuccess(true)
+    } catch (err) {
+      setPlanChangeError(
+        err instanceof Error ? err.message : 'Failed to change plan',
+      )
+    } finally {
+      setPlanChanging(false)
+    }
   }
 
   const handleCloseCheckout = () => {
@@ -990,9 +1026,16 @@ function UplinkPage() {
 
   /** Get the CTA label for a tier card based on current subscription state. */
   const getCtaLabel = (tier: TierKey): string => {
+    if (loadingPreview) return 'Fetching quote...'
     if (!activeTier) return 'Start Free Trial'
     if (activeTier === tier) return 'Current Plan'
     return TIER_RANK[tier] > TIER_RANK[activeTier] ? 'Upgrade' : 'Downgrade'
+  }
+
+  const TIER_NAMES: Record<TierKey, string> = {
+    uplink: 'Uplink',
+    pro: 'Uplink Pro',
+    ultimate: 'Uplink Ultimate',
   }
 
   return (
@@ -1013,6 +1056,77 @@ function UplinkPage() {
             onClose={handleCloseCheckout}
           />
         </Suspense>
+      )}
+
+      {/* ── Plan Change Confirmation Modal ─────────────────── */}
+      {pendingChange && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="relative w-full max-w-sm mx-4 bg-base-200 border border-base-content/10 rounded-xl p-6"
+          >
+            <h3 className="text-sm font-semibold text-base-content/80 mb-4">
+              {activeTier &&
+              TIER_RANK[pendingChange.tier] > TIER_RANK[activeTier]
+                ? 'Upgrade'
+                : 'Downgrade'}{' '}
+              to {TIER_NAMES[pendingChange.tier]}
+            </h3>
+
+            <div className="space-y-3 mb-6">
+              {pendingChange.amountDue > 0 ? (
+                <>
+                  <p className="text-xs text-base-content/50">
+                    You will be charged{' '}
+                    <span className="font-semibold text-base-content/80">
+                      ${(pendingChange.amountDue / 100).toFixed(2)}
+                    </span>{' '}
+                    today.
+                  </p>
+                  <p className="text-[10px] text-base-content/30">
+                    This is the prorated difference for the remaining days in
+                    your current billing cycle.
+                  </p>
+                </>
+              ) : pendingChange.amountDue < 0 ? (
+                <>
+                  <p className="text-xs text-base-content/50">
+                    You will receive a{' '}
+                    <span className="font-semibold text-success">
+                      ${(Math.abs(pendingChange.amountDue) / 100).toFixed(2)}
+                    </span>{' '}
+                    credit.
+                  </p>
+                  <p className="text-[10px] text-base-content/30">
+                    This credit will be applied to your next invoice, reducing
+                    your next charge.
+                  </p>
+                </>
+              ) : (
+                <p className="text-xs text-base-content/50">
+                  No charge or credit — your new plan starts immediately.
+                </p>
+              )}
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setPendingChange(null)}
+                className="flex-1 py-2.5 text-[10px] font-semibold border border-base-content/10 rounded-lg text-base-content/40 hover:text-base-content/60 hover:border-base-content/20 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmChange}
+                disabled={planChanging}
+                className="flex-1 py-2.5 text-[10px] font-semibold bg-primary/10 border border-primary/30 text-primary rounded-lg hover:bg-primary/20 hover:border-primary/50 transition-colors disabled:opacity-50"
+              >
+                {planChanging ? 'Processing...' : 'Confirm'}
+              </button>
+            </div>
+          </motion.div>
+        </div>
       )}
 
       {/* ── Checkout Success Banner ─────────────────────────── */}

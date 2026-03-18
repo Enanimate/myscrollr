@@ -73,6 +73,19 @@ type CheckoutRequest struct {
 	PriceID string `json:"price_id"`
 }
 
+// PlanChangeRequest is the body for PUT /users/me/subscription/plan.
+type PlanChangeRequest struct {
+	PriceID       string `json:"price_id"`
+	ProrationDate int64  `json:"proration_date,omitempty"`
+}
+
+// PlanPreviewResponse returns the proration preview for a plan change.
+type PlanPreviewResponse struct {
+	AmountDue     int64  `json:"amount_due"`
+	Currency      string `json:"currency"`
+	ProrationDate int64  `json:"proration_date"`
+}
+
 // CheckoutResponse returns the client secret for the Payment Element.
 type CheckoutResponse struct {
 	ClientSecret    string `json:"client_secret"`
