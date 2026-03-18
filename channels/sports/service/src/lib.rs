@@ -1122,3 +1122,168 @@ fn build_detail(status_short: &str, status_long: Option<&str>, timer: Option<&st
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_map_status_to_state_pre() {
+        assert_eq!(map_status_to_state("NS"), "pre");
+        assert_eq!(map_status_to_state("TBD"), "pre");
+        assert_eq!(map_status_to_state("CANC"), "pre");
+        assert_eq!(map_status_to_state("WO"), "pre");
+    }
+
+    #[test]
+    fn test_map_status_to_state_final() {
+        assert_eq!(map_status_to_state("FT"), "final");
+        assert_eq!(map_status_to_state("AET"), "final");
+        assert_eq!(map_status_to_state("PEN"), "final");
+        assert_eq!(map_status_to_state("AOT"), "final");
+        assert_eq!(map_status_to_state("AP"), "final");
+        assert_eq!(map_status_to_state("ABD"), "final");
+        assert_eq!(map_status_to_state("AWD"), "final");
+        assert_eq!(map_status_to_state("INT"), "final");
+    }
+
+    #[test]
+    fn test_map_status_to_state_postponed() {
+        assert_eq!(map_status_to_state("PST"), "postponed");
+        assert_eq!(map_status_to_state("SUSP"), "postponed");
+    }
+
+    #[test]
+    fn test_map_status_to_state_in_progress() {
+        // Live game status codes
+        assert_eq!(map_status_to_state("1H"), "in");
+        assert_eq!(map_status_to_state("2H"), "in");
+        assert_eq!(map_status_to_state("HT"), "in");
+        assert_eq!(map_status_to_state("OT"), "in");
+        assert_eq!(map_status_to_state("Q1"), "in");
+        assert_eq!(map_status_to_state("Q4"), "in");
+        assert_eq!(map_status_to_state("BT"), "in");
+        assert_eq!(map_status_to_state("P1"), "in");
+        assert_eq!(map_status_to_state("P3"), "in");
+        assert_eq!(map_status_to_state("ET"), "in");
+        assert_eq!(map_status_to_state("IN1"), "in");
+        assert_eq!(map_status_to_state("IN9"), "in");
+        assert_eq!(map_status_to_state(""), "in"); // empty → falls through to "in"
+        assert_eq!(map_status_to_state("LIVE"), "in"); // unknown → "in"
+    }
+
+    #[test]
+    fn test_compute_current_season_format() {
+        // Test the function doesn't panic and returns a 4-digit year string
+        for fmt in &["cross-year", "fall-october", "fall-august", "calendar", "unknown"] {
+            let result = compute_current_season(fmt);
+            assert!(!result.is_empty(), "compute_current_season({}) returned empty", fmt);
+            // Result should be either a 4-digit year or YYYY-YYYY format
+            assert!(
+                result.len() == 4 || (result.len() == 9 && result.contains("-")),
+                "compute_current_season({}) = {:?}, expected YYYY or YYYY-YYYY",
+                fmt, result
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_api_date_timestamp() {
+        // UNIX timestamp → UTC
+        let dt = parse_api_date(Some(1709337600), None);
+        assert!(dt.is_some());
+        let dt = dt.unwrap();
+        assert_eq!(dt.timestamp(), 1709337600);
+    }
+
+    #[test]
+    fn test_parse_api_date_rfc3339() {
+        let dt = parse_api_date(None, Some("2025-03-09T19:00:00Z"));
+        assert!(dt.is_some());
+        assert_eq!(dt.unwrap().format("%Y-%m-%d").to_string(), "2025-03-09");
+    }
+
+    #[test]
+    fn test_parse_api_date_naive_datetime() {
+        let dt = parse_api_date(None, Some("2025-03-09T19:00:00"));
+        assert!(dt.is_some());
+        assert_eq!(dt.unwrap().format("%Y-%m-%d").to_string(), "2025-03-09");
+    }
+
+    #[test]
+    fn test_parse_api_date_date_only() {
+        let dt = parse_api_date(None, Some("2025-03-09"));
+        assert!(dt.is_some());
+        assert_eq!(dt.unwrap().format("%Y-%m-%d").to_string(), "2025-03-09");
+        assert_eq!(dt.unwrap().format("%H:%M:%S").to_string(), "00:00:00");
+    }
+
+    #[test]
+    fn test_parse_api_date_with_offset() {
+        let dt = parse_api_date(None, Some("2025-03-09T19:00:00+0000"));
+        assert!(dt.is_some());
+        assert_eq!(dt.unwrap().format("%Y-%m-%d").to_string(), "2025-03-09");
+    }
+
+    #[test]
+    fn test_parse_api_date_prefers_timestamp() {
+        let dt = parse_api_date(Some(1709337600), Some("2020-01-01T00:00:00Z"));
+        assert!(dt.is_some());
+        // Should use timestamp, not date string
+        assert_eq!(dt.unwrap().format("%Y").to_string(), "2024"); // 1709337600 = March 2024
+    }
+
+    #[test]
+    fn test_parse_api_date_invalid_returns_none() {
+        assert!(parse_api_date(None, Some("not-a-date")).is_none());
+        assert!(parse_api_date(None, Some("")).is_none());
+        assert!(parse_api_date(None, None).is_none());
+    }
+
+    #[test]
+    fn test_build_detail_live_with_timer() {
+        // Live in progress with timer
+        let detail = build_detail("Q3", Some("3rd Quarter"), Some("4:32"));
+        assert!(detail.is_some());
+        assert_eq!(detail.unwrap(), "Q3 · 4:32");
+    }
+
+    #[test]
+    fn test_build_detail_live_no_timer() {
+        // Live but no timer → use long status
+        let detail = build_detail("HT", Some("Halftime"), None);
+        assert!(detail.is_some());
+        assert_eq!(detail.unwrap(), "Halftime");
+    }
+
+    #[test]
+    fn test_build_detail_finished() {
+        let detail = build_detail("FT", Some("Full Time"), None);
+        assert!(detail.is_some());
+        assert_eq!(detail.unwrap(), "Full Time");
+    }
+
+    #[test]
+    fn test_build_detail_not_started() {
+        // NS → not live or final → falls to last match
+        let detail = build_detail("NS", Some("Not Started"), None);
+        assert!(detail.is_some());
+        assert_eq!(detail.unwrap(), "Not Started");
+    }
+
+    #[test]
+    fn test_build_detail_nil_long() {
+        let detail = build_detail("Q3", None, Some("2:00"));
+        // Timer exists but no long status — since map_status_to_state("Q3") == "in" and
+        // timer exists, it should still format with timer
+        assert!(detail.is_some());
+        // The match is: (_, _, Some(t)) if map == "in" → format
+        assert_eq!(detail.unwrap(), "Q3 · 2:00");
+    }
+
+    #[test]
+    fn test_build_detail_no_info() {
+        let detail = build_detail("???", None, None);
+        assert!(detail.is_none());
+    }
+}

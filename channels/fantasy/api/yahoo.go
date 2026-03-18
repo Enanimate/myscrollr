@@ -630,15 +630,15 @@ func serializeRoster(players []XMLPlayer, teamKey, teamName string) map[string]a
 			}
 		}
 
-		var status, statusFull, injuryNote *string
+		var status, statusFull, injuryNote string
 		if p.Status != "" {
-			status = &p.Status
+			status = p.Status
 		}
 		if p.StatusFull != "" {
-			statusFull = &p.StatusFull
+			statusFull = p.StatusFull
 		}
 		if p.InjuryNote != "" {
-			injuryNote = &p.InjuryNote
+			injuryNote = p.InjuryNote
 		}
 
 		serialized = append(serialized, map[string]any{
