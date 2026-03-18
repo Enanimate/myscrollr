@@ -1,7 +1,7 @@
 services:
   mock-yahoo:
     build:
-      context: .
+      context: ./yahoo
       dockerfile: Dockerfile
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:9005/health || exit 1"]

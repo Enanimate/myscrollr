@@ -1,7 +1,7 @@
 services:
   mock-twelvedata:
     build:
-      context: .
+      context: ./twelvedata
       dockerfile: Dockerfile
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:9002/health || exit 1"]

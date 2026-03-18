@@ -1,7 +1,7 @@
 services:
   mock-apisports:
     build:
-      context: .
+      context: ./apisports
       dockerfile: Dockerfile
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:9004/health || exit 1"]
