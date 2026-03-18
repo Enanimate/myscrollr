@@ -648,12 +648,14 @@ func HandleChangePlan(c *fiber.Ctx) error {
 
 	log.Printf("[Billing] Downgrade scheduled for %s: %s → %s at %s", userID, currentPlan, newPlan, periodEnd.Format(time.RFC3339))
 
-	// Return current plan (unchanged until period end)
+	// Return current plan (unchanged until period end) with pending downgrade info
 	return c.JSON(SubscriptionResponse{
-		Plan:             currentPlan,
-		Status:           "active",
-		CurrentPeriodEnd: &periodEnd,
-		Lifetime:         false,
+		Plan:                 currentPlan,
+		Status:               "active",
+		CurrentPeriodEnd:     &periodEnd,
+		Lifetime:             false,
+		PendingDowngradePlan: newPlan,
+		ScheduledChangeAt:    &periodEnd,
 	})
 }
 
