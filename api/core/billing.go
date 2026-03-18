@@ -20,7 +20,10 @@ import (
 // Stripe Billing Handlers
 // =============================================================================
 
-// initStripe sets the Stripe API key. Called during server setup.
+// initStripe sets the Stripe API key and optionally redirects the SDK to a
+// mock server when STRIPE_API_URL is set (e.g. for local testing with
+// stripe-mock).  In production STRIPE_API_URL is unset and the SDK uses
+// its default https://api.stripe.com endpoint.
 func initStripe() {
 	key := os.Getenv("STRIPE_SECRET_KEY")
 	if key == "" {
@@ -28,6 +31,16 @@ func initStripe() {
 		return
 	}
 	stripe.Key = key
+
+	// Allow redirecting all Stripe SDK calls to a mock server for testing.
+	if mockURL := os.Getenv("STRIPE_API_URL"); mockURL != "" {
+		stripe.SetBackend(stripe.APIBackend, stripe.GetBackendWithConfig(
+			stripe.APIBackend,
+			&stripe.BackendConfig{URL: stripe.String(mockURL)},
+		))
+		log.Printf("[Billing] Stripe API redirected to mock: %s", mockURL)
+	}
+
 	log.Println("[Billing] Stripe API initialized")
 }
 

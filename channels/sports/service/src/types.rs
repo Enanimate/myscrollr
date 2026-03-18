@@ -98,3 +98,71 @@ impl RateLimiter {
             .collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_rate_limiter_new() {
+        let sports = vec!["basketball".to_string(), "football".to_string()];
+        let rl = RateLimiter::new(&sports, 100);
+        assert_eq!(rl.remaining("basketball"), 100);
+        assert_eq!(rl.remaining("football"), 100);
+        assert_eq!(rl.remaining("hockey"), 0); // unknown sport
+    }
+
+    #[test]
+    fn test_rate_limiter_update() {
+        let sports = vec!["basketball".to_string()];
+        let rl = RateLimiter::new(&sports, 1000);
+        rl.update("basketball", 750);
+        assert_eq!(rl.remaining("basketball"), 750);
+    }
+
+    #[test]
+    fn test_rate_limiter_has_budget() {
+        let sports = vec!["basketball".to_string()];
+        let rl = RateLimiter::new(&sports, 1000);
+        assert!(rl.has_budget("basketball")); // 1000 > 100 buffer
+        rl.update("basketball", 50);
+        assert!(!rl.has_budget("basketball")); // 50 <= 100 buffer
+        assert!(!rl.has_budget("unknown_sport")); // 0 <= 100
+    }
+
+    #[test]
+    fn test_rate_limiter_all_remaining() {
+        let sports = vec![
+            "basketball".to_string(),
+            "football".to_string(),
+            "hockey".to_string(),
+        ];
+        let rl = RateLimiter::new(&sports, 500);
+        rl.update("basketball", 400);
+        rl.update("football", 300);
+
+        let snapshot = rl.all_remaining();
+        assert_eq!(snapshot.get("basketball"), Some(&400));
+        assert_eq!(snapshot.get("football"), Some(&300));
+        assert_eq!(snapshot.get("hockey"), Some(&500)); // unchanged
+    }
+
+    #[test]
+    fn test_rate_limiter_concurrent_updates() {
+        use std::collections::HashMap;
+        use std::sync::Arc;
+        use tokio::sync::Mutex;
+
+        let sports = vec!["basketball".to_string()];
+        let rl = Arc::new(RateLimiter::new(&sports, 1000));
+        let rl2 = rl.clone();
+
+        // Simulate concurrent updates by multiple tasks
+        for _ in 0..10 {
+            let r = rl.clone();
+            // AtomicU32 updates are thread-safe
+            r.update("basketball", 500);
+        }
+        assert_eq!(rl2.remaining("basketball"), 500);
+    }
+}

@@ -179,3 +179,96 @@ impl FinanceHealth {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+
+    #[test]
+    fn test_quote_response_success() {
+        let qr = QuoteResponse {
+            close: Some("150.75".to_string()),
+            previous_close: Some("149.50".to_string()),
+            change: Some("1.25".to_string()),
+            percent_change: Some("0.84".to_string()),
+            code: None,
+            message: None,
+            status: Some("ok".to_string()),
+        };
+        assert!(!qr.is_error());
+        assert!((qr.close_f64() - 150.75).abs() < 0.001);
+        assert!((qr.previous_close_f64() - 149.50).abs() < 0.001);
+        assert!((qr.change_f64() - 1.25).abs() < 0.001);
+        assert!((qr.percent_change_f64() - 0.84).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_quote_response_error_by_code() {
+        let qr = QuoteResponse {
+            close: None, previous_close: None, change: None, percent_change: None,
+            code: Some(429), message: Some("Rate limit".to_string()), status: None,
+        };
+        assert!(qr.is_error());
+    }
+
+    #[test]
+    fn test_quote_response_error_by_status() {
+        let qr = QuoteResponse {
+            close: None, previous_close: None, change: None, percent_change: None,
+            code: None, message: None, status: Some("error".to_string()),
+        };
+        assert!(qr.is_error());
+    }
+
+    #[test]
+    fn test_quote_response_no_error() {
+        let qr = QuoteResponse {
+            close: None, previous_close: None, change: None, percent_change: None,
+            code: None, message: None, status: Some("ok".to_string()),
+        };
+        assert!(!qr.is_error());
+    }
+
+    #[test]
+    fn test_quote_response_missing_fields_defaults_to_zero() {
+        let qr = QuoteResponse {
+            close: Some("invalid".to_string()),
+            previous_close: Some("".to_string()),
+            change: None,
+            percent_change: Some("N/A".to_string()),
+            code: None, message: None, status: None,
+        };
+        assert_eq!(qr.close_f64(), 0.0);
+        assert_eq!(qr.previous_close_f64(), 0.0);
+        assert_eq!(qr.change_f64(), 0.0);
+        assert_eq!(qr.percent_change_f64(), 0.0);
+    }
+
+    #[test]
+    fn test_quote_response_negative_values() {
+        let qr = QuoteResponse {
+            close: Some("-5.50".to_string()),
+            previous_close: Some("-5.00".to_string()),
+            change: Some("-0.50".to_string()),
+            percent_change: Some("-10.0".to_string()),
+            code: None, message: None, status: None,
+        };
+        assert_eq!(qr.close_f64(), -5.50);
+        assert_eq!(qr.previous_close_f64(), -5.00);
+        assert_eq!(qr.change_f64(), -0.50);
+        assert_eq!(qr.percent_change_f64(), -10.0);
+    }
+
+    #[test]
+    fn test_quote_response_large_numbers() {
+        let qr = QuoteResponse {
+            close: Some("999999999.99".to_string()),
+            previous_close: Some("1000000000.00".to_string()),
+            change: Some("-0.01".to_string()),
+            percent_change: Some("-0.000001".to_string()),
+            code: None, message: None, status: None,
+        };
+        assert!((qr.close_f64() - 999999999.99).abs() < 0.001);
+    }
+}

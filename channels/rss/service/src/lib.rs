@@ -235,3 +235,85 @@ fn strip_html_tags(input: &str) -> String {
     let collapsed: String = result.split_whitespace().collect::<Vec<&str>>().join(" ");
     collapsed
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_strip_html_tags_simple() {
+        assert_eq!(strip_html_tags("<p>Hello World</p>"), "Hello World");
+        assert_eq!(strip_html_tags("<b>Bold</b> and <i>italic</i>"), "Bold and italic");
+    }
+
+    #[test]
+    fn test_strip_html_tags_nested() {
+        let input = "<div><p><strong>Nested</strong> text</p></div>";
+        assert_eq!(strip_html_tags(input), "Nested text");
+    }
+
+    #[test]
+    fn test_strip_html_tags_whitespace_collapsed() {
+        let input = "Hello    World\n\nMore   Text";
+        assert_eq!(strip_html_tags(input), "Hello World More Text");
+    }
+
+    #[test]
+    fn test_strip_html_tags_leading_trailing_whitespace() {
+        let input = "   <p>  Text  </p>   ";
+        assert_eq!(strip_html_tags(input), "Text");
+    }
+
+    #[test]
+    fn test_strip_html_tags_no_tags() {
+        assert_eq!(strip_html_tags("Plain text"), "Plain text");
+    }
+
+    #[test]
+    fn test_strip_html_tags_empty() {
+        assert_eq!(strip_html_tags(""), "");
+        assert_eq!(strip_html_tags("<><><>"), "");
+    }
+
+    #[test]
+    fn test_strip_html_tags_unclosed_tag() {
+        // Unclosed tag at end: "<p>Hello" → "Hello"
+        assert_eq!(strip_html_tags("<p>Hello"), "Hello");
+        // Unclosed tag at start: "Hello</p>" → "Hello"
+        assert_eq!(strip_html_tags("Hello</p>"), "Hello");
+    }
+
+    #[test]
+    fn test_strip_html_tags_entity_like() {
+        // &lt; and &gt; are NOT HTML entities here — they remain as chars
+        assert_eq!(strip_html_tags("a &lt; b"), "a &lt; b");
+        assert_eq!(strip_html_tags("a &gt; b"), "a &gt; b");
+        assert_eq!(strip_html_tags("a &amp; b"), "a &amp; b");
+    }
+
+    #[test]
+    fn test_strip_html_tags_multiline() {
+        let input = "<html>\n<body>\n<p>Line1\nLine2</p>\n</body>\n</html>";
+        assert_eq!(strip_html_tags(input), "Line1 Line2");
+    }
+
+    #[test]
+    fn test_strip_html_tags_with_attributes() {
+        let input = r#"<a href="https://example.com" title="Link">Click</a>"#;
+        assert_eq!(strip_html_tags(input), "Click");
+    }
+
+    #[test]
+    fn test_strip_html_tags_script_style() {
+        let input = "<script>alert('xss')</script>Safe text";
+        assert_eq!(strip_html_tags(input), "alert('xss')Safe text");
+        let input2 = "<style>body{color:red}</style>Visible";
+        assert_eq!(strip_html_tags(input2), "body{color:red}Visible");
+    }
+
+    #[test]
+    fn test_strip_html_tags_unicode() {
+        assert_eq!(strip_html_tags("<p>こんにちは</p>"), "こんにちは");
+        assert_eq!(strip_html_tags("<span>日本語</span>"), "日本語");
+    }
+}

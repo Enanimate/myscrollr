@@ -1,0 +1,75 @@
+name: Backend Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "api/**"
+      - "channels/**/*.go"
+      - "channels/**/*.rs"
+  pull_request:
+    branches: [main]
+    paths:
+      - "api/**"
+      - "channels/**/*.go"
+      - "channels/**/*.rs"
+
+jobs:
+  # ── Go tests (5 independent jobs, run in parallel) ─────────────
+  go-tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - dir: api/core
+            module: github.com/brandon-relentnet/myscrollr/api
+          - dir: channels/finance/api
+            module: github.com/brandon-relentnet/scrollr-finance
+          - dir: channels/sports/api
+            module: github.com/brandon-relentnet/scrollr-sports
+          - dir: channels/rss/api
+            module: github.com/brandon-relentnet/scrollr-rss
+          - dir: channels/fantasy/api
+            module: github.com/brandon-relentnet/scrollr-fantasy
+
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ matrix.dir }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+          cache: true
+          cache-dependency-path: ${{ matrix.dir }}/go.sum
+
+      - run: go test ./...
+
+  # ── Rust tests (3 independent jobs, run in parallel) ───────────
+  rust-tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - dir: channels/finance/service
+          - dir: channels/sports/service
+          - dir: channels/rss/service
+
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ matrix.dir }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: "true"
+
+      - run: cargo test --quiet
