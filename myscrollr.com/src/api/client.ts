@@ -267,6 +267,21 @@ export const billingApi = {
       getToken,
     ),
 
+  /** Change subscription plan (upgrade/downgrade with proration) */
+  changePlan: (
+    priceId: string,
+    getToken: () => Promise<string | null>,
+  ) =>
+    authenticatedFetch<SubscriptionStatus>(
+      '/users/me/subscription/plan',
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ price_id: priceId }),
+      },
+      getToken,
+    ),
+
   /** Cancel subscription at period end */
   cancelSubscription: (getToken: () => Promise<string | null>) =>
     authenticatedFetch<{

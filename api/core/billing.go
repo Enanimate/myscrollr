@@ -419,3 +419,119 @@ func HandleCancelSubscription(c *fiber.Ctx) error {
 		"message":            "Your subscription will end at the current billing period",
 	})
 }
+
+// HandleChangePlan upgrades or downgrades the user's existing subscription.
+// Uses Stripe proration to charge or credit the difference immediately.
+func HandleChangePlan(c *fiber.Ctx) error {
+	userID := GetUserID(c)
+	if userID == "" {
+		return c.Status(fiber.StatusUnauthorized).JSON(ErrorResponse{
+			Status: "unauthorized", Error: "Authentication required",
+		})
+	}
+
+	var req CheckoutRequest
+	if err := c.BodyParser(&req); err != nil || req.PriceID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
+			Status: "error", Error: "price_id is required",
+		})
+	}
+
+	// Validate the price is a known recurring plan
+	newPlan := planFromPriceID(req.PriceID)
+	if newPlan == "unknown" || newPlan == "lifetime" {
+		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
+			Status: "error", Error: "Invalid price_id for plan change",
+		})
+	}
+
+	// Get the current subscription from DB
+	var subID *string
+	var currentPlan string
+	var isLifetime bool
+	err := DBPool.QueryRow(context.Background(),
+		`SELECT stripe_subscription_id, plan, lifetime FROM stripe_customers WHERE logto_sub = $1`, userID,
+	).Scan(&subID, &currentPlan, &isLifetime)
+	if err != nil || subID == nil {
+		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
+			Status: "error", Error: "No active subscription found",
+		})
+	}
+
+	if isLifetime {
+		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
+			Status: "error", Error: "Lifetime memberships cannot change plan — subscribe to a new tier instead",
+		})
+	}
+
+	if currentPlan == newPlan {
+		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{
+			Status: "error", Error: "You are already on this plan",
+		})
+	}
+
+	// Get the current subscription from Stripe to find the item ID
+	sub, err := stripesubscription.Get(*subID, nil)
+	if err != nil {
+		log.Printf("[Billing] Failed to retrieve subscription %s for %s: %v", *subID, userID, err)
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
+			Status: "error", Error: "Failed to retrieve subscription",
+		})
+	}
+
+	if sub.Items == nil || len(sub.Items.Data) == 0 {
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
+			Status: "error", Error: "Subscription has no items",
+		})
+	}
+
+	itemID := sub.Items.Data[0].ID
+
+	// Update the subscription: swap the price on the existing item
+	// ProrationBehavior: create_prorations charges the difference immediately on upgrade
+	// and applies credit on downgrade
+	updateParams := &stripe.SubscriptionParams{
+		ProrationBehavior: stripe.String(string(stripe.SubscriptionProrationBehaviorCreateProrations)),
+		Items: []*stripe.SubscriptionItemsParams{
+			{
+				ID:    stripe.String(itemID),
+				Price: stripe.String(req.PriceID),
+			},
+		},
+	}
+
+	// If the subscription was set to cancel at period end, undo that
+	if sub.CancelAtPeriodEnd {
+		updateParams.CancelAtPeriodEnd = stripe.Bool(false)
+	}
+
+	updatedSub, err := stripesubscription.Update(*subID, updateParams)
+	if err != nil {
+		log.Printf("[Billing] Failed to change plan for %s from %s to %s: %v", userID, currentPlan, newPlan, err)
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
+			Status: "error", Error: "Failed to change plan",
+		})
+	}
+
+	// Update DB optimistically (webhook will also fire and sync)
+	var periodEndUnix int64
+	if updatedSub.Items != nil && len(updatedSub.Items.Data) > 0 {
+		periodEndUnix = updatedSub.Items.Data[0].CurrentPeriodEnd
+	}
+	periodEnd := time.Unix(periodEndUnix, 0)
+
+	_, _ = DBPool.Exec(context.Background(),
+		`UPDATE stripe_customers SET plan = $2, status = 'active', current_period_end = $3, updated_at = now()
+		 WHERE logto_sub = $1`,
+		userID, newPlan, periodEnd,
+	)
+
+	log.Printf("[Billing] Plan changed for %s: %s → %s", userID, currentPlan, newPlan)
+
+	return c.JSON(SubscriptionResponse{
+		Plan:             newPlan,
+		Status:           "active",
+		CurrentPeriodEnd: &periodEnd,
+		Lifetime:         false,
+	})
+}

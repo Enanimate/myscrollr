@@ -166,6 +166,7 @@ func (s *Server) setupRoutes() {
 	s.App.Post("/checkout/lifetime", LogtoAuth, HandleCreateLifetimeCheckout)
 	s.App.Get("/checkout/return", LogtoAuth, HandleCheckoutReturn)
 	s.App.Get("/users/me/subscription", LogtoAuth, HandleGetSubscription)
+	s.App.Put("/users/me/subscription/plan", LogtoAuth, HandleChangePlan)
 	s.App.Post("/users/me/subscription/cancel", LogtoAuth, HandleCancelSubscription)
 
 	// User Routes — specific /users/me/* paths BEFORE parameterized /users/:username

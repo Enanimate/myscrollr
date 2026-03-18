@@ -35,6 +35,7 @@ import {
   TrendingUp,
   Trophy,
   Users,
+  AlertTriangle,
   Zap,
 } from 'lucide-react'
 
@@ -43,6 +44,7 @@ import { usePageMeta } from '@/lib/usePageMeta'
 import { useScrollrAuth } from '@/hooks/useScrollrAuth'
 import { useGetToken } from '@/hooks/useGetToken'
 import { billingApi } from '@/api/client'
+import type { SubscriptionStatus } from '@/api/client'
 import { FAQSection } from '@/components/landing/FAQSection'
 
 const CheckoutForm = lazy(() => import('@/components/billing/CheckoutForm'))
@@ -379,6 +381,23 @@ const BILLING_LABELS: Record<BillingView, string> = {
   monthly: 'Monthly',
   annual: 'Annual',
   lifetime: 'Lifetime',
+}
+
+// ── Tier Helpers ───────────────────────────────────────────────
+
+const TIER_RANK: Record<TierKey, number> = { uplink: 1, pro: 2, ultimate: 3 }
+
+function tierFromPlan(plan: string): TierKey | null {
+  if (plan === 'monthly' || plan === 'annual') return 'uplink'
+  if (plan === 'pro_monthly' || plan === 'pro_annual') return 'pro'
+  if (plan === 'ultimate_monthly' || plan === 'ultimate_annual') return 'ultimate'
+  return null
+}
+
+function getPriceId(tier: TierKey, plan: PlanKey): string {
+  if (tier === 'ultimate') return ULTIMATE_PRICE_IDS[plan]
+  if (tier === 'pro') return PRO_PRICE_IDS[plan]
+  return UPLINK_PRICE_IDS[plan]
 }
 
 // ── CTA Particles ──────────────────────────────────────────────
@@ -881,8 +900,26 @@ function UplinkPage() {
   const [checkoutSuccess, setCheckoutSuccess] = useState(false)
   const [checkingSession, setCheckingSession] = useState(false)
   const [billingView, setBillingView] = useState<BillingView>('annual')
+  const [currentSub, setCurrentSub] = useState<SubscriptionStatus | null>(null)
+  const [planChanging, setPlanChanging] = useState(false)
+  const [planChangeError, setPlanChangeError] = useState<string | null>(null)
   const isLifetime = billingView === 'lifetime'
   const billingPeriod: PlanKey = isLifetime ? 'annual' : billingView
+
+  // Derive active tier from current subscription
+  const activeTier =
+    currentSub && currentSub.status === 'active'
+      ? tierFromPlan(currentSub.plan)
+      : null
+
+  // Fetch subscription status on mount (when authenticated)
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setCurrentSub(null)
+      return
+    }
+    billingApi.getSubscription(getToken).then(setCurrentSub).catch(() => {})
+  }, [isAuthenticated, getToken, checkoutSuccess])
 
   // Handle return from Stripe checkout via ?session_id=
   useEffect(() => {
@@ -908,11 +945,33 @@ function UplinkPage() {
       })
   }, [session_id, getToken, navigate])
 
-  const handleSelectPlan = (plan: PlanKey, tier: TierKey = 'uplink') => {
+  const handleSelectPlan = async (plan: PlanKey, tier: TierKey = 'uplink') => {
     if (!isAuthenticated) {
       signIn(window.location.origin + '/uplink')
       return
     }
+
+    setPlanChangeError(null)
+
+    // If user has an active subscription on a different tier, use plan change API
+    if (activeTier && activeTier !== tier) {
+      setPlanChanging(true)
+      try {
+        const priceId = getPriceId(tier, plan)
+        const updated = await billingApi.changePlan(priceId, getToken)
+        setCurrentSub(updated)
+        setCheckoutSuccess(true)
+      } catch (err) {
+        setPlanChangeError(
+          err instanceof Error ? err.message : 'Failed to change plan',
+        )
+      } finally {
+        setPlanChanging(false)
+      }
+      return
+    }
+
+    // No subscription or same tier — original checkout flow
     setSelectedPlan(plan)
     setSelectedTier(tier)
     setShowCheckout(true)
@@ -926,9 +985,14 @@ function UplinkPage() {
 
   const getSelectedPriceId = (): string => {
     if (!selectedPlan) return ''
-    if (selectedTier === 'ultimate') return ULTIMATE_PRICE_IDS[selectedPlan]
-    if (selectedTier === 'pro') return PRO_PRICE_IDS[selectedPlan]
-    return UPLINK_PRICE_IDS[selectedPlan]
+    return getPriceId(selectedTier, selectedPlan)
+  }
+
+  /** Get the CTA label for a tier card based on current subscription state. */
+  const getCtaLabel = (tier: TierKey): string => {
+    if (!activeTier) return 'Start Free Trial'
+    if (activeTier === tier) return 'Current Plan'
+    return TIER_RANK[tier] > TIER_RANK[activeTier] ? 'Upgrade' : 'Downgrade'
   }
 
   return (
@@ -970,6 +1034,29 @@ function UplinkPage() {
             className="ml-4 text-base-content/30 hover:text-base-content/60 transition-colors text-xs"
           >
             \u2715
+          </button>
+        </motion.div>
+      )}
+
+      {/* ── Plan Change Error Banner ──────────────────────────── */}
+      {planChangeError && (
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="fixed top-24 left-1/2 -translate-x-1/2 z-40 px-6 py-4 bg-error/10 border border-error/30 rounded-lg backdrop-blur-sm flex items-center gap-3"
+        >
+          <AlertTriangle size={18} className="text-error" />
+          <div>
+            <p className="text-xs font-bold text-error">Plan Change Failed</p>
+            <p className="text-[10px] text-base-content/40">
+              {planChangeError}
+            </p>
+          </div>
+          <button
+            onClick={() => setPlanChangeError(null)}
+            className="ml-4 text-base-content/30 hover:text-base-content/60 transition-colors text-xs"
+          >
+            ✕
           </button>
         </motion.div>
       )}
@@ -1940,16 +2027,22 @@ function UplinkPage() {
                       transition: { type: 'tween', duration: 0.2 },
                     }}
                     role="button"
-                    tabIndex={0}
+                    tabIndex={activeTier === 'uplink' ? -1 : 0}
                     aria-label={`Select Uplink ${BILLING_LABELS[billingPeriod]} plan`}
-                    onClick={() => handleSelectPlan(billingPeriod, 'uplink')}
+                    onClick={() =>
+                      activeTier !== 'uplink' &&
+                      handleSelectPlan(billingPeriod, 'uplink')
+                    }
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
+                      if (
+                        activeTier !== 'uplink' &&
+                        (e.key === 'Enter' || e.key === ' ')
+                      ) {
                         e.preventDefault()
                         handleSelectPlan(billingPeriod, 'uplink')
                       }
                     }}
-                    className="group relative bg-base-200/40 border border-info/15 rounded-xl p-6 hover:border-info/30 transition-colors overflow-hidden cursor-pointer flex flex-col"
+                    className={`group relative bg-base-200/40 border border-info/15 rounded-xl p-6 transition-colors overflow-hidden flex flex-col ${activeTier === 'uplink' ? 'opacity-60 cursor-default' : 'hover:border-info/30 cursor-pointer'}`}
                   >
                     <div
                       className="absolute top-0 left-0 right-0 h-px"
@@ -2055,13 +2148,23 @@ function UplinkPage() {
                       </div>
 
                       <div className="mt-auto pt-2 flex flex-col items-center gap-1.5">
-                        <div className="w-full py-2.5 text-center text-[10px] font-semibold border border-info/20 text-info/60 rounded-lg group-hover:border-info/40 group-hover:text-info/80 transition-colors">
-                          Start Free Trial
+                        <div
+                          className={`w-full py-2.5 text-center text-[10px] font-semibold border rounded-lg transition-colors ${
+                            activeTier === 'uplink'
+                              ? 'border-base-content/10 text-base-content/30 cursor-default'
+                              : 'border-info/20 text-info/60 group-hover:border-info/40 group-hover:text-info/80'
+                          }`}
+                        >
+                          {planChanging && activeTier !== 'uplink'
+                            ? 'Changing...'
+                            : getCtaLabel('uplink')}
                         </div>
-                        <span className="text-[9px] text-base-content/20">
-                          7 days free, then $
-                          {PRICING.uplink[billingPeriod].perMonth}/mo
-                        </span>
+                        {!activeTier && (
+                          <span className="text-[9px] text-base-content/20">
+                            7 days free, then $
+                            {PRICING.uplink[billingPeriod].perMonth}/mo
+                          </span>
+                        )}
                       </div>
                     </div>
                   </motion.div>
@@ -2076,16 +2179,22 @@ function UplinkPage() {
                       transition: { type: 'tween', duration: 0.2 },
                     }}
                     role="button"
-                    tabIndex={0}
+                    tabIndex={activeTier === 'pro' ? -1 : 0}
                     aria-label={`Select Pro ${BILLING_LABELS[billingPeriod]} plan`}
-                    onClick={() => handleSelectPlan(billingPeriod, 'pro')}
+                    onClick={() =>
+                      activeTier !== 'pro' &&
+                      handleSelectPlan(billingPeriod, 'pro')
+                    }
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
+                      if (
+                        activeTier !== 'pro' &&
+                        (e.key === 'Enter' || e.key === ' ')
+                      ) {
                         e.preventDefault()
                         handleSelectPlan(billingPeriod, 'pro')
                       }
                     }}
-                    className="group relative bg-base-200/40 border border-[#a78bfa]/15 rounded-xl p-6 hover:border-[#a78bfa]/30 transition-colors overflow-hidden cursor-pointer flex flex-col"
+                    className={`group relative bg-base-200/40 border border-[#a78bfa]/15 rounded-xl p-6 transition-colors overflow-hidden flex flex-col ${activeTier === 'pro' ? 'opacity-60 cursor-default' : 'hover:border-[#a78bfa]/30 cursor-pointer'}`}
                   >
                     <div
                       className="absolute top-0 left-0 right-0 h-px"
@@ -2201,13 +2310,23 @@ function UplinkPage() {
                       </div>
 
                       <div className="mt-auto pt-2 flex flex-col items-center gap-1.5">
-                        <div className="w-full py-2.5 text-center text-[10px] font-semibold border border-[#a78bfa]/20 text-[#a78bfa]/60 rounded-lg group-hover:border-[#a78bfa]/40 group-hover:text-[#a78bfa]/80 transition-colors">
-                          Start Free Trial
+                        <div
+                          className={`w-full py-2.5 text-center text-[10px] font-semibold border rounded-lg transition-colors ${
+                            activeTier === 'pro'
+                              ? 'border-base-content/10 text-base-content/30 cursor-default'
+                              : 'border-[#a78bfa]/20 text-[#a78bfa]/60 group-hover:border-[#a78bfa]/40 group-hover:text-[#a78bfa]/80'
+                          }`}
+                        >
+                          {planChanging && activeTier !== 'pro'
+                            ? 'Changing...'
+                            : getCtaLabel('pro')}
                         </div>
-                        <span className="text-[9px] text-base-content/20">
-                          7 days free, then $
-                          {PRICING.pro[billingPeriod].perMonth}/mo
-                        </span>
+                        {!activeTier && (
+                          <span className="text-[9px] text-base-content/20">
+                            7 days free, then $
+                            {PRICING.pro[billingPeriod].perMonth}/mo
+                          </span>
+                        )}
                       </div>
                     </div>
                   </motion.div>
@@ -2222,16 +2341,22 @@ function UplinkPage() {
                       transition: { type: 'tween', duration: 0.2 },
                     }}
                     role="button"
-                    tabIndex={0}
-                    aria-label={`Select Unlimited ${BILLING_LABELS[billingPeriod]} plan`}
-                    onClick={() => handleSelectPlan(billingPeriod, 'ultimate')}
+                    tabIndex={activeTier === 'ultimate' ? -1 : 0}
+                    aria-label={`Select Ultimate ${BILLING_LABELS[billingPeriod]} plan`}
+                    onClick={() =>
+                      activeTier !== 'ultimate' &&
+                      handleSelectPlan(billingPeriod, 'ultimate')
+                    }
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
+                      if (
+                        activeTier !== 'ultimate' &&
+                        (e.key === 'Enter' || e.key === ' ')
+                      ) {
                         e.preventDefault()
                         handleSelectPlan(billingPeriod, 'ultimate')
                       }
                     }}
-                    className="group relative rounded-xl overflow-hidden cursor-pointer flex flex-col"
+                    className={`group relative rounded-xl overflow-hidden flex flex-col ${activeTier === 'ultimate' ? 'opacity-60 cursor-default' : 'cursor-pointer'}`}
                   >
                     {/* Pulsing border glow */}
                     <motion.div
@@ -2491,13 +2616,23 @@ function UplinkPage() {
                         </div>
 
                         <div className="mt-auto pt-2 flex flex-col items-center gap-1.5">
-                          <div className="w-full py-2.5 text-center text-[10px] font-semibold bg-primary/10 border border-primary/30 text-primary rounded-lg group-hover:bg-primary/20 group-hover:border-primary/50 transition-colors">
-                            Start Free Trial
+                          <div
+                            className={`w-full py-2.5 text-center text-[10px] font-semibold border rounded-lg transition-colors ${
+                              activeTier === 'ultimate'
+                                ? 'border-base-content/10 text-base-content/30 cursor-default'
+                                : 'bg-primary/10 border-primary/30 text-primary group-hover:bg-primary/20 group-hover:border-primary/50'
+                            }`}
+                          >
+                            {planChanging && activeTier !== 'ultimate'
+                              ? 'Changing...'
+                              : getCtaLabel('ultimate')}
                           </div>
-                          <span className="text-[9px] text-base-content/20">
-                            7 days free, then $
-                            {PRICING.ultimate[billingPeriod].perMonth}/mo
-                          </span>
+                          {!activeTier && (
+                            <span className="text-[9px] text-base-content/20">
+                              7 days free, then $
+                              {PRICING.ultimate[billingPeriod].perMonth}/mo
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
