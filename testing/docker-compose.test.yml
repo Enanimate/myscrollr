@@ -1,0 +1,121 @@
+# Docker Compose test stack — spins up Postgres, Redis, stripe-mock, and
+# all four custom mock servers.  Each service is built from the local
+# testing/mocks/ directory so changes to mock code are picked up immediately.
+#
+# Usage:
+#   docker compose -f testing/docker-compose.test.yml up -d
+#   docker compose -f testing/docker-compose.test.yml down
+#
+# Environment:
+#   Source testing/.env.test to point all backend services at the mock stack.
+#   The .env.test file is consumed by docker compose, not the services themselves.
+
+name: myscrollr-test
+
+services:
+  # ---------------------------------------------------------------------------
+  # Infrastructure
+  # ---------------------------------------------------------------------------
+
+  test-postgres:
+    image: postgres:16-alpine
+    container_name: myscrollr-test-postgres
+    environment:
+      POSTGRES_DB: myscrollr_test
+      POSTGRES_USER: myscrollr_test
+      POSTGRES_PASSWORD: myscrollr_test
+    ports:
+      - "5433:5432"
+    volumes:
+      - test-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U myscrollr_test -d myscrollr_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  test-redis:
+    image: redis:7-alpine
+    container_name: myscrollr-test-redis
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ---------------------------------------------------------------------------
+  # Mock third-party APIs
+  # ---------------------------------------------------------------------------
+
+  mock-logto:
+    build:
+      context: ./mocks/logto
+      dockerfile: Dockerfile
+    container_name: myscrollr-test-logto
+    ports:
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9001/oidc/jwks || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mock-twelvedata:
+    build:
+      context: ./mocks/twelvedata
+      dockerfile: Dockerfile
+    container_name: myscrollr-test-twelvedata
+    ports:
+      - "9002:9002"  # REST
+      - "9003:9003"  # WebSocket
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9002/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mock-apisports:
+    build:
+      context: ./mocks/apisports
+      dockerfile: Dockerfile
+    container_name: myscrollr-test-apisports
+    ports:
+      - "9004:9004"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9004/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mock-yahoo:
+    build:
+      context: ./mocks/yahoo
+      dockerfile: Dockerfile
+    container_name: myscrollr-test-yahoo
+    ports:
+      - "9005:9005"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9005/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mock-stripe:
+    image: stripe/stripe-mock:v0.182.0
+    container_name: myscrollr-test-stripe
+    ports:
+      - "12111:12111"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:12111/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+# ---------------------------------------------------------------------------
+# Volumes
+# ---------------------------------------------------------------------------
+
+volumes:
+  test-postgres-data:

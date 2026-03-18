@@ -1,0 +1,5 @@
+module github.com/brandon-relentnet/myscrollr/testing/mock-logto
+
+go 1.21
+
+require github.com/gofiber/fiber/v2 v2.52.0
