@@ -567,10 +567,23 @@ func HandleChangePlan(c *fiber.Ctx) error {
 	// Create (or reuse existing) subscription schedule, then set two phases:
 	// current price until period end, then new (lower) price after.
 	var scheduleID string
+	var phase1StartDate int64
+
 	if sub.Schedule != nil && sub.Schedule.ID != "" {
-		// Schedule already attached (e.g. from a previous partial failure or prior downgrade)
+		// Schedule already attached — fetch it to get the current phase's start date
 		scheduleID = sub.Schedule.ID
 		log.Printf("[Billing] Reusing existing schedule %s for %s", scheduleID, userID)
+
+		existing, err := subscriptionschedule.Get(scheduleID, nil)
+		if err != nil {
+			log.Printf("[Billing] Failed to fetch schedule %s: %v", scheduleID, err)
+			return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
+				Status: "error", Error: "Failed to fetch existing schedule",
+			})
+		}
+		if len(existing.Phases) > 0 {
+			phase1StartDate = existing.Phases[0].StartDate
+		}
 	} else {
 		schedule, err := subscriptionschedule.New(&stripe.SubscriptionScheduleParams{
 			FromSubscription: stripe.String(*subID),
@@ -582,6 +595,9 @@ func HandleChangePlan(c *fiber.Ctx) error {
 			})
 		}
 		scheduleID = schedule.ID
+		if len(schedule.Phases) > 0 {
+			phase1StartDate = schedule.Phases[0].StartDate
+		}
 	}
 
 	_, err = subscriptionschedule.Update(scheduleID, &stripe.SubscriptionScheduleParams{
@@ -591,8 +607,8 @@ func HandleChangePlan(c *fiber.Ctx) error {
 				Items: []*stripe.SubscriptionSchedulePhaseItemParams{
 					{Price: stripe.String(currentPriceID)},
 				},
-				StartDateNow: stripe.Bool(true),
-				EndDate:       stripe.Int64(periodEndUnix),
+				StartDate: stripe.Int64(phase1StartDate),
+				EndDate:   stripe.Int64(periodEndUnix),
 			},
 			{
 				Items: []*stripe.SubscriptionSchedulePhaseItemParams{
