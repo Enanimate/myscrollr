@@ -564,19 +564,27 @@ func HandleChangePlan(c *fiber.Ctx) error {
 	}
 
 	// ── DOWNGRADE: schedule change at end of billing cycle ────────
-	// Create a subscription schedule from the existing subscription, then set
-	// two phases: current price until period end, then new (lower) price after.
-	schedule, err := subscriptionschedule.New(&stripe.SubscriptionScheduleParams{
-		FromSubscription: stripe.String(*subID),
-	})
-	if err != nil {
-		log.Printf("[Billing] Failed to create schedule for %s: %v", userID, err)
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
-			Status: "error", Error: "Failed to schedule downgrade",
+	// Create (or reuse existing) subscription schedule, then set two phases:
+	// current price until period end, then new (lower) price after.
+	var scheduleID string
+	if sub.Schedule != nil && sub.Schedule.ID != "" {
+		// Schedule already attached (e.g. from a previous partial failure or prior downgrade)
+		scheduleID = sub.Schedule.ID
+		log.Printf("[Billing] Reusing existing schedule %s for %s", scheduleID, userID)
+	} else {
+		schedule, err := subscriptionschedule.New(&stripe.SubscriptionScheduleParams{
+			FromSubscription: stripe.String(*subID),
 		})
+		if err != nil {
+			log.Printf("[Billing] Failed to create schedule for %s: %v", userID, err)
+			return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
+				Status: "error", Error: "Failed to schedule downgrade",
+			})
+		}
+		scheduleID = schedule.ID
 	}
 
-	_, err = subscriptionschedule.Update(schedule.ID, &stripe.SubscriptionScheduleParams{
+	_, err = subscriptionschedule.Update(scheduleID, &stripe.SubscriptionScheduleParams{
 		EndBehavior: stripe.String("release"),
 		Phases: []*stripe.SubscriptionSchedulePhaseParams{
 			{
