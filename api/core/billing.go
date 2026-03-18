@@ -82,13 +82,13 @@ func getOrCreateStripeCustomer(logtoSub, email string) (string, error) {
 		`SELECT stripe_customer_id FROM stripe_customers WHERE logto_sub = $1`, logtoSub,
 	).Scan(&customerID)
 	if err == nil && customerID != "" {
-		// Verify the cached customer still exists in Stripe
-		_, stripeErr := stripecustomer.Get(customerID, nil)
-		if stripeErr == nil {
+		// Verify the cached customer still exists in Stripe and isn't deleted
+		c, stripeErr := stripecustomer.Get(customerID, nil)
+		if stripeErr == nil && !c.Deleted {
 			return customerID, nil
 		}
-		// Stale or invalid customer (e.g. mode switch) — purge and recreate
-		log.Printf("[Billing] Stale Stripe customer %s for %s, recreating: %v", customerID, logtoSub, stripeErr)
+		// Stale, deleted, or invalid customer — purge and recreate
+		log.Printf("[Billing] Stale Stripe customer %s for %s (deleted=%v), recreating", customerID, logtoSub, c != nil && c.Deleted)
 		_, _ = DBPool.Exec(context.Background(),
 			`DELETE FROM stripe_customers WHERE logto_sub = $1`, logtoSub)
 	}
