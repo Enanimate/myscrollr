@@ -591,7 +591,8 @@ func HandleChangePlan(c *fiber.Ctx) error {
 				Items: []*stripe.SubscriptionSchedulePhaseItemParams{
 					{Price: stripe.String(currentPriceID)},
 				},
-				EndDate: stripe.Int64(periodEndUnix),
+				StartDateNow: stripe.Bool(true),
+				EndDate:       stripe.Int64(periodEndUnix),
 			},
 			{
 				Items: []*stripe.SubscriptionSchedulePhaseItemParams{
