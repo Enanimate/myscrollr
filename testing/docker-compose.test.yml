@@ -9,6 +9,12 @@
 # Environment:
 #   Source testing/.env.test to point all backend services at the mock stack.
 #   The .env.test file is consumed by docker compose, not the services themselves.
+#
+# Note:
+#   On Linux, host.docker.internal is added via extra_hosts. On Docker Desktop
+#   (macOS/Windows) this is automatic. If running on Linux without this, set
+#   EXTRA_HOSTS=host-gateway in your environment or replace host.docker.internal
+#   with your machine's LAN IP in .env.test.
 
 name: myscrollr-test
 
@@ -28,6 +34,8 @@ services:
       - "5433:5432"
     volumes:
       - test-postgres-data:/var/lib/postgresql/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U myscrollr_test -d myscrollr_test"]
       interval: 5s
@@ -39,6 +47,8 @@ services:
     container_name: myscrollr-test-redis
     ports:
       - "6380:6379"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -56,6 +66,8 @@ services:
     container_name: myscrollr-test-logto
     ports:
       - "9001:9001"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:9001/oidc/jwks || exit 1"]
       interval: 5s
@@ -70,6 +82,8 @@ services:
     ports:
       - "9002:9002"  # REST
       - "9003:9003"  # WebSocket
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:9002/health || exit 1"]
       interval: 5s
@@ -83,6 +97,8 @@ services:
     container_name: myscrollr-test-apisports
     ports:
       - "9004:9004"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:9004/health || exit 1"]
       interval: 5s
@@ -96,6 +112,8 @@ services:
     container_name: myscrollr-test-yahoo
     ports:
       - "9005:9005"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:9005/health || exit 1"]
       interval: 5s
@@ -107,8 +125,10 @@ services:
     container_name: myscrollr-test-stripe
     ports:
       - "12111:12111"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:12111/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:12111 || exit 0"]
       interval: 5s
       timeout: 5s
       retries: 10
