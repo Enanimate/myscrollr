@@ -101,9 +101,10 @@ func (a *App) getLeagueCatalog(c *fiber.Ctx) error {
 	}
 
 	ctx := context.Background()
+	currentMonth := int32(time.Now().Month())
 
 	rows, err := a.db.Query(ctx,
-		`SELECT name, COALESCE(sport_api, ''), COALESCE(category, 'Other'), COALESCE(country, ''), COALESCE(logo_url, '')
+		`SELECT name, COALESCE(sport_api, ''), COALESCE(category, 'Other'), COALESCE(country, ''), COALESCE(logo_url, ''), offseason_months
 		 FROM tracked_leagues WHERE is_enabled = true ORDER BY category, name`)
 	if err != nil {
 		log.Printf("[Sports] Catalog query failed: %v", err)
@@ -117,10 +118,12 @@ func (a *App) getLeagueCatalog(c *fiber.Ctx) error {
 	catalog = make([]TrackedLeague, 0)
 	for rows.Next() {
 		var l TrackedLeague
-		if err := rows.Scan(&l.Name, &l.SportAPI, &l.Category, &l.Country, &l.LogoURL); err != nil {
+		if err := rows.Scan(&l.Name, &l.SportAPI, &l.Category, &l.Country, &l.LogoURL, &l.OffseasonMonths); err != nil {
 			log.Printf("[Sports] Catalog scan error: %v", err)
 			continue
 		}
+		// Compute is_offseason from offseason_months (default false if nil/empty)
+		l.IsOffseason = containsMonth(l.OffseasonMonths, currentMonth)
 		catalog = append(catalog, l)
 	}
 
@@ -166,6 +169,17 @@ func (a *App) getLeagueCatalog(c *fiber.Ctx) error {
 	SetCache(a.rdb, CacheKeySportsCatalog, catalog, SportsCatalogCacheTTL)
 	c.Set("X-Cache", "MISS")
 	return c.JSON(catalog)
+}
+
+// containsMonth checks if the given month is in the offseason_months slice.
+// Returns false if the slice is nil or empty (default to in-season).
+func containsMonth(months []int32, month int32) bool {
+	for _, m := range months {
+		if m == month {
+			return true
+		}
+	}
+	return false
 }
 
 // healthHandler proxies a health check to the internal Rust sports service.

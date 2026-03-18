@@ -6,7 +6,8 @@
     "league_id": 1,
     "category": "Football",
     "country": "USA",
-    "season_format": "fall-august"
+    "season_format": "fall-august",
+    "offseason_months": [3, 4, 5, 6, 7, 8]
   },
   {
     "name": "NCAA Football",
@@ -15,7 +16,8 @@
     "league_id": 2,
     "category": "Football",
     "country": "USA",
-    "season_format": "fall-august"
+    "season_format": "fall-august",
+    "offseason_months": [2, 3, 4, 5, 6, 7]
   },
   {
     "name": "NBA",
@@ -24,7 +26,8 @@
     "league_id": 12,
     "category": "Basketball",
     "country": "USA",
-    "season_format": "cross-year"
+    "season_format": "cross-year",
+    "offseason_months": [7, 8, 9]
   },
   {
     "name": "NCAA Basketball",
@@ -33,7 +36,8 @@
     "league_id": 116,
     "category": "Basketball",
     "country": "USA",
-    "season_format": "cross-year"
+    "season_format": "cross-year",
+    "offseason_months": [5, 6, 7, 8, 9, 10]
   },
   {
     "name": "NHL",
@@ -42,7 +46,8 @@
     "league_id": 57,
     "category": "Hockey",
     "country": "USA",
-    "season_format": "fall-october"
+    "season_format": "fall-october",
+    "offseason_months": [7, 8, 9]
   },
   {
     "name": "MLB",
@@ -51,7 +56,8 @@
     "league_id": 1,
     "category": "Baseball",
     "country": "USA",
-    "season_format": "calendar"
+    "season_format": "calendar",
+    "offseason_months": [11, 12, 1, 2]
   },
   {
     "name": "Premier League",
@@ -60,7 +66,8 @@
     "league_id": 39,
     "category": "Soccer",
     "country": "England",
-    "season_format": "fall-august"
+    "season_format": "fall-august",
+    "offseason_months": [6, 7]
   },
   {
     "name": "La Liga",
@@ -69,7 +76,8 @@
     "league_id": 140,
     "category": "Soccer",
     "country": "Spain",
-    "season_format": "fall-august"
+    "season_format": "fall-august",
+    "offseason_months": [6, 7]
   },
   {
     "name": "MLS",
@@ -78,7 +86,8 @@
     "league_id": 253,
     "category": "Soccer",
     "country": "USA",
-    "season_format": "calendar"
+    "season_format": "calendar",
+    "offseason_months": [12, 1, 2]
   },
   {
     "name": "Champions League",
@@ -87,7 +96,8 @@
     "league_id": 2,
     "category": "Soccer",
     "country": "World",
-    "season_format": "fall-august"
+    "season_format": "fall-august",
+    "offseason_months": [6, 7]
   },
   {
     "name": "Formula 1",
@@ -96,7 +106,8 @@
     "league_id": 1,
     "category": "Motorsport",
     "country": "World",
-    "season_format": "calendar"
+    "season_format": "calendar",
+    "offseason_months": [1, 2]
   },
   {
     "name": "Six Nations",
@@ -105,7 +116,8 @@
     "league_id": 51,
     "category": "Rugby",
     "country": "Europe",
-    "season_format": "calendar"
+    "season_format": "calendar",
+    "offseason_months": [4, 5, 6, 7, 8, 9, 10, 11, 12]
   },
   {
     "name": "Super Rugby",
@@ -114,7 +126,8 @@
     "league_id": 71,
     "category": "Rugby",
     "country": "World",
-    "season_format": "calendar"
+    "season_format": "calendar",
+    "offseason_months": [8, 9, 10, 11, 12, 1]
   },
   {
     "name": "Premiership Rugby",
@@ -123,7 +136,8 @@
     "league_id": 13,
     "category": "Rugby",
     "country": "England",
-    "season_format": "cross-year"
+    "season_format": "cross-year",
+    "offseason_months": [7, 8]
   },
   {
     "name": "UFC",
@@ -141,7 +155,8 @@
     "league_id": 131,
     "category": "Handball",
     "country": "Europe",
-    "season_format": "cross-year"
+    "season_format": "cross-year",
+    "offseason_months": [6, 7, 8]
   },
   {
     "name": "Handball Bundesliga",
@@ -150,7 +165,8 @@
     "league_id": 39,
     "category": "Handball",
     "country": "Germany",
-    "season_format": "cross-year"
+    "season_format": "cross-year",
+    "offseason_months": [6, 7, 8]
   },
   {
     "name": "Starligue",
@@ -159,7 +175,8 @@
     "league_id": 34,
     "category": "Handball",
     "country": "France",
-    "season_format": "cross-year"
+    "season_format": "cross-year",
+    "offseason_months": [6, 7, 8]
   },
   {
     "name": "Volleyball Champions League",
@@ -168,7 +185,8 @@
     "league_id": 248,
     "category": "Volleyball",
     "country": "Europe",
-    "season_format": "cross-year"
+    "season_format": "cross-year",
+    "offseason_months": [6, 7, 8, 9]
   },
   {
     "name": "Volleyball Nations League",
@@ -177,7 +195,8 @@
     "league_id": 183,
     "category": "Volleyball",
     "country": "World",
-    "season_format": "calendar"
+    "season_format": "calendar",
+    "offseason_months": [8, 9, 10, 11, 12, 1, 2, 3, 4]
   },
   {
     "name": "AFL",
@@ -186,6 +205,7 @@
     "league_id": 1,
     "category": "Australian Football",
     "country": "Australia",
-    "season_format": "calendar"
+    "season_format": "calendar",
+    "offseason_months": [10, 11, 12, 1, 2]
   }
 ]

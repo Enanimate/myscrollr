@@ -111,9 +111,11 @@ export default function SportsConfigPanel({
                   )}
                   {item.game_count === 0 && (
                     <span className="text-fg-4/60">
-                      {item.next_game
-                        ? `Next: ${formatCountdown(item.next_game)}`
-                        : "Off-season"}
+                      {item.is_offseason
+                        ? "Off-season"
+                        : item.next_game
+                          ? `Next: ${formatCountdown(item.next_game)}`
+                          : "No games scheduled"}
                     </span>
                   )}
                 </div>
