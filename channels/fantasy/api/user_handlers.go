@@ -144,7 +144,7 @@ func (a *App) fetchAndLinkYahooUser(accessToken, refreshToken, logtoSub string) 
 	log.Printf("[fetchAndLinkYahooUser] Starting — logto_sub=%s access_token_len=%d", logtoSub, len(accessToken))
 
 	client := &http.Client{Timeout: YahooAPITimeout}
-	req, err := http.NewRequest("GET", "https://fantasysports.yahooapis.com/fantasy/v2/users;use_login=1", nil)
+	req, err := http.NewRequest("GET", getYahooBaseURL()+"/users;use_login=1", nil)
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
 	}

@@ -107,9 +107,11 @@ pub async fn update_all_previous_closes(state: FinanceState) {
 }
 
 pub(crate) async fn get_quote(symbol: String, client: Arc<Client>, api_key: &str) -> anyhow::Result<QuoteResponse> {
+    let rest_base = std::env::var("TWELVEDATA_REST_URL")
+        .unwrap_or_else(|_| "https://api.twelvedata.com".to_string());
     let url = format!(
-        "https://api.twelvedata.com/quote?symbol={}&apikey={}",
-        symbol, api_key
+        "{}/quote?symbol={}&apikey={}",
+        rest_base, symbol, api_key
     );
     let response = client.get(&url).send().await?.text().await?;
     let data: QuoteResponse = serde_json::from_str(&response)?;

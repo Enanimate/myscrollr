@@ -10,6 +10,7 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -27,9 +28,9 @@ import (
 // =============================================================================
 
 const (
-	yahooBaseURL  = "https://fantasysports.yahooapis.com/fantasy/v2"
-	yahooTokenURL = "https://api.login.yahoo.com/oauth2/get_token"
-	yahooUA       = "Mozilla/5.0"
+	defaultYahooBaseURL  = "https://fantasysports.yahooapis.com/fantasy/v2"
+	defaultYahooTokenURL = "https://api.login.yahoo.com/oauth2/get_token"
+	yahooUA              = "Mozilla/5.0"
 
 	// Default delay between Yahoo API calls (per-user rate limiting).
 	DefaultAPIDelay = 500 * time.Millisecond
@@ -38,6 +39,24 @@ const (
 	maxRetries     = 3
 	retryBaseDelay = 1 * time.Second
 )
+
+// yahooBaseURL returns the Yahoo Fantasy API base URL, overridable via
+// YAHOO_API_BASE_URL for local testing with mock servers.
+func getYahooBaseURL() string {
+	if v := os.Getenv("YAHOO_API_BASE_URL"); v != "" {
+		return strings.TrimRight(v, "/")
+	}
+	return defaultYahooBaseURL
+}
+
+// yahooTokenURL returns the Yahoo OAuth2 token endpoint, overridable via
+// YAHOO_TOKEN_URL for local testing with mock servers.
+func getYahooTokenURL() string {
+	if v := os.Getenv("YAHOO_TOKEN_URL"); v != "" {
+		return v
+	}
+	return defaultYahooTokenURL
+}
 
 // YahooClient is a per-user Yahoo Fantasy API client.  Each instance holds
 // its own access token and refresh token — no shared global state.
@@ -94,7 +113,7 @@ func (yc *YahooClient) refreshAccessToken(ctx context.Context) error {
 		"grant_type":    {"refresh_token"},
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", yahooTokenURL, strings.NewReader(form.Encode()))
+	req, err := http.NewRequestWithContext(ctx, "POST", getYahooTokenURL(), strings.NewReader(form.Encode()))
 	if err != nil {
 		return fmt.Errorf("yahoo token request: %w", err)
 	}
@@ -155,7 +174,7 @@ func (yc *YahooClient) makeRequest(ctx context.Context, urlPath string) ([]byte,
 		return nil, err
 	}
 
-	fullURL := yahooBaseURL + "/" + urlPath
+	fullURL := getYahooBaseURL() + "/" + urlPath
 
 	req, err := http.NewRequestWithContext(ctx, "GET", fullURL, nil)
 	if err != nil {

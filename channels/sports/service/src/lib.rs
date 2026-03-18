@@ -349,8 +349,16 @@ fn compute_current_season(season_format: &str) -> String {
 }
 
 /// Build the correct API URL based on the sport type.
+///
+/// When `API_SPORTS_BASE_URL` is set (e.g. `http://localhost:9090`), all
+/// requests are redirected to that host instead of the real api-sports.io
+/// endpoints.  The original `api_host` is sent as a query parameter so the
+/// mock server can distinguish between sports.
 fn build_api_url(league: &TrackedLeague, date: &str) -> String {
-    let base = format!("https://{}", league.api_host);
+    let base = match std::env::var("API_SPORTS_BASE_URL") {
+        Ok(override_url) => override_url.trim_end_matches('/').to_string(),
+        Err(_) => format!("https://{}", league.api_host),
+    };
     let format_str = league.season_format.as_deref().unwrap_or("calendar");
     let default_season = compute_current_season(format_str);
     let season = league.season.as_deref().unwrap_or(&default_season);

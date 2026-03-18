@@ -20,7 +20,9 @@ const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
 pub(crate) async fn connect(subscriptions: Vec<String>, api_key: String, client: Arc<Client>, pool: Arc<PgPool>, health_state: Arc<Mutex<FinanceHealth>>) -> Result<(), anyhow::Error> {
     let state = Arc::new(RwLock::new(WebSocketState::new()));
 
-    let url = format!("wss://ws.twelvedata.com/v1/quotes/price?apikey={}", api_key);
+    let ws_base = std::env::var("TWELVEDATA_WS_URL")
+        .unwrap_or_else(|_| "wss://ws.twelvedata.com/v1/quotes/price".to_string());
+    let url = format!("{}?apikey={}", ws_base, api_key);
 
     let (ws_stream, _) = connect_async(url).await.map_err(|e| {
         error!("Failed to connect to TwelveData WebSocket: {}", e);

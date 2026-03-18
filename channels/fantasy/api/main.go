@@ -143,12 +143,24 @@ func main() {
 		log.Println("[Fantasy] Warning: YAHOO_CLIENT_ID not set")
 	}
 
+	// Use env-var-overridable token URL so tests can redirect to a mock server.
+	// The auth URL is only used for browser redirects (user-facing), so it
+	// follows the same override pattern for consistency.
+	yahooAuthURL := yahoo.Endpoint.AuthURL
+	yahooTokenEndpoint := yahoo.Endpoint.TokenURL
+	if v := os.Getenv("YAHOO_AUTH_URL"); v != "" {
+		yahooAuthURL = v
+	}
+	if v := os.Getenv("YAHOO_TOKEN_URL"); v != "" {
+		yahooTokenEndpoint = v
+	}
+
 	yahooConfig := &oauth2.Config{
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
 		Endpoint: oauth2.Endpoint{
-			AuthURL:   yahoo.Endpoint.AuthURL,
-			TokenURL:  yahoo.Endpoint.TokenURL,
+			AuthURL:   yahooAuthURL,
+			TokenURL:  yahooTokenEndpoint,
 			AuthStyle: oauth2.AuthStyleInHeader,
 		},
 		RedirectURL: redirectURL,
