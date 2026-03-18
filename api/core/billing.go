@@ -491,7 +491,7 @@ func HandleChangePlan(c *fiber.Ctx) error {
 	// ProrationBehavior: create_prorations charges the difference immediately on upgrade
 	// and applies credit on downgrade
 	updateParams := &stripe.SubscriptionParams{
-		ProrationBehavior: stripe.String(string(stripe.SubscriptionProrationBehaviorCreateProrations)),
+		ProrationBehavior: stripe.String("create_prorations"),
 		Items: []*stripe.SubscriptionItemsParams{
 			{
 				ID:    stripe.String(itemID),
