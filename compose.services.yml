@@ -1,0 +1,149 @@
+name: myscrollr-test
+
+services:
+  scrollr-finance-api:
+    build:
+      context: ./channels/finance/api
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8081"
+    environment:
+      - DATABASE_URL=postgres://myscrollr_test:myscrollr_test@test-postgres:5432/myscrollr_test?sslmode=disable
+      - REDIS_URL=redis://test-redis:6379/0
+      - INTERNAL_FINANCE_URL=http://scrollr-finance-service:3001
+      - CHANNEL_URL=http://localhost:8081
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://dev.enanimate.dev,http://localhost:5174}
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+      scrollr-finance-service:
+        condition: service_started
+    restart: unless-stopped
+
+  scrollr-finance-service:
+    build:
+      context: ./channels/finance/service
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      - DATABASE_URL=postgres://myscrollr_test:myscrollr_test@test-postgres:5432/myscrollr_test?sslmode=disable
+      - TWELVEDATA_API_KEY=${TWELVEDATA_API_KEY:-test_twelvedata_key}
+      - TWELVEDATA_WS_URL=http://mock-twelvedata:9003/v1/quotes/price
+      - TWELVEDATA_REST_URL=http://mock-twelvedata:9002
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+      mock-twelvedata:
+        condition: service_healthy
+    restart: unless-stopped
+
+  scrollr-sports-api:
+    build:
+      context: ./channels/sports/api
+      dockerfile: Dockerfile
+    ports:
+      - "8082:8082"
+    environment:
+      - DATABASE_URL=postgres://myscrollr_test:myscrollr_test@test-postgres:5432/myscrollr_test?sslmode=disable
+      - REDIS_URL=redis://test-redis:6379/0
+      - INTERNAL_SPORTS_URL=http://scrollr-sports-service:3002
+      - CHANNEL_URL=http://localhost:8082
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://dev.enanimate.dev,http://localhost:5174}
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+      scrollr-sports-service:
+        condition: service_started
+    restart: unless-stopped
+
+  scrollr-sports-service:
+    build:
+      context: ./channels/sports/service
+      dockerfile: Dockerfile
+    ports:
+      - "3002:3002"
+    environment:
+      - DATABASE_URL=postgres://myscrollr_test:myscrollr_test@test-postgres:5432/myscrollr_test?sslmode=disable
+      - API_SPORTS_KEY=${API_SPORTS_KEY:-test_api_sports_key}
+      - API_SPORTS_BASE_URL=http://mock-apisports:9004
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+      mock-apisports:
+        condition: service_healthy
+    restart: unless-stopped
+
+  scrollr-rss-api:
+    build:
+      context: ./channels/rss/api
+      dockerfile: Dockerfile
+    ports:
+      - "8083:8083"
+    environment:
+      - DATABASE_URL=postgres://myscrollr_test:myscrollr_test@test-postgres:5432/myscrollr_test?sslmode=disable
+      - REDIS_URL=redis://test-redis:6379/0
+      - INTERNAL_RSS_URL=http://scrollr-rss-service:3004
+      - CHANNEL_URL=http://localhost:8083
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://dev.enanimate.dev,http://localhost:5174}
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+      scrollr-rss-service:
+        condition: service_started
+    restart: unless-stopped
+
+  scrollr-rss-service:
+    build:
+      context: ./channels/rss/service
+      dockerfile: Dockerfile
+    ports:
+      - "3004:3004"
+    environment:
+      - DATABASE_URL=postgres://myscrollr_test:myscrollr_test@test-postgres:5432/myscrollr_test?sslmode=disable
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  scrollr-fantasy-api:
+    build:
+      context: ./channels/fantasy/api
+      dockerfile: Dockerfile
+    ports:
+      - "8084:8084"
+    environment:
+      - DATABASE_URL=postgres://myscrollr_test:myscrollr_test@test-postgres:5432/myscrollr_test?sslmode=disable
+      - REDIS_URL=redis://test-redis:6379/0
+      - COOLIFY_FQDN=dev.enanimate.dev
+      - YAHOO_CLIENT_ID=${YAHOO_CLIENT_ID:-test_yahoo_client_id}
+      - YAHOO_CLIENT_SECRET=${YAHOO_CLIENT_SECRET:-test_yahoo_client_secret}
+      - YAHOO_CALLBACK_URL=http://dev.enanimate.dev/yahoo/callback
+      - YAHOO_API_BASE_URL=http://mock-yahoo:9005
+      - YAHOO_TOKEN_URL=http://mock-yahoo:9005/oauth2/get_token
+      - YAHOO_AUTH_URL=http://mock-yahoo:9005/oauth2/request_auth
+      - FRONTEND_URL=${FRONTEND_URL:-http://dev.enanimate.dev}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://dev.enanimate.dev,http://localhost:5174}
+      - SYNC_ENABLED=${SYNC_ENABLED:-false}
+      - SYNC_INTERVAL_SECS=${SYNC_INTERVAL_SECS:-120}
+      - SYNC_CONCURRENCY=${SYNC_CONCURRENCY:-40}
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+      mock-yahoo:
+        condition: service_healthy
+    restart: unless-stopped

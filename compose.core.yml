@@ -1,0 +1,38 @@
+name: myscrollr-test
+
+services:
+  core-api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile.test
+      args:
+        COOLIFY_FQDN: dev.enanimate.dev
+    ports:
+      - "8080:8080"
+    environment:
+      - DATABASE_URL=postgres://myscrollr_test:myscrollr_test@test-postgres:5432/myscrollr_test?sslmode=disable
+      - REDIS_URL=redis://test-redis:6379/0
+      - LOGTO_ENDPOINT=http://mock-logto:9001
+      - LOGTO_JWKS_URL=http://mock-logto:9001/oidc/jwks
+      - LOGTO_URL=http://dev.enanimate.dev/oidc
+      - LOGTO_M2M_RESOURCE=http://dev.enanimate.dev/api
+      - LOGTO_M2M_APP_ID=${LOGTO_M2M_APP_ID:-mock_app_id}
+      - LOGTO_M2M_APP_SECRET=${LOGTO_M2M_APP_SECRET:-mock_app_secret}
+      - LOGTO_UPLINK_ROLE_ID=${LOGTO_UPLINK_ROLE_ID:-mock_uplink_role}
+      - LOGTO_PRO_ROLE_ID=${LOGTO_PRO_ROLE_ID:-mock_pro_role}
+      - LOGTO_ULTIMATE_ROLE_ID=${LOGTO_ULTIMATE_ROLE_ID:-mock_ultimate_role}
+      - STRIPE_SECRET_KEY=sk_test_mock
+      - STRIPE_API_URL=http://mock-stripe:12111
+      - STRIPE_PUBLISHABLE_KEY=pk_test_mock
+      - STRIPE_WEBHOOK_SECRET=whsec_test_mock
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://dev.enanimate.dev,http://localhost:5174}
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+      mock-logto:
+        condition: service_healthy
+      mock-stripe:
+        condition: service_healthy
+    restart: unless-stopped

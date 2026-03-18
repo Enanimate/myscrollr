@@ -1,0 +1,42 @@
+name: myscrollr-test
+
+services:
+  mock-logto:
+    build:
+      context: ./testing/mocks/logto
+      dockerfile: Dockerfile
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9001/oidc/jwks || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mock-twelvedata:
+    build:
+      context: ./testing/mocks/twelvedata
+      dockerfile: Dockerfile
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9002/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mock-apisports:
+    build:
+      context: ./testing/mocks/apisports
+      dockerfile: Dockerfile
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9004/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mock-yahoo:
+    build:
+      context: ./testing/mocks/yahoo
+      dockerfile: Dockerfile
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9005/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
