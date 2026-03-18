@@ -14,11 +14,11 @@ import '@/styles.css'
 const logtoConfig: LogtoConfig = {
   endpoint:
     import.meta.env.VITE_LOGTO_ENDPOINT ||
-    'https://auth.myscrollr.enanimate.dev/',
+    'https://auth.myscrollr.relentnet.dev/',
   appId: import.meta.env.VITE_LOGTO_APP_ID || 'ogbulfshvf934eeli4t9u',
   resources: [
     import.meta.env.VITE_LOGTO_RESOURCE ||
-      'https://api.myscrollr.enanimate.dev',
+      'https://api.myscrollr.relentnet.dev',
   ],
 }
 
