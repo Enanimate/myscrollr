@@ -355,15 +355,15 @@ fn compute_current_season(season_format: &str) -> String {
 /// endpoints.  The original `api_host` is sent as a query parameter so the
 /// mock server can distinguish between sports.
 fn build_api_url(league: &TrackedLeague, date: &str) -> String {
-    let base = match std::env::var("API_SPORTS_BASE_URL") {
-        Ok(override_url) => override_url.trim_end_matches('/').to_string(),
-        Err(_) => format!("https://{}", league.api_host),
+    let (base, is_mock) = match std::env::var("API_SPORTS_BASE_URL") {
+        Ok(override_url) => (override_url.trim_end_matches('/').to_string(), true),
+        Err(_) => (format!("https://{}", league.api_host), false),
     };
     let format_str = league.season_format.as_deref().unwrap_or("calendar");
     let default_season = compute_current_season(format_str);
     let season = league.season.as_deref().unwrap_or(&default_season);
 
-    match league.sport_api.as_str() {
+    let url = match league.sport_api.as_str() {
         "football" => {
             format!("{}/fixtures?league={}&season={}&date={}", base, league.league_id, season, date)
         }
@@ -371,7 +371,6 @@ fn build_api_url(league: &TrackedLeague, date: &str) -> String {
             format!("{}/races?season={}", base, season)
         }
         "mma" => {
-            // MMA has no leagues — query all fights for a given date
             format!("{}/fights?date={}", base, date)
         }
         other => {
@@ -383,6 +382,12 @@ fn build_api_url(league: &TrackedLeague, date: &str) -> String {
             }
             format!("{}/games?league={}&season={}&date={}", base, league.league_id, season, date)
         }
+    };
+
+    if is_mock {
+        format!("{}&sport={}", url, league.sport_api)
+    } else {
+        url
     }
 }
 

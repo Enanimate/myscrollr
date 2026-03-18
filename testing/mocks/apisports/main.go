@@ -130,7 +130,6 @@ func endpointFromPath(path string) string {
 }
 
 func handleAPI(w http.ResponseWriter, r *http.Request) {
-	// Check rate limit scenario
 	if ok, count := globalState.incrementAndCheck(sportFromHost(r.Host)); !ok {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("x-ratelimit-requests-remaining", "0")
@@ -153,7 +152,11 @@ func handleAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sport := sportFromHost(r.Host)
+	// Check query param first (for mock usage), then fall back to Host header
+	sport := r.URL.Query().Get("sport")
+	if sport == "" {
+		sport = sportFromHost(r.Host)
+	}
 	ep := endpointFromPath(r.URL.Path)
 	resp := buildResponse(sport, ep, "", scenario)
 
