@@ -47,17 +47,23 @@ All paid tiers include a 7-day free trial.
 - [ ] Update CI workflow to use OS-level signing credentials (currently only has minisign for updater artifacts)
 
 ### Billing & Monetization
-> Resolved: all four tiers (free / uplink / uplink_pro / uplink_ultimate) now have distinct backend roles, Stripe products, and frontend types.
+> Resolved: all four tiers (free / uplink / uplink_pro / uplink_ultimate) now have distinct backend roles, Stripe products, and frontend types. Upgrade/downgrade/cancel flows work end-to-end on the website.
 - [x] Rename `uplink_unlimited` → `uplink_ultimate` across codebase (Logto role, `tierFromRoles()`, `planFromPriceID()`, TypeScript `SubscriptionTier` type, DB values) and display name to "Uplink Ultimate"
 - [x] Add `uplink_pro` backend role to Logto and update `tierFromRoles()` / `planFromPriceID()` to distinguish all four tiers
 - [x] Create Stripe products/prices for all tiers (Uplink, Pro, Ultimate, Lifetime) and 50% off lifetime coupon in Stripe sandbox
-- [ ] Integrate Stripe Customer Portal (payment method, invoices, plan switching)
+- [x] Plan upgrade with immediate prorated charge (`always_invoice` + proration preview with exact dollar amount)
+- [x] Plan downgrade via Stripe Subscription Schedule (keeps current tier until period end, switches at renewal)
+- [x] Confirmation modal with exact proration amount (upgrade) or scheduled date (downgrade)
+- [x] Pricing page shows Current Plan / Upgrade / Downgrade / Downgrade Scheduled labels based on active subscription
+- [x] Account page shows billing price, cadence, renewal date, pending downgrade notice, and Change Plan link
+- [x] Handle deleted Stripe customers in `getOrCreateStripeCustomer` (Stripe returns 200 with `Deleted=true`)
+- [ ] Integrate Stripe Customer Portal (update payment method, view invoice history)
 - [ ] Handle Stripe Customer Portal browser handoff from desktop app (can't embed — needs browser redirect)
 - [ ] Add webhook event idempotency (deduplicate redelivered Stripe events)
 - [ ] Handle failed payments / dunning (grace period + user notification — `invoice.payment_failed` currently sets `past_due` but does nothing else)
 - [ ] Implement 7-day free trial in Stripe checkout flow (not currently active — Stripe charges immediately; needs `subscription_data.trial_period_days` in checkout session params)
-- [ ] Test full billing lifecycle (subscribe → use → upgrade → downgrade → cancel → resubscribe)
-- [ ] Billing UI in desktop app (current plan, usage, manage subscription link)
+- [ ] Test full billing lifecycle: resubscribe after cancel (subscribe, upgrade, downgrade, and cancel are all verified)
+- [ ] Billing UI in desktop app (browse tiers, current plan display, manage subscription link — purchases can redirect to website)
 
 ### Database & Infrastructure
 - [ ] Database migrations strategy (`CREATE TABLE IF NOT EXISTS` on startup won't handle schema changes in production — adopt golang-migrate, goose, or atlas)
