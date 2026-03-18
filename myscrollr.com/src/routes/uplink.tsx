@@ -923,6 +923,11 @@ function UplinkPage() {
       ? tierFromPlan(currentSub.plan)
       : null
 
+  // Derive pending downgrade tier (if a downgrade is scheduled)
+  const pendingDowngradeTier = currentSub?.pending_downgrade_plan
+    ? tierFromPlan(currentSub.pending_downgrade_plan)
+    : null
+
   // Fetch subscription status on mount (when authenticated)
   useEffect(() => {
     if (!isAuthenticated) {
@@ -1033,8 +1038,13 @@ function UplinkPage() {
     if (loadingPreview) return 'Fetching quote...'
     if (!activeTier) return 'Start Free Trial'
     if (activeTier === tier) return 'Current Plan'
+    if (pendingDowngradeTier === tier) return 'Downgrade Scheduled'
     return TIER_RANK[tier] > TIER_RANK[activeTier] ? 'Upgrade' : 'Downgrade'
   }
+
+  /** Whether a tier card should be non-interactive */
+  const isTierDisabled = (tier: TierKey): boolean =>
+    activeTier === tier || pendingDowngradeTier === tier
 
   const TIER_NAMES: Record<TierKey, string> = {
     uplink: 'Uplink',
@@ -2154,22 +2164,22 @@ function UplinkPage() {
                       transition: { type: 'tween', duration: 0.2 },
                     }}
                     role="button"
-                    tabIndex={activeTier === 'uplink' ? -1 : 0}
+                    tabIndex={isTierDisabled('uplink') ? -1 : 0}
                     aria-label={`Select Uplink ${BILLING_LABELS[billingPeriod]} plan`}
                     onClick={() =>
-                      activeTier !== 'uplink' &&
+                      !isTierDisabled('uplink') &&
                       handleSelectPlan(billingPeriod, 'uplink')
                     }
                     onKeyDown={(e) => {
                       if (
-                        activeTier !== 'uplink' &&
+                        !isTierDisabled('uplink') &&
                         (e.key === 'Enter' || e.key === ' ')
                       ) {
                         e.preventDefault()
                         handleSelectPlan(billingPeriod, 'uplink')
                       }
                     }}
-                    className={`group relative bg-base-200/40 border border-info/15 rounded-xl p-6 transition-colors overflow-hidden flex flex-col ${activeTier === 'uplink' ? 'opacity-60 cursor-default' : 'hover:border-info/30 cursor-pointer'}`}
+                    className={`group relative bg-base-200/40 border border-info/15 rounded-xl p-6 transition-colors overflow-hidden flex flex-col ${isTierDisabled('uplink') ? 'opacity-60 cursor-default' : 'hover:border-info/30 cursor-pointer'}`}
                   >
                     <div
                       className="absolute top-0 left-0 right-0 h-px"
@@ -2277,12 +2287,12 @@ function UplinkPage() {
                       <div className="mt-auto pt-2 flex flex-col items-center gap-1.5">
                         <div
                           className={`w-full py-2.5 text-center text-[10px] font-semibold border rounded-lg transition-colors ${
-                            activeTier === 'uplink'
+                            isTierDisabled('uplink')
                               ? 'border-base-content/10 text-base-content/30 cursor-default'
                               : 'border-info/20 text-info/60 group-hover:border-info/40 group-hover:text-info/80'
                           }`}
                         >
-                          {planChanging && activeTier !== 'uplink'
+                          {planChanging && !isTierDisabled('uplink')
                             ? 'Changing...'
                             : getCtaLabel('uplink')}
                         </div>
@@ -2306,22 +2316,22 @@ function UplinkPage() {
                       transition: { type: 'tween', duration: 0.2 },
                     }}
                     role="button"
-                    tabIndex={activeTier === 'pro' ? -1 : 0}
+                    tabIndex={isTierDisabled('pro') ? -1 : 0}
                     aria-label={`Select Pro ${BILLING_LABELS[billingPeriod]} plan`}
                     onClick={() =>
-                      activeTier !== 'pro' &&
+                      !isTierDisabled('pro') &&
                       handleSelectPlan(billingPeriod, 'pro')
                     }
                     onKeyDown={(e) => {
                       if (
-                        activeTier !== 'pro' &&
+                        !isTierDisabled('pro') &&
                         (e.key === 'Enter' || e.key === ' ')
                       ) {
                         e.preventDefault()
                         handleSelectPlan(billingPeriod, 'pro')
                       }
                     }}
-                    className={`group relative bg-base-200/40 border border-[#a78bfa]/15 rounded-xl p-6 transition-colors overflow-hidden flex flex-col ${activeTier === 'pro' ? 'opacity-60 cursor-default' : 'hover:border-[#a78bfa]/30 cursor-pointer'}`}
+                    className={`group relative bg-base-200/40 border border-[#a78bfa]/15 rounded-xl p-6 transition-colors overflow-hidden flex flex-col ${isTierDisabled('pro') ? 'opacity-60 cursor-default' : 'hover:border-[#a78bfa]/30 cursor-pointer'}`}
                   >
                     <div
                       className="absolute top-0 left-0 right-0 h-px"
@@ -2439,12 +2449,12 @@ function UplinkPage() {
                       <div className="mt-auto pt-2 flex flex-col items-center gap-1.5">
                         <div
                           className={`w-full py-2.5 text-center text-[10px] font-semibold border rounded-lg transition-colors ${
-                            activeTier === 'pro'
+                            isTierDisabled('pro')
                               ? 'border-base-content/10 text-base-content/30 cursor-default'
                               : 'border-[#a78bfa]/20 text-[#a78bfa]/60 group-hover:border-[#a78bfa]/40 group-hover:text-[#a78bfa]/80'
                           }`}
                         >
-                          {planChanging && activeTier !== 'pro'
+                          {planChanging && !isTierDisabled('pro')
                             ? 'Changing...'
                             : getCtaLabel('pro')}
                         </div>
@@ -2468,22 +2478,22 @@ function UplinkPage() {
                       transition: { type: 'tween', duration: 0.2 },
                     }}
                     role="button"
-                    tabIndex={activeTier === 'ultimate' ? -1 : 0}
+                    tabIndex={isTierDisabled('ultimate') ? -1 : 0}
                     aria-label={`Select Ultimate ${BILLING_LABELS[billingPeriod]} plan`}
                     onClick={() =>
-                      activeTier !== 'ultimate' &&
+                      !isTierDisabled('ultimate') &&
                       handleSelectPlan(billingPeriod, 'ultimate')
                     }
                     onKeyDown={(e) => {
                       if (
-                        activeTier !== 'ultimate' &&
+                        !isTierDisabled('ultimate') &&
                         (e.key === 'Enter' || e.key === ' ')
                       ) {
                         e.preventDefault()
                         handleSelectPlan(billingPeriod, 'ultimate')
                       }
                     }}
-                    className={`group relative rounded-xl overflow-hidden flex flex-col ${activeTier === 'ultimate' ? 'opacity-60 cursor-default' : 'cursor-pointer'}`}
+                    className={`group relative rounded-xl overflow-hidden flex flex-col ${isTierDisabled('ultimate') ? 'opacity-60 cursor-default' : 'cursor-pointer'}`}
                   >
                     {/* Pulsing border glow */}
                     <motion.div
@@ -2745,12 +2755,12 @@ function UplinkPage() {
                         <div className="mt-auto pt-2 flex flex-col items-center gap-1.5">
                           <div
                             className={`w-full py-2.5 text-center text-[10px] font-semibold border rounded-lg transition-colors ${
-                              activeTier === 'ultimate'
+                              isTierDisabled('ultimate')
                                 ? 'border-base-content/10 text-base-content/30 cursor-default'
                                 : 'bg-primary/10 border-primary/30 text-primary group-hover:bg-primary/20 group-hover:border-primary/50'
                             }`}
                           >
-                            {planChanging && activeTier !== 'ultimate'
+                            {planChanging && !isTierDisabled('ultimate')
                               ? 'Changing...'
                               : getCtaLabel('ultimate')}
                           </div>

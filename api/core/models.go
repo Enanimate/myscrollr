@@ -97,11 +97,13 @@ type CheckoutResponse struct {
 
 // SubscriptionResponse returns the user's subscription state.
 type SubscriptionResponse struct {
-	Plan             string     `json:"plan"`
-	Status           string     `json:"status"`
-	CurrentPeriodEnd *time.Time `json:"current_period_end,omitempty"`
-	Lifetime         bool       `json:"lifetime"`
-	CancelURL        string     `json:"cancel_url,omitempty"`
+	Plan                 string     `json:"plan"`
+	Status               string     `json:"status"`
+	CurrentPeriodEnd     *time.Time `json:"current_period_end,omitempty"`
+	Lifetime             bool       `json:"lifetime"`
+	CancelURL            string     `json:"cancel_url,omitempty"`
+	PendingDowngradePlan string     `json:"pending_downgrade_plan,omitempty"`
+	ScheduledChangeAt    *time.Time `json:"scheduled_change_at,omitempty"`
 }
 
 // CheckoutReturnResponse tells the frontend about the checkout outcome.

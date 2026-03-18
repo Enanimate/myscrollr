@@ -370,12 +370,34 @@ func HandleGetSubscription(c *fiber.Ctx) error {
 		})
 	}
 
-	return c.JSON(SubscriptionResponse{
+	resp := SubscriptionResponse{
 		Plan:             sc.Plan,
 		Status:           sc.Status,
 		CurrentPeriodEnd: sc.CurrentPeriodEnd,
 		Lifetime:         sc.Lifetime,
-	})
+	}
+
+	// Check if there's a pending downgrade via subscription schedule
+	if sc.StripeSubscriptionID != nil && *sc.StripeSubscriptionID != "" {
+		sub, err := stripesubscription.Get(*sc.StripeSubscriptionID, nil)
+		if err == nil && sub.Schedule != nil && sub.Schedule.ID != "" {
+			sched, err := subscriptionschedule.Get(sub.Schedule.ID, nil)
+			if err == nil && len(sched.Phases) > 1 {
+				// Phase 0 = current, Phase 1 = scheduled change
+				nextPhase := sched.Phases[1]
+				if len(nextPhase.Items) > 0 {
+					nextPlan := planFromPriceID(nextPhase.Items[0].Price.ID)
+					if nextPlan != "unknown" && planRank(nextPlan) < planRank(sc.Plan) {
+						resp.PendingDowngradePlan = nextPlan
+						changeAt := time.Unix(nextPhase.StartDate, 0)
+						resp.ScheduledChangeAt = &changeAt
+					}
+				}
+			}
+		}
+	}
+
+	return c.JSON(resp)
 }
 
 // HandleCancelSubscription cancels the user's Stripe subscription at period end.

@@ -217,6 +217,8 @@ export interface SubscriptionStatus {
   status: 'none' | 'active' | 'canceling' | 'canceled' | 'past_due'
   current_period_end?: string
   lifetime: boolean
+  pending_downgrade_plan?: string
+  scheduled_change_at?: string
 }
 
 export interface CheckoutReturnStatus {

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, Calendar, Crown, Infinity, Loader2 } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import { AlertTriangle, ArrowRight, Calendar, CreditCard, Crown, Infinity, Loader2 } from 'lucide-react'
 import type {SubscriptionStatus as SubStatus} from '@/api/client';
 import {
-  
   billingApi,
   getPreferences
 } from '@/api/client'
@@ -20,6 +20,25 @@ const PLAN_LABELS: Record<string, string> = {
   pro_annual: 'Annual',
   ultimate_monthly: 'Monthly',
   ultimate_annual: 'Annual',
+}
+
+const PLAN_PRICES: Record<string, string> = {
+  monthly: '$9.99/mo',
+  annual: '$79.99/yr',
+  pro_monthly: '$24.99/mo',
+  pro_annual: '$199.99/yr',
+  ultimate_monthly: '$49.99/mo',
+  ultimate_annual: '$399.99/yr',
+  lifetime: '$399 one-time',
+}
+
+const DOWNGRADE_PLAN_NAMES: Record<string, string> = {
+  monthly: 'Uplink',
+  annual: 'Uplink',
+  pro_monthly: 'Uplink Pro',
+  pro_annual: 'Uplink Pro',
+  ultimate_monthly: 'Uplink Ultimate',
+  ultimate_annual: 'Uplink Ultimate',
 }
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
@@ -167,6 +186,21 @@ export default function SubscriptionStatus({
         </span>
       </div>
 
+      {/* Billing Price */}
+      {PLAN_PRICES[subscription.plan] && (
+        <div className="flex items-center gap-2">
+          <CreditCard size={12} className="text-base-content/30" />
+          <span className="text-xs text-base-content/40">
+            {PLAN_PRICES[subscription.plan]}
+            {subscription.plan.includes('monthly')
+              ? ' · Monthly billing'
+              : subscription.plan.includes('annual')
+                ? ' · Annual billing'
+                : ''}
+          </span>
+        </div>
+      )}
+
       {/* Period End / Lifetime */}
       {subscription.lifetime ? (
         <div className="flex items-center gap-2">
@@ -186,17 +220,53 @@ export default function SubscriptionStatus({
         </div>
       ) : null}
 
-      {/* Cancel Button (only for active non-lifetime) */}
-      {subscription.status === 'active' && !subscription.lifetime && (
-        <button
-          onClick={handleCancel}
-          disabled={canceling}
-          className="w-full py-2 text-[10px] font-semibold border border-base-content/10 rounded-lg
-                     text-base-content/30 hover:text-error hover:border-error/30 transition-colors disabled:opacity-50"
-        >
-          {canceling ? 'Canceling...' : 'Cancel Subscription'}
-        </button>
-      )}
+      {/* Pending Downgrade Notice */}
+      {subscription.pending_downgrade_plan &&
+        subscription.scheduled_change_at && (
+          <div className="flex items-center gap-2 py-2 px-3 bg-warning/5 border border-warning/15 rounded-lg">
+            <AlertTriangle size={12} className="text-warning shrink-0" />
+            <span className="text-[10px] text-base-content/50">
+              Switching to{' '}
+              <span className="font-semibold text-base-content/70">
+                {DOWNGRADE_PLAN_NAMES[subscription.pending_downgrade_plan] ||
+                  subscription.pending_downgrade_plan}
+              </span>{' '}
+              on{' '}
+              {new Date(
+                subscription.scheduled_change_at,
+              ).toLocaleDateString('en-US', {
+                month: 'long',
+                day: 'numeric',
+                year: 'numeric',
+              })}{' '}
+              · your current plan remains active until then.
+            </span>
+          </div>
+        )}
+
+      {/* Actions */}
+      <div className="flex gap-2">
+        {subscription.status === 'active' && !subscription.lifetime && (
+          <>
+            <Link
+              to="/uplink"
+              search={{ session_id: undefined }}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 text-[10px] font-semibold border border-base-content/10 rounded-lg
+                         text-base-content/40 hover:text-primary hover:border-primary/30 transition-colors"
+            >
+              Change Plan <ArrowRight size={10} />
+            </Link>
+            <button
+              onClick={handleCancel}
+              disabled={canceling}
+              className="flex-1 py-2 text-[10px] font-semibold border border-base-content/10 rounded-lg
+                         text-base-content/30 hover:text-error hover:border-error/30 transition-colors disabled:opacity-50"
+            >
+              {canceling ? 'Canceling...' : 'Cancel Subscription'}
+            </button>
+          </>
+        )}
+      </div>
     </div>
   )
 }
