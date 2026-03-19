@@ -30,16 +30,21 @@ type CDCRecord struct {
 // @Produce json
 // @Router /webhooks/sequin [post]
 func HandleSequinWebhook(c *fiber.Ctx) error {
-	// Verify webhook secret
+	// Verify webhook secret (mandatory)
 	secret := os.Getenv("SEQUIN_WEBHOOK_SECRET")
-	if secret != "" {
-		auth := c.Get("Authorization")
-		if auth != "Bearer "+secret {
-			return c.Status(fiber.StatusUnauthorized).JSON(ErrorResponse{
-				Status: "unauthorized",
-				Error:  "Invalid webhook secret",
-			})
-		}
+	if secret == "" {
+		log.Println("[Sequin] SEQUIN_WEBHOOK_SECRET not set — rejecting request")
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
+			Status: "error",
+			Error:  "Webhook authentication not configured",
+		})
+	}
+	auth := c.Get("Authorization")
+	if auth != "Bearer "+secret {
+		return c.Status(fiber.StatusUnauthorized).JSON(ErrorResponse{
+			Status: "unauthorized",
+			Error:  "Invalid webhook secret",
+		})
 	}
 
 	records, err := parseCDCRecords(c.Body())

@@ -18,11 +18,9 @@ import {
   Code2,
   CreditCard,
   Crown,
-  Database,
   Eye,
   Filter,
   Gauge,
-  Gift,
   Layers,
   LayoutDashboard,
   Loader2,
@@ -34,7 +32,6 @@ import {
   Sparkles,
   TrendingUp,
   Trophy,
-  Users,
   AlertTriangle,
   Zap,
 } from 'lucide-react'
@@ -90,6 +87,8 @@ interface ComparisonRow {
   uplinkUp?: boolean
   proUp?: boolean
   ultimateUp?: boolean
+  /** Feature planned but not yet shipped */
+  comingSoon?: boolean
 }
 
 const COMPARISON: Array<ComparisonRow> = [
@@ -163,16 +162,6 @@ const COMPARISON: Array<ComparisonRow> = [
     ultimateUp: true,
   },
   {
-    label: 'Feed Retention',
-    free: '25 items',
-    uplink: '50 items',
-    pro: '200 items',
-    ultimate: 'Unlimited',
-    uplinkUp: true,
-    proUp: true,
-    ultimateUp: true,
-  },
-  {
     label: 'Custom Alerts',
     free: 'No',
     uplink: 'No',
@@ -180,6 +169,7 @@ const COMPARISON: Array<ComparisonRow> = [
     ultimate: 'Yes',
     proUp: true,
     ultimateUp: true,
+    comingSoon: true,
   },
   {
     label: 'Feed Profiles',
@@ -189,6 +179,7 @@ const COMPARISON: Array<ComparisonRow> = [
     ultimate: 'Yes',
     proUp: true,
     ultimateUp: true,
+    comingSoon: true,
   },
   {
     label: 'Advanced Feed Controls',
@@ -215,6 +206,7 @@ const COMPARISON: Array<ComparisonRow> = [
     pro: 'No',
     ultimate: 'Yes',
     ultimateUp: true,
+    comingSoon: true,
   },
   {
     label: 'Data Export',
@@ -223,6 +215,7 @@ const COMPARISON: Array<ComparisonRow> = [
     pro: 'No',
     ultimate: 'CSV / JSON',
     ultimateUp: true,
+    comingSoon: true,
   },
   {
     label: 'API Access',
@@ -231,6 +224,7 @@ const COMPARISON: Array<ComparisonRow> = [
     pro: 'No',
     ultimate: 'Yes',
     ultimateUp: true,
+    comingSoon: true,
   },
   {
     label: 'Early Access',
@@ -311,7 +305,6 @@ const TIER_SHOWCASES: Array<TierShowcase> = [
       'Feed profiles & advanced controls',
       'Priority RSS refresh',
       'Blacklist + Whitelist filtering',
-      '200 items retention',
     ],
   },
   {
@@ -330,7 +323,6 @@ const TIER_SHOWCASES: Array<TierShowcase> = [
       'Data export (CSV / JSON)',
       'API access',
       'Priority support',
-      'Unlimited data retention',
       'Everything in Pro, plus more',
     ],
   },
@@ -502,15 +494,6 @@ const UPLINK_FAQ: Array<FAQItem> = [
     answer:
       'Webhooks push your alerts to Discord, Slack, or any URL. Data export lets you download tracked symbols, historical prices, and game results as CSV or JSON. API access gives you programmatic read access to your MyScrollr data for personal dashboards or automation. All three are exclusive to Unlimited.',
     accent: 'teal',
-  },
-  {
-    icon: Database,
-    question: 'How does feed retention work?',
-    highlight:
-      'Free keeps 25 items, Uplink 50, Pro 200, and Unlimited has no limit.',
-    answer:
-      'Feed retention determines how many items your feed holds at once. Free keeps the most recent 25 items. Uplink doubles that to 50. Pro gives you 200 — enough for richer context when scrolling back. Unlimited removes the cap entirely, keeping your full history for as long as you need it.',
-    accent: 'amber',
   },
   {
     icon: Clock,
@@ -2136,7 +2119,6 @@ function UplinkPage() {
                         <PricingFeature>10 symbols, 5 RSS feeds</PricingFeature>
                         <PricingFeature>1 fantasy league</PricingFeature>
                         <PricingFeature>Pro sports leagues</PricingFeature>
-                        <PricingFeature>25 items retention</PricingFeature>
                         <PricingFeature>Full desktop app access</PricingFeature>
                       </div>
 
@@ -3127,10 +3109,15 @@ function UplinkPage() {
                 }}
                 className={`grid grid-cols-[1.4fr_1fr_1fr_1fr_1fr] ${i < COMPARISON.length - 1 ? 'border-b border-base-300/20' : ''} group hover:bg-base-200/40 transition-colors duration-200`}
               >
-                <div className="p-4 pl-6 flex items-center">
+                <div className="p-4 pl-6 flex items-center gap-2">
                   <span className="text-xs text-base-content/55 font-medium">
                     {row.label}
                   </span>
+                  {row.comingSoon && (
+                    <span className="text-[9px] font-semibold text-warning/60 bg-warning/10 px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                      Coming Soon
+                    </span>
+                  )}
                 </div>
                 <div className="p-4 flex items-center justify-center border-l border-base-300/20">
                   <span className="text-[11px] font-mono text-base-content/25">
@@ -3697,64 +3684,6 @@ function UplinkPage() {
                   during onboarding, try the full feature set, and only pay if
                   you stay. Cancel before the trial ends and you won&apos;t be
                   charged &mdash; no questions asked.
-                </p>
-              </div>
-            </motion.div>
-
-            {/* Referral Program */}
-            <motion.div
-              style={{ opacity: 0 }}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5, delay: 0.1, ease: EASE }}
-              className="relative bg-base-200/40 border border-base-300/30 rounded-xl p-6 overflow-hidden"
-            >
-              <div
-                className="absolute top-0 left-0 right-0 h-px"
-                style={{
-                  background:
-                    'linear-gradient(90deg, transparent, #a78bfa 50%, transparent)',
-                }}
-              />
-              <div
-                className="absolute top-0 right-0 w-20 h-20 opacity-[0.03] text-base-content"
-                style={{
-                  backgroundImage:
-                    'radial-gradient(circle, currentColor 1px, transparent 1px)',
-                  backgroundSize: '8px 8px',
-                }}
-              />
-              <Gift
-                size={100}
-                strokeWidth={0.3}
-                className="absolute -bottom-3 -right-3 text-base-content/[0.02] pointer-events-none"
-              />
-              <div className="relative z-10">
-                <div className="flex items-center gap-3 mb-4">
-                  <div
-                    className="h-9 w-9 rounded-lg flex items-center justify-center"
-                    style={{
-                      background: '#a78bfa15',
-                      boxShadow: '0 0 20px #a78bfa15, 0 0 0 1px #a78bfa20',
-                    }}
-                  >
-                    <Users size={16} className="text-base-content/80" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-base-content">
-                      Refer &amp; Earn
-                    </h3>
-                    <p className="text-[10px] text-base-content/35">
-                      7 days Unlimited per referral
-                    </p>
-                  </div>
-                </div>
-                <p className="text-xs text-base-content/45 leading-relaxed">
-                  Share your referral link and both you and your friend get 7
-                  days of Unlimited. Stack up to 5 referrals for 35 days of
-                  real-time SSE, unlimited symbols, and every premium feature
-                  unlocked.
                 </p>
               </div>
             </motion.div>

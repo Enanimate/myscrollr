@@ -39,11 +39,38 @@ func getAPIResource() string {
 	return apiURL
 }
 
-// setCORSHeaders sets permissive CORS headers for extension auth endpoints.
+// defaultExtensionOrigins includes the website and the Chrome extension.
+// Firefox moz-extension:// UUIDs are per-install; operators needing Firefox
+// support should set EXTENSION_CORS_ORIGINS explicitly.
+const defaultExtensionOrigins = "https://myscrollr.com,chrome-extension://pjeafpgbpfbcaddipkcbacohhbfakclb"
+
+// setCORSHeaders sets CORS headers for extension auth endpoints.
+// Reads allowed origins from EXTENSION_CORS_ORIGINS env var, falling
+// back to ALLOWED_ORIGINS, then defaultExtensionOrigins. Only responds
+// with the requesting origin if it appears in the allow-list.
 func setCORSHeaders(c *fiber.Ctx) {
-	c.Set("Access-Control-Allow-Origin", "*")
-	c.Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-	c.Set("Access-Control-Allow-Headers", "Content-Type")
+	origin := c.Get("Origin")
+	if origin == "" {
+		return
+	}
+
+	allowed := os.Getenv("EXTENSION_CORS_ORIGINS")
+	if allowed == "" {
+		allowed = os.Getenv("ALLOWED_ORIGINS")
+	}
+	if allowed == "" {
+		allowed = defaultExtensionOrigins
+	}
+
+	c.Set("Vary", "Origin")
+	for _, o := range strings.Split(allowed, ",") {
+		if strings.TrimSpace(o) == origin {
+			c.Set("Access-Control-Allow-Origin", origin)
+			c.Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			c.Set("Access-Control-Allow-Headers", "Content-Type")
+			break
+		}
+	}
 }
 
 // HandleExtensionTokenExchange proxies an authorization_code token exchange

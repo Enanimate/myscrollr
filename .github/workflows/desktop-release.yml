@@ -99,6 +99,15 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Audit Node dependencies
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+      - name: Audit Rust dependencies
+        run: cargo install cargo-audit --quiet && cargo audit
+        working-directory: desktop/src-tauri
+        continue-on-error: true
+
       # tauri-action builds, signs updater artifacts, creates/updates
       # the GitHub release, and assembles latest.json across all platforms.
       - name: Build Tauri app
