@@ -35,6 +35,21 @@ func HandleStripeWebhook(c *fiber.Ctx) error {
 		return c.SendStatus(fiber.StatusBadRequest)
 	}
 
+	// Idempotency: skip already-processed events (Stripe may redeliver)
+	var exists bool
+	err = DBPool.QueryRow(context.Background(),
+		`SELECT EXISTS(SELECT 1 FROM stripe_webhook_events WHERE event_id = $1)`,
+		event.ID,
+	).Scan(&exists)
+	if err != nil {
+		log.Printf("[Stripe Webhook] Failed to check event idempotency: %v", err)
+		// Proceed anyway — better to double-process than to drop events
+	}
+	if exists {
+		log.Printf("[Stripe Webhook] Skipping duplicate event %s (type: %s)", event.ID, event.Type)
+		return c.SendStatus(fiber.StatusOK)
+	}
+
 	switch event.Type {
 	case "checkout.session.completed":
 		handleCheckoutCompleted(event)
@@ -49,6 +64,12 @@ func HandleStripeWebhook(c *fiber.Ctx) error {
 	default:
 		log.Printf("[Stripe Webhook] Unhandled event type: %s", event.Type)
 	}
+
+	// Mark event as processed AFTER successful handling
+	_, _ = DBPool.Exec(context.Background(),
+		`INSERT INTO stripe_webhook_events (event_id) VALUES ($1) ON CONFLICT DO NOTHING`,
+		event.ID,
+	)
 
 	return c.SendStatus(fiber.StatusOK)
 }

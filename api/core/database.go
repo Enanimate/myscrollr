@@ -132,4 +132,15 @@ func ConnectDB() {
 	if err != nil {
 		log.Printf("Warning: Failed to add lifetime column: %v", err)
 	}
+
+	// Stripe webhook idempotency — tracks processed event IDs to skip redeliveries
+	_, err = DBPool.Exec(context.Background(), `
+		CREATE TABLE IF NOT EXISTS stripe_webhook_events (
+			event_id   TEXT PRIMARY KEY,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		);
+	`)
+	if err != nil {
+		log.Printf("Warning: Failed to create stripe_webhook_events table: %v", err)
+	}
 }
