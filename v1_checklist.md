@@ -34,11 +34,11 @@ All paid tiers include a 7-day free trial.
 ### Security
 - [x] Confirm Stripe webhook signature verification is implemented
 - [x] Tauri capability scoping (main vs ticker split)
-- [ ] Tighten Tauri HTTP scope (currently `http://*:*` and `https://*:*` in both capabilities — defeats scoped HTTP)
+- [x] Tighten Tauri HTTP scope (removed `http://*:*` from both capabilities; main window keeps `https://*/*` for Uptime Kuma widget; ticker locked to API + auth only)
 - [ ] Review / add CSP headers in Tauri webview
-- [ ] CORS configuration review (channel APIs have no CORS — relies on core proxy, but verify)
+- [ ] CORS configuration review (channel APIs have no CORS — relies on core proxy, but verify; extension auth CORS fixed: `*` → env-configurable origins with `Vary: Origin`)
 - [ ] Input validation audit across all API endpoints (currently ad-hoc field checks, no schema validation)
-- [ ] Dependency audit (`npm audit` + `cargo audit`)
+- [x] Dependency audit (`npm audit` + `cargo audit` added to CI release workflow with `continue-on-error`)
 
 ### Distribution & Signing
 > **Highest-risk items on the list.** Gatekeeper and SmartScreen block unsigned binaries. Hard gate on shipping.
@@ -59,7 +59,7 @@ All paid tiers include a 7-day free trial.
 - [x] Handle deleted Stripe customers in `getOrCreateStripeCustomer` (Stripe returns 200 with `Deleted=true`)
 - [ ] Integrate Stripe Customer Portal (update payment method, view invoice history)
 - [ ] Handle Stripe Customer Portal browser handoff from desktop app (can't embed — needs browser redirect)
-- [ ] Add webhook event idempotency (deduplicate redelivered Stripe events)
+- [x] Add webhook event idempotency (deduplicate redelivered Stripe events — `stripe_webhook_events` table with 7-day TTL cleanup)
 - [ ] Handle failed payments / dunning (grace period + user notification — `invoice.payment_failed` currently sets `past_due` but does nothing else)
 - [ ] Implement 7-day free trial in Stripe checkout flow (not currently active — Stripe charges immediately; needs `subscription_data.trial_period_days` in checkout session params)
 - [ ] Test full billing lifecycle: resubscribe after cancel (subscribe, upgrade, downgrade, and cancel are all verified)
@@ -70,9 +70,9 @@ All paid tiers include a 7-day free trial.
 
 ### Legal Doc Sync
 > **Pricing page and legal documents are out of sync.** Legal docs reference old pricing and quarterly billing that no longer exists.
-- [ ] Update legal documents to match current pricing and tier names (Terms of Service, Privacy Policy)
+- [x] Update legal documents to match current pricing and tier names (Terms of Service, Privacy Policy)
 - [x] Remove quarterly billing references from `SubscriptionStatus` type and `planFromPriceID` (removed in tier rename PR)
-- [ ] Remove quarterly billing references from legal docs text
+- [x] Remove quarterly billing references from legal docs text
 
 ### Phase 1 Validation
 - [x] Auto-updater implemented with progress UI and GitHub releases endpoint
@@ -127,9 +127,9 @@ All paid tiers include a 7-day free trial.
 ### Pricing Page
 > **No "Coming Soon" labels exist on the pricing page.** Unbuilt features are presented as included. Pricing page also needs to reflect the new tier names, limits, and structure.
 - [x] Rewrite pricing page to reflect new tier names (Uplink / Uplink Pro / Uplink Ultimate), limits, and structure
-- [ ] Mark post-v1 features as "Coming Soon": Custom alerts, Feed profiles, Webhooks, Data export, API access
-- [ ] Remove feed retention from pricing page (internal concern, not a user-facing feature)
-- [ ] Remove referral program from pricing page (no backend support exists)
+- [x] Mark post-v1 features as "Coming Soon": Custom alerts, Feed profiles, Webhooks, Data export, API access
+- [x] Remove feed retention from pricing page (internal concern, not a user-facing feature)
+- [x] Remove referral program from pricing page (no backend support exists)
 - [x] Verify lifetime deal page reflects correct tier name (Uplink Ultimate) and current pricing
 
 ### Stability & Error Handling
