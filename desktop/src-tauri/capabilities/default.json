@@ -43,10 +43,7 @@
       "allow": [
         { "url": "https://api.myscrollr.relentnet.dev/*" },
         { "url": "https://auth.myscrollr.relentnet.dev/*" },
-        { "url": "https://api.github.com/*" },
-        { "url": "https://geocoding-api.open-meteo.com/*" },
-        { "url": "https://api.open-meteo.com/*" },
-        { "url": "https://nominatim.openstreetmap.org/*" }
+        { "url": "https://*/*" }
       ]
     }
   ]

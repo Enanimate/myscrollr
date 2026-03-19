@@ -62,14 +62,15 @@ func setCORSHeaders(c *fiber.Ctx) {
 		allowed = defaultExtensionOrigins
 	}
 
+	c.Set("Vary", "Origin")
 	for _, o := range strings.Split(allowed, ",") {
 		if strings.TrimSpace(o) == origin {
 			c.Set("Access-Control-Allow-Origin", origin)
+			c.Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			c.Set("Access-Control-Allow-Headers", "Content-Type")
 			break
 		}
 	}
-	c.Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-	c.Set("Access-Control-Allow-Headers", "Content-Type")
 }
 
 // HandleExtensionTokenExchange proxies an authorization_code token exchange

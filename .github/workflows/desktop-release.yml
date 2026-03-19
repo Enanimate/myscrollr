@@ -105,7 +105,7 @@ jobs:
 
       - name: Audit Rust dependencies
         run: cargo install cargo-audit --quiet && cargo audit
-        working-directory: src-tauri
+        working-directory: desktop/src-tauri
         continue-on-error: true
 
       # tauri-action builds, signs updater artifacts, creates/updates

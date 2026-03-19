@@ -2119,7 +2119,6 @@ function UplinkPage() {
                         <PricingFeature>10 symbols, 5 RSS feeds</PricingFeature>
                         <PricingFeature>1 fantasy league</PricingFeature>
                         <PricingFeature>Pro sports leagues</PricingFeature>
-                        <PricingFeature>25 items retention</PricingFeature>
                         <PricingFeature>Full desktop app access</PricingFeature>
                       </div>
 

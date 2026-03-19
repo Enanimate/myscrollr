@@ -143,4 +143,12 @@ func ConnectDB() {
 	if err != nil {
 		log.Printf("Warning: Failed to create stripe_webhook_events table: %v", err)
 	}
+
+	// Prune old webhook events (only need to dedup within Stripe's retry window)
+	_, err = DBPool.Exec(context.Background(), `
+		DELETE FROM stripe_webhook_events WHERE created_at < now() - interval '7 days';
+	`)
+	if err != nil {
+		log.Printf("Warning: Failed to prune old webhook events: %v", err)
+	}
 }

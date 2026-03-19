@@ -66,10 +66,12 @@ func HandleStripeWebhook(c *fiber.Ctx) error {
 	}
 
 	// Mark event as processed AFTER successful handling
-	_, _ = DBPool.Exec(context.Background(),
+	if _, err := DBPool.Exec(context.Background(),
 		`INSERT INTO stripe_webhook_events (event_id) VALUES ($1) ON CONFLICT DO NOTHING`,
 		event.ID,
-	)
+	); err != nil {
+		log.Printf("[Stripe Webhook] Failed to record event %s: %v", event.ID, err)
+	}
 
 	return c.SendStatus(fiber.StatusOK)
 }
