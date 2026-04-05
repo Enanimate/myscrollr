@@ -582,6 +582,10 @@ func (a *App) getStandings(c *fiber.Ctx) error {
 		if groupKey == "" {
 			groupKey = "Ungrouped"
 		}
+		// Skip conference-level duplicates for NBA/NHL (they have both division and conference entries)
+		if shouldSkipConferenceGroup(league, groupKey) {
+			continue
+		}
 		grouped[groupKey] = append(grouped[groupKey], s)
 	}
 
@@ -720,4 +724,17 @@ func transformGroupName(groupName string) string {
 	default:
 		return groupName
 	}
+}
+
+// shouldSkipConferenceGroup returns true for conference-level groups that are
+// duplicates of division-level data in NBA/NHL. These leagues return standings
+// for both divisions AND conferences, causing each team to appear twice.
+// We keep divisions and skip conferences to avoid duplicates.
+func shouldSkipConferenceGroup(league, groupName string) bool {
+	// Only skip for NBA and NHL
+	if league != "NBA" && league != "NHL" {
+		return false
+	}
+	// Skip "Eastern Conference" and "Western Conference" groups
+	return groupName == "Eastern Conference" || groupName == "Western Conference"
 }
