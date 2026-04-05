@@ -490,10 +490,22 @@ async fn parse_v1_standing_item(
     // Extract streak
     let streak = item.get("streak").and_then(|s| s.as_str()).map(|s| s.to_string());
 
-    // Group name - check "division" first (NFL), then "group" (string or object)
+    // Group name priority:
+    // 1. "division" for NFL (e.g., "AFC East", "NFC West")
+    // 2. "conference" for NCAA (e.g., "Atlantic Coast", "Big 12")
+    // 3. "group" (string or object) for other sports
     let group_name = if let Some(d) = item.get("division").and_then(|d| d.as_str()) {
         // NFL uses "division" field directly (e.g., "AFC East", "NFC West")
-        Some(d.to_string())
+        // NCAA has division but it's sub-division (East/West), so check if conference exists
+        if item.get("conference").and_then(|c| c.as_str()).is_some() {
+            // NCAA: prefer conference over division
+            item.get("conference").and_then(|c| c.as_str()).map(|s| s.to_string())
+        } else {
+            Some(d.to_string())
+        }
+    } else if let Some(c) = item.get("conference").and_then(|c| c.as_str()) {
+        // NCAA fallback if no division
+        Some(c.to_string())
     } else if let Some(g) = item.get("group") {
         if let Some(g_str) = g.as_str() {
             Some(g_str.to_string())
