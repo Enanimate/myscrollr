@@ -490,8 +490,11 @@ async fn parse_v1_standing_item(
     // Extract streak
     let streak = item.get("streak").and_then(|s| s.as_str()).map(|s| s.to_string());
 
-    // Group name - can be string (NFL) or object {name} (some v1 responses)
-    let group_name = if let Some(g) = item.get("group") {
+    // Group name - check "division" first (NFL), then "group" (string or object)
+    let group_name = if let Some(d) = item.get("division").and_then(|d| d.as_str()) {
+        // NFL uses "division" field directly (e.g., "AFC East", "NFC West")
+        Some(d.to_string())
+    } else if let Some(g) = item.get("group") {
         if let Some(g_str) = g.as_str() {
             Some(g_str.to_string())
         } else if let Some(g_obj) = g.as_object() {
