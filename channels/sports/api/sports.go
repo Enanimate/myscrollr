@@ -554,7 +554,7 @@ func (a *App) getStandings(c *fiber.Ctx) error {
 			COALESCE(points_for, 0), COALESCE(points_against, 0), COALESCE(streak, '')
 		FROM standings
 		WHERE league = $1
-		ORDER BY COALESCE(rank, 9999) ASC`, league)
+		ORDER BY COALESCE(group_name, ''), COALESCE(rank, 9999) ASC`, league)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
 			Status: "error", Error: "failed to query standings",
@@ -562,7 +562,8 @@ func (a *App) getStandings(c *fiber.Ctx) error {
 	}
 	defer rows.Close()
 
-	standings = make([]Standing, 0)
+	// Group standings by division/group_name
+	grouped := make(map[string][]Standing)
 	for rows.Next() {
 		var s Standing
 		if err := rows.Scan(
@@ -575,11 +576,17 @@ func (a *App) getStandings(c *fiber.Ctx) error {
 			log.Printf("[Sports] Standing row scan failed: %v", err)
 			continue
 		}
-		standings = append(standings, s)
+
+		// Transform group_name to add prefix (e.g., "National League East" -> "NL - East")
+		groupKey := transformGroupName(s.GroupName)
+		if groupKey == "" {
+			groupKey = "Ungrouped"
+		}
+		grouped[groupKey] = append(grouped[groupKey], s)
 	}
 
-	SetCache(a.rdb, cacheKey, standings, StandingsCacheTTL)
-	return c.JSON(fiber.Map{"standings": standings})
+	SetCache(a.rdb, cacheKey, grouped, StandingsCacheTTL)
+	return c.JSON(fiber.Map{"standings": grouped})
 }
 
 // getTeams returns teams for a given league.
@@ -684,4 +691,33 @@ func extractFavoriteTeamNames(favs map[string]FavoriteTeam) []string {
 		}
 	}
 	return names
+}
+
+// transformGroupName converts full group names to abbreviated prefixed format.
+// Examples:
+//   - "National League East" -> "NL - East"
+//   - "American League West" -> "AL - West"
+//   - "Eastern Conference" -> "Eastern Conference" (unchanged)
+func transformGroupName(groupName string) string {
+	if groupName == "" {
+		return ""
+	}
+
+	// MLB divisions
+	switch groupName {
+	case "National League East":
+		return "NL - East"
+	case "National League Central":
+		return "NL - Central"
+	case "National League West":
+		return "NL - West"
+	case "American League East":
+		return "AL - East"
+	case "American League Central":
+		return "AL - Central"
+	case "American League West":
+		return "AL - West"
+	default:
+		return groupName
+	}
 }

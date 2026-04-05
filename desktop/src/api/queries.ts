@@ -118,10 +118,12 @@ export interface TeamInfo {
   country?: string;
 }
 
+export type GroupedStandings = Record<string, Standing[]>;
+
 export function standingsOptions(league: string) {
   return queryOptions({
     queryKey: queryKeys.standings(league),
-    queryFn: () => authFetch<{ standings: Standing[] }>(`/sports/standings?league=${encodeURIComponent(league)}`),
+    queryFn: () => authFetch<{ standings: GroupedStandings }>(`/sports/standings?league=${encodeURIComponent(league)}`),
     staleTime: 60 * 60 * 1000, // 1 hour
     enabled: !!league,
   });

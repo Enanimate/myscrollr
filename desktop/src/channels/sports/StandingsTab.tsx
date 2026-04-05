@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { clsx } from "clsx";
 import TeamLogo from "../../components/TeamLogo";
 import { standingsOptions } from "../../api/queries";
-import type { Standing } from "../../api/queries";
+import type { Standing, GroupedStandings } from "../../api/queries";
 
 interface StandingsTabProps {
   leagues: string[];
@@ -109,15 +109,116 @@ function getSportType(sportApi?: string): SportType {
   return "other";
 }
 
-function GroupHeader({ name }: { name: string }) {
+// Chevron icon for collapsible sections
+function ChevronIcon({ expanded }: { expanded: boolean }) {
   return (
-    <tr className="bg-surface-hover">
-      <td colSpan={9} className="px-3 py-1.5 text-xs font-semibold text-fg-2">
-        {name}
-      </td>
-    </tr>
+    <svg
+      className={clsx(
+        "w-4 h-4 transition-transform duration-200",
+        expanded && "rotate-90"
+      )}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+    >
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+    </svg>
   );
 }
+
+interface DivisionSectionProps {
+  divisionName: string;
+  standings: Standing[];
+  columns: Column[];
+  defaultExpanded?: boolean;
+}
+
+function DivisionSection({ divisionName, standings, columns, defaultExpanded = true }: DivisionSectionProps) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+
+  // Get leader record for collapsed summary
+  const leader = standings[0];
+  const leaderRecord = leader ? `${leader.wins}-${leader.losses}` : "";
+
+  return (
+    <div className="border-b border-edge last:border-b-0">
+      {/* Collapsible header */}
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between px-3 py-2 bg-surface-hover hover:bg-surface-active transition-colors text-left"
+      >
+        <div className="flex items-center gap-2">
+          <ChevronIcon expanded={expanded} />
+          <span className="text-xs font-semibold text-fg-2">{divisionName}</span>
+        </div>
+        {!expanded && leader && (
+          <span className="text-[10px] text-fg-4">
+            {leader.team_name} ({leaderRecord})
+          </span>
+        )}
+      </button>
+
+      {/* Expanded content */}
+      {expanded && (
+        <table className="w-full text-xs table-fixed">
+          <thead>
+            <tr className="text-fg-4 text-[10px] uppercase tracking-wider border-b border-edge">
+              {columns.map((col) => (
+                <th
+                  key={col.key}
+                  title={col.fullName || col.label}
+                  className={clsx(
+                    "px-2 py-2",
+                    col.width,
+                    col.align === "center" && "text-center",
+                    col.align === "right" && "text-right",
+                    !col.align && "text-left"
+                  )}
+                >
+                  {col.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {standings.map((s, i) => (
+              <tr
+                key={`${s.team_name}-${i}`}
+                className="border-b border-edge/50 hover:bg-surface-hover transition-colors"
+              >
+                {columns.map((col) => (
+                  <td
+                    key={col.key}
+                    className={clsx(
+                      "px-2 py-1.5",
+                      col.width,
+                      col.key !== "team" && "font-mono text-fg-2",
+                      col.align === "center" && "text-center",
+                      col.align === "right" && "text-right",
+                      !col.align && "text-left"
+                    )}
+                  >
+                    {col.getValue(s)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+// Define division order for MLB
+const MLB_DIVISION_ORDER = [
+  "AL - East",
+  "AL - Central", 
+  "AL - West",
+  "NL - East",
+  "NL - Central",
+  "NL - West",
+];
 
 export function StandingsTab({ leagues }: StandingsTabProps) {
   const [selected, setSelected] = useState(leagues[0] ?? "");
@@ -127,38 +228,33 @@ export function StandingsTab({ leagues }: StandingsTabProps) {
     enabled: !!selected,
   });
 
-  const standings: Standing[] = data?.standings ?? [];
+  const groupedStandings: GroupedStandings = data?.standings ?? {};
 
-  const { columns, groupedRows } = useMemo(() => {
-    const cols = getColumnsForSport(standings[0]?.sport_api);
+  // Sort divisions in a logical order (AL then NL, East to West)
+  const sortedDivisions = useMemo(() => {
+    const divisions = Object.keys(groupedStandings);
     
-    const groups: { groupName: string; standings: Standing[] }[] = [];
-    let currentGroup: Standing[] = [];
-    let currentGroupName = "";
-
-    for (const s of standings) {
-      if (s.group_name && s.group_name !== currentGroupName) {
-        if (currentGroup.length > 0) {
-          groups.push({ groupName: currentGroupName, standings: currentGroup });
-        }
-        currentGroupName = s.group_name;
-        currentGroup = [s];
-      } else if (!s.group_name && currentGroupName !== "") {
-        if (currentGroup.length > 0) {
-          groups.push({ groupName: currentGroupName, standings: currentGroup });
-        }
-        currentGroupName = "";
-        currentGroup = [s];
-      } else {
-        currentGroup.push(s);
-      }
+    // For MLB, use predefined order
+    if (selected === "MLB") {
+      return MLB_DIVISION_ORDER.filter(d => divisions.includes(d));
     }
-    if (currentGroup.length > 0) {
-      groups.push({ groupName: currentGroupName, standings: currentGroup });
-    }
+    
+    // For other leagues, sort alphabetically but put "Ungrouped" last
+    return divisions.sort((a, b) => {
+      if (a === "Ungrouped") return 1;
+      if (b === "Ungrouped") return -1;
+      return a.localeCompare(b);
+    });
+  }, [groupedStandings, selected]);
 
-    return { columns: cols, groupedRows: groups };
-  }, [standings]);
+  // Get columns based on first team's sport_api
+  const columns = useMemo(() => {
+    const firstDivision = sortedDivisions[0];
+    const firstTeam = firstDivision ? groupedStandings[firstDivision]?.[0] : undefined;
+    return getColumnsForSport(firstTeam?.sport_api);
+  }, [groupedStandings, sortedDivisions]);
+
+  const hasStandings = sortedDivisions.length > 0;
 
   if (leagues.length === 0) {
     return (
@@ -196,63 +292,23 @@ export function StandingsTab({ leagues }: StandingsTabProps) {
         </div>
       )}
 
-      {!isLoading && !isError && standings.length === 0 && (
+      {!isLoading && !isError && !hasStandings && (
         <div className="flex items-center justify-center py-12 text-fg-4 text-xs">
           No standings available for {selected}
         </div>
       )}
 
-      {standings.length > 0 && (
+      {hasStandings && (
         <div className="overflow-x-auto">
-          <table className="w-full text-xs table-fixed">
-            <thead>
-              <tr className="text-fg-4 text-[10px] uppercase tracking-wider border-b border-edge">
-                {columns.map((col) => (
-                  <th
-                    key={col.key}
-                    title={col.fullName || col.label}
-                    className={clsx(
-                      "px-2 py-2",
-                      col.width,
-                      col.align === "center" && "text-center",
-                      col.align === "right" && "text-right",
-                      !col.align && "text-left"
-                    )}
-                  >
-                    {col.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {groupedRows.map((group, groupIdx) => (
-                <>{group.groupName && <GroupHeader name={group.groupName} />}
-                  {group.standings.map((s, i) => (
-                    <tr
-                      key={`${s.team_name}-${i}`}
-                      className="border-b border-edge/50 hover:bg-surface-hover transition-colors"
-                    >
-                      {columns.map((col) => (
-                        <td
-                          key={col.key}
-                          className={clsx(
-                            "px-2 py-1.5",
-                            col.width,
-                            col.key !== "team" && "font-mono text-fg-2",
-                            col.align === "center" && "text-center",
-                            col.align === "right" && "text-right",
-                            !col.align && "text-left"
-                          )}
-                        >
-                          {col.getValue(s)}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </>
-              ))}
-            </tbody>
-          </table>
+          {sortedDivisions.map((division) => (
+            <DivisionSection
+              key={division}
+              divisionName={division}
+              standings={groupedStandings[division]}
+              columns={columns}
+              defaultExpanded={true}
+            />
+          ))}
         </div>
       )}
     </div>

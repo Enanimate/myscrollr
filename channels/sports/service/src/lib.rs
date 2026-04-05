@@ -343,7 +343,7 @@ async fn parse_and_upsert_standings(
         "american-football" => parse_v1_standings(pool, league_name, season, sport_api, response).await,
         "basketball" => parse_basketball_standings(pool, league_name, season, sport_api, response).await,
         "hockey" => parse_hockey_standings(pool, league_name, season, sport_api, response).await,
-        "baseball" => parse_basketball_standings(pool, league_name, season, sport_api, response).await, // Same as basketball format
+        "baseball" => parse_basketball_standings(pool, league_name, season, sport_api, response).await, // Same format as basketball
         "rugby" | "afl" => parse_v1_standings(pool, league_name, season, sport_api, response).await,
         "handball" | "volleyball" => parse_basketball_standings(pool, league_name, season, sport_api, response).await,
         _ => {
@@ -407,6 +407,7 @@ async fn parse_football_standings(
                     points_for: None,
                     points_against: None,
                     streak: None,
+
                 };
                 if let Err(e) = upsert_standing(pool, standing).await {
                     error!("[{}] Failed to upsert standing: {}", league_name, e);
