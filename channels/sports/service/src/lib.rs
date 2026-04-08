@@ -523,9 +523,32 @@ async fn parse_v1_standing_item(
     // Extract streak
     let streak = item.get("streak").and_then(|s| s.as_str()).map(|s| s.to_string());
 
-    // Group name - can be string (NFL) or object {name} (some v1 responses)
-    // Also check "conference" field for NFL API
-    let group_name = if let Some(g) = item.get("group").or(item.get("conference")) {
+    // Extract division field for NFL (East, North, South, West)
+    let division = if sport_api == "american-football" {
+        item.get("division").and_then(|d| d.as_str()).map(|s| s.to_string())
+    } else {
+        None
+    };
+
+    // For NFL: combine conference + division for group_name (e.g., "AFC East", "NFC West")
+    // For other sports: use group or conference field
+    let group_name = if sport_api == "american-football" {
+        let conference_full = item.get("conference").and_then(|c| c.as_str());
+        let conference_short = conference_full.map(|c| {
+            if c.contains("American") {
+                "AFC"
+            } else if c.contains("National") {
+                "NFC"
+            } else {
+                c
+            }
+        });
+        match (conference_short, division.as_ref()) {
+            (Some(conf), Some(div)) => Some(format!("{} {}", conf, div)),
+            (Some(conf), None) => Some(conf.to_string()),
+            _ => None,
+        }
+    } else if let Some(g) = item.get("group").or(item.get("conference")) {
         if let Some(g_str) = g.as_str() {
             Some(g_str.to_string())
         } else if let Some(g_obj) = g.as_object() {
@@ -537,9 +560,17 @@ async fn parse_v1_standing_item(
         None
     };
 
-    // Extract conference separately for NFL (AFC, NFC)
-    let conference = if let Some(c) = item.get("conference") {
-        c.as_str().map(|s| s.to_string())
+    // Extract conference separately for NFL (short form: AFC, NFC)
+    let conference = if sport_api == "american-football" {
+        item.get("conference").and_then(|c| c.as_str()).map(|c| {
+            if c.contains("American") {
+                "AFC".to_string()
+            } else if c.contains("National") {
+                "NFC".to_string()
+            } else {
+                c.to_string()
+            }
+        })
     } else {
         None
     };
