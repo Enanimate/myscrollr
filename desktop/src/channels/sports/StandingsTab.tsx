@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, Fragment } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { clsx } from "clsx";
 import TeamLogo from "../../components/TeamLogo";
@@ -248,7 +248,7 @@ export function StandingsTab({ leagues }: StandingsTabProps) {
             </thead>
             <tbody>
               {groupedRows.map((group, groupIdx) => (
-                <>{group.groupName && <GroupHeader name={group.groupName} />}
+                <Fragment key={group.groupName || groupIdx}>{group.groupName && <GroupHeader name={group.groupName} />}
                   {group.standings.map((s, i) => (
                     <tr
                       key={`${s.team_name}-${i}`}
@@ -271,7 +271,7 @@ export function StandingsTab({ leagues }: StandingsTabProps) {
                       ))}
                     </tr>
                   ))}
-                </>
+                </Fragment>
               ))}
             </tbody>
           </table>
