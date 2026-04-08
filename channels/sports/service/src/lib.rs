@@ -468,12 +468,17 @@ async fn parse_v1_standing_item(
 
     // Extract wins/losses/ties - handle AFL's nested games format
     let (wins, losses, ties, games_played) = if sport_api == "afl" {
-        // AFL uses nested format: games: {win, drawn, lost, played}
+        // AFL uses nested format: games: {win, drawn, lost, played} OR {wins, losses, draws, played}
         let games = item.get("games");
-        let w = games.and_then(|g| g.get("win")).and_then(|w| w.as_i64()).unwrap_or(0) as i32;
-        let l = games.and_then(|g| g.get("lost")).and_then(|l| l.as_i64()).unwrap_or(0) as i32;
-        let d = games.and_then(|g| g.get("drawn")).and_then(|d| d.as_i64()).unwrap_or(0) as i32;
-        let gp = games.and_then(|g| g.get("played")).and_then(|p| p.as_i64()).unwrap_or(0) as i32;
+        // Try singular first (win, lost, drawn), then plural (wins, losses, draws)
+        let w = games.and_then(|g| g.get("win").or(g.get("wins")))
+            .and_then(|w| w.as_i64()).unwrap_or(0) as i32;
+        let l = games.and_then(|g| g.get("lost").or(g.get("losses")))
+            .and_then(|l| l.as_i64()).unwrap_or(0) as i32;
+        let d = games.and_then(|g| g.get("drawn").or(g.get("draws")))
+            .and_then(|d| d.as_i64()).unwrap_or(0) as i32;
+        let gp = games.and_then(|g| g.get("played"))
+            .and_then(|p| p.as_i64()).unwrap_or(0) as i32;
         (w, l, d, gp)
     } else {
         // Standard format: top-level won, lost, ties
@@ -486,11 +491,13 @@ async fn parse_v1_standing_item(
 
     // Extract points - handle AFL's unique format
     let (points, points_for, points_against) = if sport_api == "afl" {
-        // AFL uses nested points: {for, against} AND top-level pts
-        let pts = item.get("pts").and_then(|p| p.as_i64()).map(|p| p as i32);
-        let pts_obj = item.get("points");
-        let pf = pts_obj.and_then(|p| p.get("for")).and_then(|v| v.as_i64()).map(|v| v as i32);
-        let pa = pts_obj.and_then(|p| p.get("against")).and_then(|v| v.as_i64()).map(|v| v as i32);
+        // AFL: top-level "points" = league points (4 for win, 2 for draw)
+        // AFL: scores or score object = {for, against} for scoring points
+        let pts = item.get("points").and_then(|p| p.as_i64()).map(|p| p as i32);
+        // Try "scores" then "score" then fallback to "points" for scoring
+        let scores_obj = item.get("scores").or(item.get("score")).or(item.get("points"));
+        let pf = scores_obj.and_then(|p| p.get("for")).and_then(|v| v.as_i64()).map(|v| v as i32);
+        let pa = scores_obj.and_then(|p| p.get("against")).and_then(|v| v.as_i64()).map(|v| v as i32);
         (pts, pf, pa)
     } else if let Some(p) = item.get("points") {
         // Standard format: can be integer or object {for, against}
