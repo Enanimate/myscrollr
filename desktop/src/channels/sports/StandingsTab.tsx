@@ -69,9 +69,7 @@ function getColumnsForSport(sportApi?: string): Column[] {
         { key: "l", label: "L", fullName: "Losses", width: "w-14", align: "center", getValue: (s) => s.losses },
         { key: "pct", label: "Pct", fullName: "Win Percentage", width: "w-16", align: "center", getValue: (s) => s.pct || "-" },
         { key: "gb", label: "GB", fullName: "Games Behind", width: "w-16", align: "center", getValue: (s) => s.games_behind || "-" },
-        { key: "pf", label: "PF", fullName: "Points For", width: "w-16", align: "center", getValue: (s) => s.points_for || "-" },
-        { key: "pa", label: "PA", fullName: "Points Against", width: "w-16", align: "center", getValue: (s) => s.points_against || "-" },
-        { key: "streak", label: "Str", fullName: "Streak", width: "w-16", getValue: (s) => s.streak || "-" },
+        { key: "form", label: "L5", fullName: "Last 5", width: "w-20", getValue: (s) => s.form || "-" },
       ];
     case "nhl":
       return [
