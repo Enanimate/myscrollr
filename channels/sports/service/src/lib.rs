@@ -524,7 +524,8 @@ async fn parse_v1_standing_item(
     let streak = item.get("streak").and_then(|s| s.as_str()).map(|s| s.to_string());
 
     // Group name - can be string (NFL) or object {name} (some v1 responses)
-    let group_name = if let Some(g) = item.get("group") {
+    // Also check "conference" field for NFL API
+    let group_name = if let Some(g) = item.get("group").or(item.get("conference")) {
         if let Some(g_str) = g.as_str() {
             Some(g_str.to_string())
         } else if let Some(g_obj) = g.as_object() {
@@ -532,6 +533,13 @@ async fn parse_v1_standing_item(
         } else {
             None
         }
+    } else {
+        None
+    };
+
+    // Extract conference separately for NFL (AFC, NFC)
+    let conference = if let Some(c) = item.get("conference") {
+        c.as_str().map(|s| s.to_string())
     } else {
         None
     };
@@ -586,7 +594,7 @@ async fn parse_v1_standing_item(
         points_for,
         points_against,
         streak,
-        conference: None,
+        conference,
     };
 
     if let Err(e) = upsert_standing(pool, standing).await {
