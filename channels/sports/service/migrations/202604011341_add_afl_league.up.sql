@@ -14,5 +14,5 @@ VALUES (
   '2026',
   'calendar',
   true,
-  ARRAY[]
+  ARRAY[]::integer[]
 );
