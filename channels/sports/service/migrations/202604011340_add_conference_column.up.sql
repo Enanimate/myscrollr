@@ -1,0 +1,1 @@
+ALTER TABLE standings ADD COLUMN IF NOT EXISTS conference VARCHAR(50);

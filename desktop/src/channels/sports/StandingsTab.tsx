@@ -69,7 +69,13 @@ function getColumnsForSport(sportApi?: string): Column[] {
         { key: "l", label: "L", fullName: "Losses", width: "w-14", align: "center", getValue: (s) => s.losses },
         { key: "pct", label: "Pct", fullName: "Win Percentage", width: "w-16", align: "center", getValue: (s) => s.pct || "-" },
         { key: "gb", label: "GB", fullName: "Games Behind", width: "w-16", align: "center", getValue: (s) => s.games_behind || "-" },
-        { key: "form", label: "L5", fullName: "Last 5", width: "w-20", getValue: (s) => s.form || "-" },
+        { key: "form", label: "L5", fullName: "Last 5", width: "w-16", getValue: (s) => {
+          const form = s.form;
+          if (!form) return "-";
+          const wins = (form.match(/W/g) || []).length;
+          const losses = (form.match(/L/g) || []).length;
+          return `${wins}-${losses}`;
+        }},
       ];
     case "nhl":
       return [
@@ -129,19 +135,23 @@ export function StandingsTab({ leagues }: StandingsTabProps) {
 
   const { columns, groupedRows } = useMemo(() => {
     const cols = getColumnsForSport(standings[0]?.sport_api);
-    
+    const sportApi = standings[0]?.sport_api;
+    const useConference = sportApi === "basketball";
+
     const groups: { groupName: string; standings: Standing[] }[] = [];
     let currentGroup: Standing[] = [];
     let currentGroupName = "";
 
     for (const s of standings) {
-      if (s.group_name && s.group_name !== currentGroupName) {
+      const groupKey = useConference && s.conference ? s.conference : (s.group_name || "");
+      
+      if (groupKey && groupKey !== currentGroupName) {
         if (currentGroup.length > 0) {
           groups.push({ groupName: currentGroupName, standings: currentGroup });
         }
-        currentGroupName = s.group_name;
+        currentGroupName = groupKey;
         currentGroup = [s];
-      } else if (!s.group_name && currentGroupName !== "") {
+      } else if (!groupKey && currentGroupName !== "") {
         if (currentGroup.length > 0) {
           groups.push({ groupName: currentGroupName, standings: currentGroup });
         }

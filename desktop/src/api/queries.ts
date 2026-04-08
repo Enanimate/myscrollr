@@ -107,6 +107,7 @@ export interface Standing {
   points_for?: number;
   points_against?: number;
   streak?: string;
+  conference?: string;
 }
 
 export interface TeamInfo {

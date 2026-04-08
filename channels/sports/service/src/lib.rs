@@ -407,6 +407,7 @@ async fn parse_football_standings(
                     points_for: None,
                     points_against: None,
                     streak: None,
+                    conference: None,
                 };
                 if let Err(e) = upsert_standing(pool, standing).await {
                     error!("[{}] Failed to upsert standing: {}", league_name, e);
@@ -535,6 +536,7 @@ async fn parse_v1_standing_item(
         points_for,
         points_against,
         streak,
+        conference: None,
     };
 
     if let Err(e) = upsert_standing(pool, standing).await {
@@ -650,6 +652,23 @@ async fn parse_basketball_standing_item(
         None
     };
 
+    // Conference - derived from division for NBA
+    let conference = group_name.as_ref().and_then(|g| {
+        if sport_api == "basketball" {
+            const EASTERN: &[&str] = &["Atlantic Division", "Central Division", "Southeast Division"];
+            const WESTERN: &[&str] = &["Northwest Division", "Pacific Division", "Southwest Division"];
+            if EASTERN.contains(&g.as_str()) {
+                Some("Eastern Conference".to_string())
+            } else if WESTERN.contains(&g.as_str()) {
+                Some("Western Conference".to_string())
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    });
+
     let standing = StandingData {
         league: league_name.to_string(),
         team_name: team.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string(),
@@ -675,6 +694,7 @@ async fn parse_basketball_standing_item(
         points_for,
         points_against,
         streak: item.get("streak").and_then(|s| s.as_str()).map(|s| s.to_string()),
+        conference,
     };
 
     if let Err(e) = upsert_standing(pool, standing).await {
@@ -790,6 +810,7 @@ async fn parse_hockey_standing_item(
         points_for: None,
         points_against: None,
         streak: item.get("streak").and_then(|s| s.as_str()).map(|s| s.to_string()),
+        conference: None,
     };
 
     if let Err(e) = upsert_standing(pool, standing).await {

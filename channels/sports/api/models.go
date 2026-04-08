@@ -84,6 +84,7 @@ type Standing struct {
 	PointsFor     int    `json:"points_for,omitempty"`
 	PointsAgainst int    `json:"points_against,omitempty"`
 	Streak        string `json:"streak,omitempty"`
+	Conference    string `json:"conference,omitempty"`
 }
 
 // TeamInfo represents a team entry from the teams table.
