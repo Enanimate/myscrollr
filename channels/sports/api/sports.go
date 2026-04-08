@@ -554,7 +554,7 @@ func (a *App) getStandings(c *fiber.Ctx) error {
 			COALESCE(points_for, 0), COALESCE(points_against, 0), COALESCE(streak, '')
 		FROM standings
 		WHERE league = $1
-		ORDER BY COALESCE(rank, 9999) ASC`, league)
+		ORDER BY group_name, COALESCE(rank, 9999) ASC`, league)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
 			Status: "error", Error: "failed to query standings",
