@@ -9,7 +9,7 @@ interface StandingsTabProps {
   leagues: string[];
 }
 
-type SportType = "soccer" | "nfl" | "nba" | "nhl" | "mlb" | "other";
+type SportType = "soccer" | "nfl" | "nba" | "nhl" | "mlb" | "afl" | "other";
 
 interface Column {
   key: string;
@@ -92,6 +92,17 @@ function getColumnsForSport(sportApi?: string): Column[] {
         { key: "ga", label: "GA", fullName: "Goals Against", width: "w-16", align: "center", getValue: (s) => s.goals_against ?? "-" },
         { key: "streak", label: "Str", fullName: "Streak", width: "w-16", getValue: (s) => s.streak || "-" },
       ];
+    case "afl":
+      return [
+        { key: "rank", label: "#", fullName: "Rank", width: "w-12", align: "center", getValue: (s) => s.rank || "-" },
+        { ...teamCol, width: "w-48" },
+        { key: "gp", label: "P", fullName: "Played", width: "w-14", align: "center", getValue: (s) => s.games_played },
+        { key: "w", label: "W", fullName: "Wins", width: "w-14", align: "center", getValue: (s) => s.wins },
+        { key: "l", label: "L", fullName: "Losses", width: "w-14", align: "center", getValue: (s) => s.losses },
+        { key: "d", label: "D", fullName: "Draws", width: "w-14", align: "center", getValue: (s) => s.draws },
+        { key: "pct", label: "%", fullName: "Percentage", width: "w-16", align: "center", getValue: (s) => s.pct || "-" },
+        { key: "pts", label: "Pts", fullName: "Points", width: "w-16", align: "center", getValue: (s) => s.points },
+      ];
     default:
       return [
         { key: "rank", label: "#", fullName: "Rank", width: "w-12", align: "center", getValue: (s) => s.rank || "-" },
@@ -111,6 +122,7 @@ function getSportType(sportApi?: string): SportType {
   if (sportApi === "basketball") return "nba";
   if (sportApi === "hockey") return "nhl";
   if (sportApi === "baseball") return "mlb";
+  if (sportApi === "afl") return "afl";
   if (sportApi === "football") return "soccer";
   return "other";
 }

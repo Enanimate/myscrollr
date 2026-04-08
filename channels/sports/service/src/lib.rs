@@ -503,10 +503,27 @@ async fn parse_v1_standing_item(
         None
     };
 
-    // Calculate PCT for NFL: wins / games_played
+    // Calculate PCT: 
+    // - For AFL: use points_for/points_against * 100 (scoring percentage)
+    // - For others: use wins/games_played
     let pct = if games_played > 0 {
-        let pct_val = (wins as f64) / (games_played as f64);
-        Some(format!(".{:03}", (pct_val * 1000.0).round() as i32))
+        if sport_api == "afl" {
+            // AFL percentage: (points_for / points_against) * 100
+            if let (Some(pf), Some(pa)) = (points_for, points_against) {
+                if pa > 0 {
+                    let pct_val = (pf as f64 / pa as f64) * 100.0;
+                    Some(format!("{:.1}", pct_val))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            // Standard: wins / games_played
+            let pct_val = (wins as f64) / (games_played as f64);
+            Some(format!(".{:03}", (pct_val * 1000.0).round() as i32))
+        }
     } else {
         None
     };
