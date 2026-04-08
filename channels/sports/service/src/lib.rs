@@ -530,24 +530,11 @@ async fn parse_v1_standing_item(
         None
     };
 
-    // For NFL: combine conference + division for group_name (e.g., "AFC East", "NFC West")
+    // For NFL: use division as group_name (e.g., "East", "North", "South", "West")
     // For other sports: use group or conference field
     let group_name = if sport_api == "american-football" {
-        let conference_full = item.get("conference").and_then(|c| c.as_str());
-        let conference_short = conference_full.map(|c| {
-            if c.contains("American") {
-                "AFC"
-            } else if c.contains("National") {
-                "NFC"
-            } else {
-                c
-            }
-        });
-        match (conference_short, division.as_ref()) {
-            (Some(conf), Some(div)) => Some(format!("{} {}", conf, div)),
-            (Some(conf), None) => Some(conf.to_string()),
-            _ => None,
-        }
+        // Use division directly - simpler than concatenating with conference
+        division.clone()
     } else if let Some(g) = item.get("group").or(item.get("conference")) {
         if let Some(g_str) = g.as_str() {
             Some(g_str.to_string())
