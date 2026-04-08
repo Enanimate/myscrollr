@@ -466,14 +466,34 @@ async fn parse_v1_standing_item(
         None => return,
     };
 
-    // Extract wins/losses/ties from top-level fields
-    let wins = item.get("won").and_then(|w| w.as_i64()).unwrap_or(0) as i32;
-    let losses = item.get("lost").and_then(|l| l.as_i64()).unwrap_or(0) as i32;
-    let ties = item.get("ties").and_then(|t| t.as_i64()).unwrap_or(0) as i32;
-    let games_played = wins + losses + ties;
+    // Extract wins/losses/ties - handle AFL's nested games format
+    let (wins, losses, ties, games_played) = if sport_api == "afl" {
+        // AFL uses nested format: games: {win, drawn, lost, played}
+        let games = item.get("games");
+        let w = games.and_then(|g| g.get("win")).and_then(|w| w.as_i64()).unwrap_or(0) as i32;
+        let l = games.and_then(|g| g.get("lost")).and_then(|l| l.as_i64()).unwrap_or(0) as i32;
+        let d = games.and_then(|g| g.get("drawn")).and_then(|d| d.as_i64()).unwrap_or(0) as i32;
+        let gp = games.and_then(|g| g.get("played")).and_then(|p| p.as_i64()).unwrap_or(0) as i32;
+        (w, l, d, gp)
+    } else {
+        // Standard format: top-level won, lost, ties
+        let w = item.get("won").and_then(|w| w.as_i64()).unwrap_or(0) as i32;
+        let l = item.get("lost").and_then(|l| l.as_i64()).unwrap_or(0) as i32;
+        let t = item.get("ties").and_then(|t| t.as_i64()).unwrap_or(0) as i32;
+        let gp = w + l + t;
+        (w, l, t, gp)
+    };
 
-    // Extract points - can be integer (NHL) or object {for, against} (NFL)
-    let (points, points_for, points_against) = if let Some(p) = item.get("points") {
+    // Extract points - handle AFL's unique format
+    let (points, points_for, points_against) = if sport_api == "afl" {
+        // AFL uses nested points: {for, against} AND top-level pts
+        let pts = item.get("pts").and_then(|p| p.as_i64()).map(|p| p as i32);
+        let pts_obj = item.get("points");
+        let pf = pts_obj.and_then(|p| p.get("for")).and_then(|v| v.as_i64()).map(|v| v as i32);
+        let pa = pts_obj.and_then(|p| p.get("against")).and_then(|v| v.as_i64()).map(|v| v as i32);
+        (pts, pf, pa)
+    } else if let Some(p) = item.get("points") {
+        // Standard format: can be integer or object {for, against}
         if let Some(p_int) = p.as_i64() {
             (Some(p_int as i32), None, None)
         } else if let Some(p_obj) = p.as_object() {
@@ -485,6 +505,13 @@ async fn parse_v1_standing_item(
         }
     } else {
         (None, None, None)
+    };
+
+    // Extract form/last_5 - AFL uses "last_5"
+    let form = if sport_api == "afl" {
+        item.get("last_5").and_then(|f| f.as_str()).map(|s| s.to_string())
+    } else {
+        item.get("form").and_then(|f| f.as_str()).map(|s| s.to_string())
     };
 
     // Extract streak

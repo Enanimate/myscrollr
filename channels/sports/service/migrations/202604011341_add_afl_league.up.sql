@@ -5,9 +5,9 @@ DELETE FROM tracked_leagues WHERE name IN ('AFL', 'Australian AFL');
 INSERT INTO tracked_leagues (name, sport_api, api_host, league_id, category, country, logo_url, season, season_format, is_enabled, offseason_months)
 VALUES (
   'Australian AFL',
-  'australian-football',
+  'afl',
   'v1.afl.api-sports.io',
-  '4456',
+  '1',
   'Australian Football',
   'Australia',
   'https://media.api-sports.io/flags/au.svg',
