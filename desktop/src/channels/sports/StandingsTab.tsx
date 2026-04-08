@@ -22,6 +22,7 @@ interface Column {
 
 function getColumnsForSport(sportApi?: string): Column[] {
   const sport = getSportType(sportApi);
+  const isNba = sportApi === "basketball";
   
   const teamCol: Column = {
     key: "team",
@@ -61,9 +62,9 @@ function getColumnsForSport(sportApi?: string): Column[] {
         { key: "streak", label: "Str", fullName: "Streak", width: "w-16", getValue: (s) => s.streak || "-" },
       ];
     case "nba":
-    case "mlb":
+    case "mlb": {
       return [
-        { key: "rank", label: "#", fullName: "Rank", width: "w-12", align: "center", getValue: (s) => s.rank || "-" },
+        { key: "rank", label: "#", fullName: "Rank", width: "w-12", align: "center", getValue: (s) => isNba && s.conference_rank ? s.conference_rank : (s.rank || "-") },
         { ...teamCol, width: "w-48" },
         { key: "w", label: "W", fullName: "Wins", width: "w-14", align: "center", getValue: (s) => s.wins },
         { key: "l", label: "L", fullName: "Losses", width: "w-14", align: "center", getValue: (s) => s.losses },
@@ -77,6 +78,7 @@ function getColumnsForSport(sportApi?: string): Column[] {
           return `${wins}-${losses}`;
         }},
       ];
+    }
     case "nhl":
       return [
         { key: "rank", label: "#", fullName: "Rank", width: "w-12", align: "center", getValue: (s) => s.rank || "-" },
@@ -134,8 +136,8 @@ export function StandingsTab({ leagues }: StandingsTabProps) {
   const standings: Standing[] = data?.standings ?? [];
 
   const { columns, groupedRows } = useMemo(() => {
-    const cols = getColumnsForSport(standings[0]?.sport_api);
     const sportApi = standings[0]?.sport_api;
+    const cols = getColumnsForSport(sportApi);
     const useConference = sportApi === "basketball";
 
     const groups: { groupName: string; standings: Standing[] }[] = [];

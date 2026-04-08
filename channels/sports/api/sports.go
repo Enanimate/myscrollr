@@ -552,10 +552,11 @@ func (a *App) getStandings(c *fiber.Ctx) error {
 			COALESCE(sport_api, ''), COALESCE(pct, ''), COALESCE(games_behind, ''),
 			COALESCE(otl, 0), COALESCE(goals_for, 0), COALESCE(goals_against, 0),
 			COALESCE(points_for, 0), COALESCE(points_against, 0), COALESCE(streak, ''),
-			COALESCE(conference, '')
+			COALESCE(conference, ''),
+			ROW_NUMBER() OVER (PARTITION BY conference ORDER BY wins DESC, COALESCE(rank, 9999) ASC) AS conference_rank
 		FROM standings
 		WHERE league = $1
-		ORDER BY conference, group_name, COALESCE(rank, 9999) ASC`, league)
+		ORDER BY conference, wins DESC, COALESCE(rank, 9999) ASC`, league)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
 			Status: "error", Error: "failed to query standings",
@@ -572,7 +573,7 @@ func (a *App) getStandings(c *fiber.Ctx) error {
 			&s.GamesPlayed, &s.GoalDiff, &s.Description, &s.Form, &s.GroupName,
 			&s.SportAPI, &s.Pct, &s.GamesBehind, &s.OTL,
 			&s.GoalsFor, &s.GoalsAgainst, &s.PointsFor, &s.PointsAgainst, &s.Streak,
-			&s.Conference,
+			&s.Conference, &s.ConferenceRank,
 		); err != nil {
 			log.Printf("[Sports] Standing row scan failed: %v", err)
 			continue
