@@ -561,7 +561,7 @@ func (a *App) getStandings(c *fiber.Ctx) error {
 			ROW_NUMBER() OVER (PARTITION BY conference ORDER BY wins DESC, COALESCE(rank, 9999) ASC) AS conference_rank
 		FROM standings
 		WHERE league = $1
-		ORDER BY conference, group_name, wins DESC, COALESCE(rank, 9999) ASC`, league)
+		ORDER BY conference, wins DESC, COALESCE(rank, 9999) ASC`, league)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
 			Status: "error", Error: "failed to query standings",
