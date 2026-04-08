@@ -531,10 +531,19 @@ async fn parse_v1_standing_item(
     };
 
     // For NFL: use division as group_name (e.g., "East", "North", "South", "West")
+    // For NCAA Football: use conference as group_name (e.g., "SEC", "Big 12", "Sun Belt")
     // For other sports: use group or conference field
     let group_name = if sport_api == "american-football" {
-        // Use division directly - simpler than concatenating with conference
-        division.clone()
+        // Check if this is NFL or NCAA Football
+        // NFL: league_name starts with "NFL" - use division
+        // NCAA Football: league_name starts with "NCAA" - use conference
+        if league_name.starts_with("NFL") {
+            // NFL - use division
+            division.clone()
+        } else {
+            // NCAA Football or other - use conference field directly
+            item.get("conference").and_then(|c| c.as_str()).map(|s| s.to_string())
+        }
     } else if let Some(g) = item.get("group").or(item.get("conference")) {
         if let Some(g_str) = g.as_str() {
             Some(g_str.to_string())
@@ -548,16 +557,23 @@ async fn parse_v1_standing_item(
     };
 
     // Extract conference separately for NFL (short form: AFC, NFC)
+    // For NCAA Football: keep conference field as-is (SEC, Big 12, etc.)
     let conference = if sport_api == "american-football" {
-        item.get("conference").and_then(|c| c.as_str()).map(|c| {
-            if c.contains("American") {
-                "AFC".to_string()
-            } else if c.contains("National") {
-                "NFC".to_string()
-            } else {
-                c.to_string()
-            }
-        })
+        if league_name.starts_with("NFL") {
+            // NFL - shorten to AFC/NFC
+            item.get("conference").and_then(|c| c.as_str()).map(|c| {
+                if c.contains("American") {
+                    "AFC".to_string()
+                } else if c.contains("National") {
+                    "NFC".to_string()
+                } else {
+                    c.to_string()
+                }
+            })
+        } else {
+            // NCAA Football - use conference field as-is
+            item.get("conference").and_then(|c| c.as_str()).map(|s| s.to_string())
+        }
     } else {
         None
     };
