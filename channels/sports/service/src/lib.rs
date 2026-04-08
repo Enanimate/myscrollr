@@ -344,7 +344,7 @@ async fn parse_and_upsert_standings(
         "basketball" => parse_basketball_standings(pool, league_name, season, sport_api, response).await,
         "hockey" => parse_hockey_standings(pool, league_name, season, sport_api, response).await,
         "baseball" => parse_basketball_standings(pool, league_name, season, sport_api, response).await, // Same as basketball format
-        "rugby" | "afl" => parse_v1_standings(pool, league_name, season, sport_api, response).await,
+        "rugby" | "afl" | "australian-football" => parse_v1_standings(pool, league_name, season, sport_api, response).await,
         "handball" | "volleyball" => parse_basketball_standings(pool, league_name, season, sport_api, response).await,
         _ => {
             // Default to football-style parser
@@ -507,7 +507,7 @@ async fn parse_v1_standing_item(
     // - For AFL: use points_for/points_against * 100 (scoring percentage)
     // - For others: use wins/games_played
     let pct = if games_played > 0 {
-        if sport_api == "afl" {
+        if sport_api == "afl" || sport_api == "australian-football" {
             // AFL percentage: (points_for / points_against) * 100
             if let (Some(pf), Some(pa)) = (points_for, points_against) {
                 if pa > 0 {
