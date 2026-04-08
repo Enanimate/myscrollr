@@ -562,7 +562,9 @@ func (a *App) getStandings(c *fiber.Ctx) error {
 		FROM standings
 		WHERE league = $1
 		AND team_name NOT IN ('Team Stripes', 'Team Stars', 'Team World')
-		ORDER BY conference, wins DESC, COALESCE(rank, 9999) ASC`, league)
+		ORDER BY 
+			CASE WHEN conference <> '' THEN conference ELSE group_name END,
+			wins DESC, COALESCE(rank, 9999) ASC`, league)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
 			Status: "error", Error: "failed to query standings",
