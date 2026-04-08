@@ -150,7 +150,7 @@ export function StandingsTab({ leagues }: StandingsTabProps) {
   const { columns, groupedRows } = useMemo(() => {
     const sportApi = standings[0]?.sport_api;
     const cols = getColumnsForSport(sportApi);
-    const useConference = sportApi === "basketball";
+    const useConference = sportApi === "basketball" || sportApi === "football";
 
     const groups: { groupName: string; standings: Standing[] }[] = [];
     let currentGroup: Standing[] = [];
