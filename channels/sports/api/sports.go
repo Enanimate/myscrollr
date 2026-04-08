@@ -551,19 +551,19 @@ func (a *App) getStandings(c *fiber.Ctx) error {
 			COALESCE(description, ''), COALESCE(form, ''), COALESCE(group_name, ''),
 			COALESCE(sport_api, ''), COALESCE(pct, ''),
 			CASE 
-				WHEN conference <> '' THEN (MAX(wins) OVER (PARTITION BY conference) - wins)::text
 				WHEN group_name <> '' THEN (MAX(wins) OVER (PARTITION BY group_name) - wins)::text
+				WHEN conference <> '' THEN (MAX(wins) OVER (PARTITION BY conference) - wins)::text
 				ELSE ''
 			END AS games_behind,
 			COALESCE(otl, 0), COALESCE(goals_for, 0), COALESCE(goals_against, 0),
 			COALESCE(points_for, 0), COALESCE(points_against, 0), COALESCE(streak, ''),
 			COALESCE(conference, ''),
-			ROW_NUMBER() OVER (PARTITION BY COALESCE(conference, group_name) ORDER BY wins DESC, COALESCE(rank, 9999) ASC) AS conference_rank
+			ROW_NUMBER() OVER (PARTITION BY COALESCE(group_name, conference) ORDER BY wins DESC, COALESCE(rank, 9999) ASC) AS conference_rank
 		FROM standings
 		WHERE league = $1
 		AND team_name NOT IN ('Team Stripes', 'Team Stars', 'Team World')
 		ORDER BY 
-			CASE WHEN conference <> '' THEN conference ELSE group_name END,
+			CASE WHEN group_name <> '' THEN group_name ELSE conference END,
 			wins DESC, COALESCE(rank, 9999) ASC`, league)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{
