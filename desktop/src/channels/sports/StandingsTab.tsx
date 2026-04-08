@@ -20,9 +20,10 @@ interface Column {
   getValue: (s: Standing) => React.ReactNode;
 }
 
-function getColumnsForSport(sportApi?: string): Column[] {
+function getColumnsForSport(sportApi?: string, league?: string): Column[] {
   const sport = getSportType(sportApi);
   const isNba = sportApi === "basketball";
+  const hasConferenceRank = isNba || sportApi === "football" || league === "NCAA Football" || league === "NFL";
   
   const teamCol: Column = {
     key: "team",
@@ -51,7 +52,7 @@ function getColumnsForSport(sportApi?: string): Column[] {
       ];
     case "nfl":
       return [
-        { key: "rank", label: "#", fullName: "Rank", width: "w-12", align: "center", getValue: (s) => s.rank || "-" },
+        { key: "rank", label: "#", fullName: "Rank", width: "w-12", align: "center", getValue: (s) => hasConferenceRank && s.conference_rank ? s.conference_rank : (s.rank || "-") },
         { ...teamCol, width: "w-48" },
         { key: "w", label: "W", fullName: "Wins", width: "w-14", align: "center", getValue: (s) => s.wins },
         { key: "l", label: "L", fullName: "Losses", width: "w-14", align: "center", getValue: (s) => s.losses },
@@ -64,7 +65,7 @@ function getColumnsForSport(sportApi?: string): Column[] {
     case "nba":
     case "mlb": {
       return [
-        { key: "rank", label: "#", fullName: "Rank", width: "w-12", align: "center", getValue: (s) => isNba && s.conference_rank ? s.conference_rank : (s.rank || "-") },
+        { key: "rank", label: "#", fullName: "Rank", width: "w-12", align: "center", getValue: (s) => hasConferenceRank && s.conference_rank ? s.conference_rank : (s.rank || "-") },
         { ...teamCol, width: "w-48" },
         { key: "w", label: "W", fullName: "Wins", width: "w-14", align: "center", getValue: (s) => s.wins },
         { key: "l", label: "L", fullName: "Losses", width: "w-14", align: "center", getValue: (s) => s.losses },
@@ -94,7 +95,7 @@ function getColumnsForSport(sportApi?: string): Column[] {
       ];
     case "afl":
       return [
-        { key: "rank", label: "#", fullName: "Rank", width: "w-12", align: "center", getValue: (s) => s.rank || "-" },
+        { key: "rank", label: "#", fullName: "Rank", width: "w-12", align: "center", getValue: (s) => hasConferenceRank && s.conference_rank ? s.conference_rank : (s.rank || "-") },
         { ...teamCol, width: "w-48" },
         { key: "gp", label: "P", fullName: "Played", width: "w-14", align: "center", getValue: (s) => s.games_played },
         { key: "w", label: "W", fullName: "Wins", width: "w-14", align: "center", getValue: (s) => s.wins },
@@ -150,8 +151,8 @@ export function StandingsTab({ leagues }: StandingsTabProps) {
   const { columns, groupedRows } = useMemo(() => {
     const sportApi = standings[0]?.sport_api;
     const league = standings[0]?.league;
-    const cols = getColumnsForSport(sportApi);
-    const useConference = sportApi === "basketball" || sportApi === "football" || league === "NCAA Football";
+    const cols = getColumnsForSport(sportApi, league);
+    const useConference = sportApi === "basketball" || sportApi === "football" || sportApi === "afl" || league === "NCAA Football" || league === "NFL";
 
     const groups: { groupName: string; standings: Standing[] }[] = [];
     let currentGroup: Standing[] = [];
