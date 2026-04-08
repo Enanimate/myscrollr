@@ -491,13 +491,12 @@ async fn parse_v1_standing_item(
 
     // Extract points - handle AFL's unique format
     let (points, points_for, points_against) = if sport_api == "afl" {
-        // AFL: top-level "points" = league points (4 for win, 2 for draw)
-        // AFL: scores or score object = {for, against} for scoring points
-        let pts = item.get("points").and_then(|p| p.as_i64()).map(|p| p as i32);
-        // Try "scores" then "score" then fallback to "points" for scoring
-        let scores_obj = item.get("scores").or(item.get("score")).or(item.get("points"));
-        let pf = scores_obj.and_then(|p| p.get("for")).and_then(|v| v.as_i64()).map(|v| v as i32);
-        let pa = scores_obj.and_then(|p| p.get("against")).and_then(|v| v.as_i64()).map(|v| v as i32);
+        // AFL uses "pts" for league points (4 for win, 2 for draw)
+        // AFL uses "points" object {for, against} for scoring
+        let pts = item.get("pts").and_then(|p| p.as_i64()).map(|p| p as i32);
+        let points_obj = item.get("points");
+        let pf = points_obj.and_then(|p| p.get("for")).and_then(|v| v.as_i64()).map(|v| v as i32);
+        let pa = points_obj.and_then(|p| p.get("against")).and_then(|v| v.as_i64()).map(|v| v as i32);
         (pts, pf, pa)
     } else if let Some(p) = item.get("points") {
         // Standard format: can be integer or object {for, against}
