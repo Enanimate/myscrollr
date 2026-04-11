@@ -160,9 +160,12 @@ export function StandingsTab({ leagues }: StandingsTabProps) {
 
     for (const s of standings) {
       // NHL uses group_name (division), others use conference if available
+      // NFL uses combined conference + group_name (e.g., "AFC East", "NFC North")
       const groupKey = sportApi === "hockey" 
         ? (s.group_name || "")
-        : (useConference && s.conference ? s.conference : (s.group_name || ""));
+        : (sportApi === "american-football"
+            ? `${s.conference || ""} ${s.group_name || ""}`.trim()
+            : (useConference && s.conference ? s.conference : (s.group_name || "")));
       
       if (groupKey && groupKey !== currentGroupName) {
         if (currentGroup.length > 0) {
