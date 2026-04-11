@@ -11,10 +11,10 @@ import (
 )
 
 type state struct {
-	mu              sync.RWMutex
-	scenario        string
-	requestCount    int // per-sport, keyed by sport_api name
-	rateLimitAfter  int // return 429 after this many requests (0 = unlimited)
+	mu             sync.RWMutex
+	scenario       string
+	requestCount   int // per-sport, keyed by sport_api name
+	rateLimitAfter int // return 429 after this many requests (0 = unlimited)
 }
 
 func (s *state) setScenario(name string) {
@@ -177,7 +177,12 @@ func buildResponse(sport, endpoint, query string, scenario string) map[string]an
 		}
 	}
 
-	// Return sport-specific canned data
+	// Check if endpoint contains "standings" - route to standings handlers
+	if strings.Contains(endpoint, "standings") {
+		return standingsResponse(sport, endpoint, scenario)
+	}
+
+	// Return sport-specific canned data (games/fixtures)
 	switch sport {
 	case "football":
 		return footballResponse(endpoint)
@@ -213,17 +218,17 @@ func buildResponse(sport, endpoint, query string, scenario string) map[string]an
 func footballResponse(endpoint string) map[string]any {
 	now := time.Now().Format(time.RFC3339)
 	return map[string]any{
-		"get":      endpoint,
-		"results":  2,
-		"paging":   map[string]int{"current": 1, "total": 1},
+		"get":     endpoint,
+		"results": 2,
+		"paging":  map[string]int{"current": 1, "total": 1},
 		"response": []any{
 			map[string]any{
 				"fixture": map[string]any{
-					"id":       1,
+					"id":        1,
 					"timestamp": time.Now().Unix(),
-					"date":     now,
-					"status":   map[string]any{"short": "IN1", "long": "1st Half", "elapsed": 23},
-					"venue":    map[string]any{"name": "Mock Stadium"},
+					"date":      now,
+					"status":    map[string]any{"short": "IN1", "long": "1st Half", "elapsed": 23},
+					"venue":     map[string]any{"name": "Mock Stadium"},
 				},
 				"league": map[string]any{
 					"id": 1, "name": "Mock Premier League",
@@ -238,11 +243,11 @@ func footballResponse(endpoint string) map[string]any {
 			},
 			map[string]any{
 				"fixture": map[string]any{
-					"id":       2,
+					"id":        2,
 					"timestamp": time.Now().Add(2 * time.Hour).Unix(),
-					"date":     time.Now().Add(2 * time.Hour).Format(time.RFC3339),
-					"status":   map[string]any{"short": "NS", "long": "Not Started"},
-					"venue":    map[string]any{"name": "Mock Arena"},
+					"date":      time.Now().Add(2 * time.Hour).Format(time.RFC3339),
+					"status":    map[string]any{"short": "NS", "long": "Not Started"},
+					"venue":     map[string]any{"name": "Mock Arena"},
 				},
 				"league": map[string]any{
 					"id": 1, "name": "Mock Premier League",
@@ -261,14 +266,14 @@ func footballResponse(endpoint string) map[string]any {
 
 func basketballResponse(endpoint string) map[string]any {
 	return map[string]any{
-		"get":      endpoint,
-		"results":  1,
+		"get":     endpoint,
+		"results": 1,
 		"response": []any{
 			map[string]any{
-				"id":      1001,
-				"date":    time.Now().Format(time.RFC3339),
+				"id":        1001,
+				"date":      time.Now().Format(time.RFC3339),
 				"timestamp": time.Now().Unix(),
-				"status":  map[string]any{"short": "Q3", "long": "3rd Quarter", "timer": "5:42"},
+				"status":    map[string]any{"short": "Q3", "long": "3rd Quarter", "timer": "5:42"},
 				"teams": map[string]any{
 					"home": map[string]any{"id": 10, "name": "LA Mockers", "logo": "https://example.com/lam.png"},
 					"away": map[string]any{"id": 11, "name": "NY Balls", "logo": "https://example.com/nyb.png"},
@@ -284,12 +289,12 @@ func basketballResponse(endpoint string) map[string]any {
 
 func americanFootballResponse(endpoint string) map[string]any {
 	return map[string]any{
-		"get":      endpoint,
-		"results":  1,
+		"get":     endpoint,
+		"results": 1,
 		"response": []any{
 			map[string]any{
 				"game": map[string]any{
-					"id":   2001,
+					"id": 2001,
 					"date": map[string]any{
 						"timestamp": time.Now().Unix(),
 						"date":      time.Now().Format("2006-01-02"),
@@ -313,14 +318,14 @@ func americanFootballResponse(endpoint string) map[string]any {
 
 func hockeyResponse(endpoint string) map[string]any {
 	return map[string]any{
-		"get":      endpoint,
-		"results":  1,
+		"get":     endpoint,
+		"results": 1,
 		"response": []any{
 			map[string]any{
-				"id":      3001,
-				"date":    time.Now().Format(time.RFC3339),
+				"id":        3001,
+				"date":      time.Now().Format(time.RFC3339),
 				"timestamp": time.Now().Unix(),
-				"status":  map[string]any{"short": "3rd", "long": "3rd Period", "timer": "12:30"},
+				"status":    map[string]any{"short": "3rd", "long": "3rd Period", "timer": "12:30"},
 				"teams": map[string]any{
 					"home": map[string]any{"id": 30, "name": "Mocktown Pucks", "logo": "https://example.com/mtp.png"},
 					"away": map[string]any{"id": 31, "name": "Ice Valley", "logo": "https://example.com/iv.png"},
@@ -335,14 +340,14 @@ func hockeyResponse(endpoint string) map[string]any {
 
 func baseballResponse(endpoint string) map[string]any {
 	return map[string]any{
-		"get":      endpoint,
-		"results":  1,
+		"get":     endpoint,
+		"results": 1,
 		"response": []any{
 			map[string]any{
-				"id":      4001,
-				"date":    time.Now().Format(time.RFC3339),
+				"id":        4001,
+				"date":      time.Now().Format(time.RFC3339),
 				"timestamp": time.Now().Unix(),
-				"status":  map[string]any{"short": "Inn 5", "long": "Middle 5th"},
+				"status":    map[string]any{"short": "Inn 5", "long": "Middle 5th"},
 				"teams": map[string]any{
 					"home": map[string]any{"id": 40, "name": "NY Bats", "logo": "https://example.com/nyb.png"},
 					"away": map[string]any{"id": 41, "name": "LA Sluggers", "logo": "https://example.com/lal.png"},
@@ -358,14 +363,14 @@ func baseballResponse(endpoint string) map[string]any {
 
 func rugbyResponse(endpoint string) map[string]any {
 	return map[string]any{
-		"get":      endpoint,
-		"results":  1,
+		"get":     endpoint,
+		"results": 1,
 		"response": []any{
 			map[string]any{
-				"id":      5001,
-				"date":    time.Now().Format(time.RFC3339),
+				"id":        5001,
+				"date":      time.Now().Format(time.RFC3339),
 				"timestamp": time.Now().Unix(),
-				"status":  map[string]any{"short": "1H", "long": "First Half", "timer": "35:00"},
+				"status":    map[string]any{"short": "1H", "long": "First Half", "timer": "35:00"},
 				"teams": map[string]any{
 					"home": map[string]any{"id": 50, "name": "Wellington Mocks", "logo": "https://example.com/wlg.png"},
 					"away": map[string]any{"id": 51, "name": "Auckland Tests", "logo": "https://example.com/akl.png"},
@@ -380,14 +385,14 @@ func rugbyResponse(endpoint string) map[string]any {
 
 func volleyballResponse(endpoint string) map[string]any {
 	return map[string]any{
-		"get":      endpoint,
-		"results":  1,
+		"get":     endpoint,
+		"results": 1,
 		"response": []any{
 			map[string]any{
-				"id":      6001,
-				"date":    time.Now().Format(time.RFC3339),
+				"id":        6001,
+				"date":      time.Now().Format(time.RFC3339),
 				"timestamp": time.Now().Unix(),
-				"status":  map[string]any{"short": "S2", "long": "Set 2", "timer": ""},
+				"status":    map[string]any{"short": "S2", "long": "Set 2", "timer": ""},
 				"teams": map[string]any{
 					"home": map[string]any{"id": 60, "name": "Spike City", "logo": "https://example.com/spk.png"},
 					"away": map[string]any{"id": 61, "name": "Block Town", "logo": "https://example.com/blk.png"},
@@ -402,14 +407,14 @@ func volleyballResponse(endpoint string) map[string]any {
 
 func handballResponse(endpoint string) map[string]any {
 	return map[string]any{
-		"get":      endpoint,
-		"results":  1,
+		"get":     endpoint,
+		"results": 1,
 		"response": []any{
 			map[string]any{
-				"id":      7001,
-				"date":    time.Now().Format(time.RFC3339),
+				"id":        7001,
+				"date":      time.Now().Format(time.RFC3339),
 				"timestamp": time.Now().Unix(),
-				"status":  map[string]any{"short": "2nd", "long": "2nd Half", "timer": "45:00"},
+				"status":    map[string]any{"short": "2nd", "long": "2nd Half", "timer": "45:00"},
 				"teams": map[string]any{
 					"home": map[string]any{"id": 70, "name": "Throw Club", "logo": "https://example.com/thc.png"},
 					"away": map[string]any{"id": 71, "name": "Catch United", "logo": "https://example.com/cau.png"},
@@ -424,15 +429,15 @@ func handballResponse(endpoint string) map[string]any {
 
 func aflResponse(endpoint string) map[string]any {
 	return map[string]any{
-		"get":      endpoint,
-		"results":  1,
+		"get":     endpoint,
+		"results": 1,
 		"response": []any{
 			map[string]any{
 				"game": map[string]any{
-					"id":       8001,
+					"id":        8001,
 					"timestamp": time.Now().Unix(),
-					"date":     time.Now().Format(time.RFC3339),
-					"status":   map[string]any{"short": "Q3", "long": "3rd Quarter"},
+					"date":      time.Now().Format(time.RFC3339),
+					"status":    map[string]any{"short": "Q3", "long": "3rd Quarter"},
 				},
 				"teams": map[string]any{
 					"home": map[string]any{"id": 80, "name": "Melbourne Mocks", "logo": "https://example.com/mel.png"},
@@ -450,16 +455,16 @@ func aflResponse(endpoint string) map[string]any {
 
 func mmaResponse(endpoint string) map[string]any {
 	return map[string]any{
-		"get":      endpoint,
-		"results":  1,
+		"get":     endpoint,
+		"results": 1,
 		"response": []any{
 			map[string]any{
-				"id":      9001,
-				"date":    time.Now().Format(time.RFC3339),
+				"id":        9001,
+				"date":      time.Now().Format(time.RFC3339),
 				"timestamp": time.Now().Unix(),
-				"status":  map[string]any{"short": "F", "long": "Finished"},
+				"status":    map[string]any{"short": "F", "long": "Finished"},
 				"fighters": map[string]any{
-					"first": map[string]any{"id": 90, "name": "Fighter Alpha", "logo": "https://example.com/fa.png"},
+					"first":  map[string]any{"id": 90, "name": "Fighter Alpha", "logo": "https://example.com/fa.png"},
 					"second": map[string]any{"id": 91, "name": "Fighter Beta", "logo": "https://example.com/fb.png"},
 				},
 				"category": "Lightweight",
@@ -471,17 +476,246 @@ func mmaResponse(endpoint string) map[string]any {
 
 func f1Response(endpoint string) map[string]any {
 	return map[string]any{
-		"get":      endpoint,
-		"results":  1,
+		"get":     endpoint,
+		"results": 1,
 		"response": []any{
 			map[string]any{
-				"id":      10001,
-				"date":    time.Now().Format("2006-01-02"),
-				"type":    "Race",
-				"status":  "Live",
+				"id":          10001,
+				"date":        time.Now().Format("2006-01-02"),
+				"type":        "Race",
+				"status":      "Live",
 				"competition": map[string]any{"id": 100, "name": "Mock Grand Prix"},
-				"circuit": map[string]any{"name": "Mock Circuit International"},
+				"circuit":     map[string]any{"name": "Mock Circuit International"},
 			},
 		},
+	}
+}
+
+// standingsResponse routes to sport-specific standings handlers
+func standingsResponse(sport, endpoint, scenario string) map[string]any {
+	if scenario == "no-standings" {
+		return map[string]any{
+			"get":      endpoint,
+			"results":  0,
+			"response": []any{},
+		}
+	}
+
+	switch sport {
+	case "afl":
+		return aflStandingsResponse(endpoint)
+	case "hockey":
+		return hockeyStandingsResponse(endpoint)
+	case "basketball":
+		return basketballStandingsResponse(endpoint)
+	case "baseball":
+		return baseballStandingsResponse(endpoint)
+	case "american-football":
+		return americanFootballStandingsResponse(endpoint)
+	case "football":
+		return footballStandingsResponse(endpoint)
+	default:
+		return map[string]any{
+			"get":      endpoint,
+			"results":  0,
+			"response": []any{},
+		}
+	}
+}
+
+// aflStandingsResponse returns AFL standings (2023 season)
+func aflStandingsResponse(endpoint string) map[string]any {
+	return map[string]any{
+		"get":        "standings",
+		"parameters": map[string]any{"season": "2023", "league": "1"},
+		"errors":     []any{},
+		"results":    18,
+		"response": []any{
+			map[string]any{
+				"position": 1,
+				"team":     map[string]any{"id": 4, "name": "Collingwood Magpies", "logo": "https://media-3.api-sports.io/afl/teams/4.png"},
+				"pts":      72,
+				"games":    map[string]any{"played": 23, "win": 18, "drawn": 0, "lost": 5},
+				"points":   map[string]any{"for": 2142, "against": 1687},
+				"last_5":   "WLWLL",
+			},
+			map[string]any{
+				"position": 2,
+				"team":     map[string]any{"id": 2, "name": "Brisbane Lions", "logo": "https://media-2.api-sports.io/afl/teams/2.png"},
+				"pts":      68,
+				"games":    map[string]any{"played": 23, "win": 17, "drawn": 0, "lost": 6},
+				"points":   map[string]any{"for": 2180, "against": 1771},
+				"last_5":   "WWWWL",
+			},
+			map[string]any{
+				"position": 3,
+				"team":     map[string]any{"id": 11, "name": "Port Adelaide Power", "logo": "https://media-3.api-sports.io/afl/teams/11.png"},
+				"pts":      68,
+				"games":    map[string]any{"played": 23, "win": 17, "drawn": 0, "lost": 6},
+				"points":   map[string]any{"for": 2149, "against": 1906},
+				"last_5":   "WWWLL",
+			},
+			map[string]any{
+				"position": 4,
+				"team":     map[string]any{"id": 9, "name": "Melbourne Demons", "logo": "https://media-1.api-sports.io/afl/teams/9.png"},
+				"pts":      64,
+				"games":    map[string]any{"played": 23, "win": 16, "drawn": 0, "lost": 7},
+				"points":   map[string]any{"for": 2079, "against": 1660},
+				"last_5":   "WWLWW",
+			},
+			map[string]any{
+				"position": 5,
+				"team":     map[string]any{"id": 3, "name": "Carlton Blues", "logo": "https://media-1.api-sports.io/afl/teams/3.png"},
+				"pts":      54,
+				"games":    map[string]any{"played": 22, "win": 13, "drawn": 1, "lost": 8},
+				"points":   map[string]any{"for": 1849, "against": 1592},
+				"last_5":   "WWWWW",
+			},
+			map[string]any{
+				"position": 6,
+				"team":     map[string]any{"id": 13, "name": "St Kilda Saints", "logo": "https://media-2.api-sports.io/afl/teams/13.png"},
+				"pts":      52,
+				"games":    map[string]any{"played": 23, "win": 13, "drawn": 0, "lost": 10},
+				"points":   map[string]any{"for": 1775, "against": 1647},
+				"last_5":   "LWWLW",
+			},
+			map[string]any{
+				"position": 7,
+				"team":     map[string]any{"id": 14, "name": "Sydney Swans", "logo": "https://media-3.api-sports.io/afl/teams/14.png"},
+				"pts":      50,
+				"games":    map[string]any{"played": 23, "win": 12, "drawn": 1, "lost": 10},
+				"points":   map[string]any{"for": 2050, "against": 1863},
+				"last_5":   "LWWWW",
+			},
+			map[string]any{
+				"position": 8,
+				"team":     map[string]any{"id": 16, "name": "Western Bulldogs", "logo": "https://media-2.api-sports.io/afl/teams/16.png"},
+				"pts":      48,
+				"games":    map[string]any{"played": 23, "win": 12, "drawn": 0, "lost": 11},
+				"points":   map[string]any{"for": 1919, "against": 1766},
+				"last_5":   "WLLWL",
+			},
+			map[string]any{
+				"position": 9,
+				"team":     map[string]any{"id": 18, "name": "Greater Western Sydney Giants", "logo": "https://media-3.api-sports.io/afl/teams/18.png"},
+				"pts":      48,
+				"games":    map[string]any{"played": 22, "win": 12, "drawn": 0, "lost": 10},
+				"points":   map[string]any{"for": 1913, "against": 1812},
+				"last_5":   "WLLWW",
+			},
+			map[string]any{
+				"position": 10,
+				"team":     map[string]any{"id": 1, "name": "Adelaide Crows", "logo": "https://media-1.api-sports.io/afl/teams/1.png"},
+				"pts":      44,
+				"games":    map[string]any{"played": 23, "win": 11, "drawn": 0, "lost": 12},
+				"points":   map[string]any{"for": 2193, "against": 1877},
+				"last_5":   "WLLWW",
+			},
+			map[string]any{
+				"position": 11,
+				"team":     map[string]any{"id": 5, "name": "Essendon Bombers", "logo": "https://media-3.api-sports.io/afl/teams/5.png"},
+				"pts":      44,
+				"games":    map[string]any{"played": 23, "win": 11, "drawn": 0, "lost": 12},
+				"points":   map[string]any{"for": 1838, "against": 2050},
+				"last_5":   "LLWWL",
+			},
+			map[string]any{
+				"position": 12,
+				"team":     map[string]any{"id": 7, "name": "Geelong Cats", "logo": "https://media-1.api-sports.io/afl/teams/7.png"},
+				"pts":      42,
+				"games":    map[string]any{"played": 23, "win": 10, "drawn": 1, "lost": 12},
+				"points":   map[string]any{"for": 2088, "against": 1855},
+				"last_5":   "LLLWL",
+			},
+			map[string]any{
+				"position": 13,
+				"team":     map[string]any{"id": 12, "name": "Richmond Tigers", "logo": "https://media-2.api-sports.io/afl/teams/12.png"},
+				"pts":      42,
+				"games":    map[string]any{"played": 23, "win": 10, "drawn": 1, "lost": 12},
+				"points":   map[string]any{"for": 1856, "against": 1983},
+				"last_5":   "LWLLL",
+			},
+			map[string]any{
+				"position": 14,
+				"team":     map[string]any{"id": 6, "name": "Fremantle Dockers", "logo": "https://media-2.api-sports.io/afl/teams/6.png"},
+				"pts":      40,
+				"games":    map[string]any{"played": 23, "win": 10, "drawn": 0, "lost": 13},
+				"points":   map[string]any{"for": 1835, "against": 1898},
+				"last_5":   "WLWLW",
+			},
+			map[string]any{
+				"position": 15,
+				"team":     map[string]any{"id": 17, "name": "Gold Coast Suns", "logo": "https://media-3.api-sports.io/afl/teams/17.png"},
+				"pts":      36,
+				"games":    map[string]any{"played": 23, "win": 9, "drawn": 0, "lost": 14},
+				"points":   map[string]any{"for": 1839, "against": 2006},
+				"last_5":   "LLLLW",
+			},
+			map[string]any{
+				"position": 16,
+				"team":     map[string]any{"id": 8, "name": "Hawthorn Hawks", "logo": "https://media-1.api-sports.io/afl/teams/8.png"},
+				"pts":      28,
+				"games":    map[string]any{"played": 23, "win": 7, "drawn": 0, "lost": 16},
+				"points":   map[string]any{"for": 1686, "against": 2101},
+				"last_5":   "LLWWL",
+			},
+			map[string]any{
+				"position": 17,
+				"team":     map[string]any{"id": 10, "name": "North Melbourne Kangaroos", "logo": "https://media-1.api-sports.io/afl/teams/10.png"},
+				"pts":      12,
+				"games":    map[string]any{"played": 23, "win": 3, "drawn": 0, "lost": 20},
+				"points":   map[string]any{"for": 1657, "against": 2318},
+				"last_5":   "WLLLL",
+			},
+			map[string]any{
+				"position": 18,
+				"team":     map[string]any{"id": 15, "name": "West Coast Eagles", "logo": "https://media-2.api-sports.io/afl/teams/15.png"},
+				"pts":      12,
+				"games":    map[string]any{"played": 23, "win": 3, "drawn": 0, "lost": 20},
+				"points":   map[string]any{"for": 1418, "against": 2674},
+				"last_5":   "LWLLW",
+			},
+		},
+	}
+}
+
+// Placeholder functions for other sports (to be implemented)
+func hockeyStandingsResponse(endpoint string) map[string]any {
+	return map[string]any{
+		"get":      endpoint,
+		"results":  0,
+		"response": []any{},
+	}
+}
+
+func basketballStandingsResponse(endpoint string) map[string]any {
+	return map[string]any{
+		"get":      endpoint,
+		"results":  0,
+		"response": []any{},
+	}
+}
+
+func baseballStandingsResponse(endpoint string) map[string]any {
+	return map[string]any{
+		"get":      endpoint,
+		"results":  0,
+		"response": []any{},
+	}
+}
+
+func americanFootballStandingsResponse(endpoint string) map[string]any {
+	return map[string]any{
+		"get":      endpoint,
+		"results":  0,
+		"response": []any{},
+	}
+}
+
+func footballStandingsResponse(endpoint string) map[string]any {
+	return map[string]any{
+		"get":      endpoint,
+		"results":  0,
+		"response": []any{},
 	}
 }
