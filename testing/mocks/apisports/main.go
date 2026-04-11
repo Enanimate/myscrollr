@@ -2233,6 +2233,16 @@ func handballStandingsResponse(endpoint, league string) map[string]any {
 		}
 	}
 
+	// Return empty for unimplemented leagues (Champions League 131, Starligue 34)
+	// These need full implementation
+	if league == "131" || league == "34" {
+		return map[string]any{
+			"get":      "standings",
+			"results":  0,
+			"response": []any{},
+		}
+	}
+
 	// Default: WHA Women (Austrian league) for other leagues
 	return map[string]any{
 		"get":        "standings",
