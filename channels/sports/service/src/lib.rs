@@ -285,7 +285,7 @@ pub async fn poll_standings(
         }
 
         let format_str = league.season_format.as_deref().unwrap_or("calendar");
-        let default_season = compute_current_season(format_str);
+        let default_season = compute_current_season(&league.sport_api, format_str);
         let season = league.season.as_deref().unwrap_or(&default_season).to_string();
 
         let (base, is_mock) = match std::env::var("API_SPORTS_BASE_URL") {
@@ -1016,7 +1016,7 @@ pub async fn poll_teams(
         }
 
         let format_str = league.season_format.as_deref().unwrap_or("calendar");
-        let default_season = compute_current_season(format_str);
+        let default_season = compute_current_season(&league.sport_api, format_str);
         let season = league.season.as_deref().unwrap_or(&default_season).to_string();
 
         let (base, is_mock) = match std::env::var("API_SPORTS_BASE_URL") {
@@ -1192,15 +1192,28 @@ async fn poll_league(
 ///   - `"fall-october"`  — YYYY (start year), new season starts October (NHL)
 ///   - `"fall-august"`   — YYYY (start year), new season starts August (NFL, NCAA Football, Soccer)
 ///   - `"calendar"`      — YYYY, always the current calendar year (MLB, MLS, F1)
-fn compute_current_season(season_format: &str) -> String {
+///   - `"cross-year"`   — YYYY-YY for NBA, YYYY for handball/volleyball/rugby (Premiership)
+fn compute_current_season(sport_api: &str, season_format: &str) -> String {
     let now = Utc::now();
     let year = now.year();
     let month = now.month();
 
     match season_format {
         "cross-year" => {
-            if month >= 10 { format!("{}-{}", year, year + 1) }
-            else { format!("{}-{}", year - 1, year) }
+            // NBA needs YYYY-YYYY format (e.g., 2024-2025)
+            // Handball, Volleyball, Rugby (Premiership) use previous year
+            // because season started in late 2025 and is currently in 2026
+            if sport_api == "basketball" {
+                if month >= 10 {
+                    format!("{}-{}", year, year + 1)
+                } else {
+                    format!("{}-{}", year - 1, year)
+                }
+            } else {
+                // Handball, Volleyball, Rugby - use previous year
+                // (season started in late previous year)
+                format!("{}", year - 1)
+            }
         }
         "fall-october" => {
             if month >= 10 { format!("{}", year) }
@@ -1210,7 +1223,15 @@ fn compute_current_season(season_format: &str) -> String {
             if month >= 8 { format!("{}", year) }
             else { format!("{}", year - 1) }
         }
-        "calendar" => format!("{}", year),
+        "calendar" => {
+            // Rugby (Six Nations, Super Rugby) uses previous year for current season
+            // Other calendar sports use current year
+            if sport_api == "rugby" {
+                format!("{}", year - 1)
+            } else {
+                format!("{}", year)
+            }
+        }
         other => {
             warn!("Unknown season_format '{}', falling back to calendar year", other);
             format!("{}", year)
@@ -1230,7 +1251,7 @@ fn build_api_url(league: &TrackedLeague, date: &str) -> String {
         Err(_) => (format!("https://{}", league.api_host), false),
     };
     let format_str = league.season_format.as_deref().unwrap_or("calendar");
-    let default_season = compute_current_season(format_str);
+    let default_season = compute_current_season(&league.sport_api, format_str);
     let season = league.season.as_deref().unwrap_or(&default_season);
 
     let url = match league.sport_api.as_str() {
@@ -2075,14 +2096,17 @@ mod tests {
     fn test_compute_current_season_format() {
         // Test the function doesn't panic and returns a 4-digit year string
         for fmt in &["cross-year", "fall-october", "fall-august", "calendar", "unknown"] {
-            let result = compute_current_season(fmt);
-            assert!(!result.is_empty(), "compute_current_season({}) returned empty", fmt);
-            // Result should be either a 4-digit year or YYYY-YYYY format
-            assert!(
-                result.len() == 4 || (result.len() == 9 && result.contains("-")),
-                "compute_current_season({}) = {:?}, expected YYYY or YYYY-YYYY",
-                fmt, result
-            );
+            // Test with different sport APIs to ensure all paths work
+            for sport in &["basketball", "football", "rugby", "hockey", "baseball"] {
+                let result = compute_current_season(sport, fmt);
+                assert!(!result.is_empty(), "compute_current_season({}, {}) returned empty", sport, fmt);
+                // Result should be either a 4-digit year or YYYY-YY format
+                assert!(
+                    result.len() == 4 || (result.len() == 7 && result.contains("-")),
+                    "compute_current_season({}, {}) = {:?}, expected YYYY or YY-YY",
+                    sport, fmt, result
+                );
+            }
         }
     }
 
