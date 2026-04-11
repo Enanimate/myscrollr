@@ -856,7 +856,7 @@ async fn parse_hockey_standing_item(
         _ => None,
     };
 
-    // Group name
+    // Group name (for NHL: division, e.g., "Atlantic", "Metropolitan", "Central", "Pacific")
     let group_name = if let Some(g) = item.get("group") {
         if let Some(g_str) = g.as_str() {
             Some(g_str.to_string())
@@ -868,6 +868,9 @@ async fn parse_hockey_standing_item(
     } else {
         None
     };
+
+    // Conference (for NHL: "Eastern", "Western")
+    let conference = item.get("conference").and_then(|c| c.as_str()).map(|s| s.to_string());
 
     // Calculate PCT
     let pct = if games_played > 0 {
@@ -902,7 +905,7 @@ async fn parse_hockey_standing_item(
         points_for: None,
         points_against: None,
         streak: item.get("streak").and_then(|s| s.as_str()).map(|s| s.to_string()),
-        conference: None,
+        conference,
     };
 
     if let Err(e) = upsert_standing(pool, standing).await {

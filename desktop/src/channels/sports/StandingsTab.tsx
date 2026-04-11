@@ -23,7 +23,7 @@ interface Column {
 function getColumnsForSport(sportApi?: string, league?: string): Column[] {
   const sport = getSportType(sportApi);
   const isNba = sportApi === "basketball";
-  const hasConferenceRank = isNba || sportApi === "football" || league === "NCAA Football" || league === "NFL";
+  const hasConferenceRank = isNba || sportApi === "football" || league === "NCAA Football" || league === "NFL" || sportApi === "hockey";
   
   const teamCol: Column = {
     key: "team",
@@ -82,7 +82,7 @@ function getColumnsForSport(sportApi?: string, league?: string): Column[] {
     }
     case "nhl":
       return [
-        { key: "rank", label: "#", fullName: "Rank", width: "w-12", align: "center", getValue: (s) => s.rank || "-" },
+        { key: "rank", label: "#", fullName: "Rank", width: "w-12", align: "center", getValue: (s) => hasConferenceRank && s.conference_rank ? s.conference_rank : (s.rank || "-") },
         { ...teamCol, width: "w-48" },
         { key: "gp", label: "GP", fullName: "Games Played", width: "w-14", align: "center", getValue: (s) => s.games_played },
         { key: "w", label: "W", fullName: "Wins", width: "w-14", align: "center", getValue: (s) => s.wins },
@@ -152,14 +152,17 @@ export function StandingsTab({ leagues }: StandingsTabProps) {
     const sportApi = standings[0]?.sport_api;
     const league = standings[0]?.league;
     const cols = getColumnsForSport(sportApi, league);
-    const useConference = sportApi === "basketball" || sportApi === "football" || sportApi === "afl" || league === "NCAA Football" || league === "NFL";
+    const useConference = sportApi === "basketball" || sportApi === "football" || sportApi === "afl" || sportApi === "hockey" || league === "NCAA Football" || league === "NFL";
 
     const groups: { groupName: string; standings: Standing[] }[] = [];
     let currentGroup: Standing[] = [];
     let currentGroupName = "";
 
     for (const s of standings) {
-      const groupKey = useConference && s.conference ? s.conference : (s.group_name || "");
+      // NHL uses group_name (division), others use conference if available
+      const groupKey = sportApi === "hockey" 
+        ? (s.group_name || "")
+        : (useConference && s.conference ? s.conference : (s.group_name || ""));
       
       if (groupKey && groupKey !== currentGroupName) {
         if (currentGroup.length > 0) {
