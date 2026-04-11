@@ -5,16 +5,31 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
 type state struct {
-	mu             sync.RWMutex
-	scenario       string
-	requestCount   int // per-sport, keyed by sport_api name
-	rateLimitAfter int // return 429 after this many requests (0 = unlimited)
+	mu       sync.RWMutex
+	scenario string
+
+	// Per-sport request counters
+	sportDailyCount  map[string]int // requests today, per sport
+	sportMinuteCount map[string]int // requests this minute, per sport
+
+	// Limits (defaults: 7500/day, 300/min)
+	defaultDaily  int
+	defaultMinute int
+
+	// Per-sport limit overrides
+	sportLimitDaily  map[string]int
+	sportLimitMinute map[string]int
+
+	// Reset tracking
+	lastDailyReset  time.Time
+	lastMinuteReset time.Time
 }
 
 func (s *state) setScenario(name string) {
@@ -29,20 +44,159 @@ func (s *state) getScenario() string {
 	return s.scenario
 }
 
-func (s *state) incrementAndCheck(sport string) (bool, int) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.requestCount++
-	count := s.requestCount
-	if s.rateLimitAfter > 0 && count > s.rateLimitAfter {
-		return false, count
+func (s *state) getDailyLimit(sport string) int {
+	if limit, ok := s.sportLimitDaily[sport]; ok {
+		return limit
 	}
-	return true, count
+	return s.defaultDaily
 }
 
-var globalState = &state{scenario: "normal"}
+func (s *state) getMinuteLimit(sport string) int {
+	if limit, ok := s.sportLimitMinute[sport]; ok {
+		return limit
+	}
+	return s.defaultMinute
+}
+
+func (s *state) incrementAndCheck(sport string) (bool, int, int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now()
+
+	// Reset minute counters if 60+ seconds elapsed
+	if now.Sub(s.lastMinuteReset) >= time.Minute {
+		s.sportMinuteCount = make(map[string]int)
+		s.lastMinuteReset = now
+	}
+
+	// Reset daily counters if past midnight UTC
+	if now.Sub(s.lastDailyReset) >= 24*time.Hour {
+		s.sportDailyCount = make(map[string]int)
+		s.lastDailyReset = now
+	}
+
+	// Initialize sport if not exists
+	if _, ok := s.sportDailyCount[sport]; !ok {
+		s.sportDailyCount[sport] = 0
+	}
+	if _, ok := s.sportMinuteCount[sport]; !ok {
+		s.sportMinuteCount[sport] = 0
+	}
+
+	// Increment counts
+	s.sportDailyCount[sport]++
+	s.sportMinuteCount[sport]++
+
+	dailyCount := s.sportDailyCount[sport]
+	minuteCount := s.sportMinuteCount[sport]
+
+	dailyLimit := s.getDailyLimit(sport)
+	minuteLimit := s.getMinuteLimit(sport)
+
+	// Check limits
+	if dailyCount > dailyLimit {
+		return false, dailyCount, minuteCount
+	}
+	if minuteCount > minuteLimit {
+		return false, dailyCount, minuteCount
+	}
+
+	return true, dailyCount, minuteCount
+}
+
+func (s *state) getStatus() map[string]any {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	status := make(map[string]any)
+	for sport, daily := range s.sportDailyCount {
+		status[sport] = map[string]int{
+			"daily_count":  daily,
+			"daily_limit":  s.getDailyLimit(sport),
+			"minute_count": s.sportMinuteCount[sport],
+			"minute_limit": s.getMinuteLimit(sport),
+		}
+	}
+	return status
+}
+
+func (s *state) resetCounters(sport string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if sport == "" {
+		// Reset all
+		s.sportDailyCount = make(map[string]int)
+		s.sportMinuteCount = make(map[string]int)
+		s.lastDailyReset = time.Now()
+		s.lastMinuteReset = time.Now()
+	} else {
+		// Reset specific sport
+		delete(s.sportDailyCount, sport)
+		delete(s.sportMinuteCount, sport)
+	}
+}
+
+var globalState = &state{
+	scenario:         "normal",
+	sportDailyCount:  make(map[string]int),
+	sportMinuteCount: make(map[string]int),
+	sportLimitDaily:  make(map[string]int),
+	sportLimitMinute: make(map[string]int),
+	defaultDaily:     7500,
+	defaultMinute:    300,
+	lastDailyReset:   time.Now(),
+	lastMinuteReset:  time.Now(),
+}
 
 func main() {
+	// Parse environment variables for rate limits
+	if v := os.Getenv("DEFAULT_DAILY_LIMIT"); v != "" {
+		if limit, err := strconv.Atoi(v); err == nil {
+			globalState.defaultDaily = limit
+		}
+	}
+	if v := os.Getenv("DEFAULT_MINUTE_LIMIT"); v != "" {
+		if limit, err := strconv.Atoi(v); err == nil {
+			globalState.defaultMinute = limit
+		}
+	}
+
+	// Parse per-sport overrides (e.g., SPORT_LIMIT_BASKETBALL_DAILY=500)
+	for _, env := range os.Environ() {
+		if strings.HasPrefix(env, "SPORT_LIMIT_") {
+			parts := strings.Split(env, "=")
+			if len(parts) != 2 {
+				continue
+			}
+			key := parts[0]
+			value := parts[1]
+			limit, err := strconv.Atoi(value)
+			if err != nil {
+				continue
+			}
+
+			// Parse sport and limit type from key
+			// Format: SPORT_LIMIT_<SPORT>_<TYPE> (e.g., SPORT_LIMIT_BASKETBALL_DAILY)
+			prefix := "SPORT_LIMIT_"
+			rest := strings.TrimPrefix(key, prefix)
+			parts = strings.Split(rest, "_")
+			if len(parts) >= 2 {
+				sport := strings.ToLower(parts[0])
+				limitType := strings.ToUpper(parts[len(parts)-1])
+				if limitType == "DAILY" {
+					globalState.sportLimitDaily[sport] = limit
+				} else if limitType == "MINUTE" {
+					globalState.sportLimitMinute[sport] = limit
+				}
+			}
+		}
+	}
+
+	log.Printf("[mock-apisports] Default limits: daily=%d, minute=%d", globalState.defaultDaily, globalState.defaultMinute)
+	log.Printf("[mock-apisports] Per-sport daily limits: %v", globalState.sportLimitDaily)
+	log.Printf("[mock-apisports] Per-sport minute limits: %v", globalState.sportLimitMinute)
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "9004"
@@ -54,6 +208,7 @@ func main() {
 	mux.HandleFunc("/control/scenario", controlScenarioHandler)
 	mux.HandleFunc("/control/rate-limit", controlRateLimitHandler)
 	mux.HandleFunc("/control/reset", controlResetHandler)
+	mux.HandleFunc("/control/status", controlStatusHandler)
 
 	log.Printf("[mock-apisports] Listening on :%s", port)
 	log.Fatalf("[mock-apisports] Error: %v", http.ListenAndServe(":"+port, mux))
@@ -88,26 +243,60 @@ func controlRateLimitHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		After int `json:"after"` // return 429 after this many requests; 0 = never
+		Daily       int    `json:"daily"`
+		Minute      int    `json:"minute"`
+		Sport       string `json:"sport"`
+		SportDaily  int    `json:"sport_daily"`
+		SportMinute int    `json:"sport_minute"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	globalState.mu.Lock()
-	globalState.rateLimitAfter = req.After
-	globalState.mu.Unlock()
-	log.Printf("[mock-apisports] Rate limit set: after %d requests", req.After)
+
+	if req.Daily > 0 {
+		globalState.defaultDaily = req.Daily
+	}
+	if req.Minute > 0 {
+		globalState.defaultMinute = req.Minute
+	}
+	if req.Sport != "" && req.SportDaily > 0 {
+		globalState.sportLimitDaily[req.Sport] = req.SportDaily
+	}
+	if req.Sport != "" && req.SportMinute > 0 {
+		globalState.sportLimitMinute[req.Sport] = req.SportMinute
+	}
+
+	log.Printf("[mock-apisports] Rate limits updated: daily=%d, minute=%d", globalState.defaultDaily, globalState.defaultMinute)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{"rate_limit_after": req.After, "status": "ok"})
+	json.NewEncoder(w).Encode(map[string]any{
+		"daily_limit":  globalState.defaultDaily,
+		"minute_limit": globalState.defaultMinute,
+		"sport_limits": map[string]any{
+			"daily":  globalState.sportLimitDaily,
+			"minute": globalState.sportLimitMinute,
+		},
+		"status": "ok",
+	})
 }
 
 func controlResetHandler(w http.ResponseWriter, r *http.Request) {
-	globalState.mu.Lock()
-	globalState.requestCount = 0
-	globalState.mu.Unlock()
+	sport := r.URL.Query().Get("sport")
+	globalState.resetCounters(sport)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{"status": "ok", "message": "counters reset"})
+	json.NewEncoder(w).Encode(map[string]any{"status": "ok", "message": "counters reset", "sport": sport})
+}
+
+func controlStatusHandler(w http.ResponseWriter, r *http.Request) {
+	status := globalState.getStatus()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"status": status,
+		"defaults": map[string]int{
+			"daily":  globalState.defaultDaily,
+			"minute": globalState.defaultMinute,
+		},
+	})
 }
 
 // Determine sport from Host header.
@@ -130,7 +319,13 @@ func endpointFromPath(path string) string {
 }
 
 func handleAPI(w http.ResponseWriter, r *http.Request) {
-	if ok, count := globalState.incrementAndCheck(sportFromHost(r.Host)); !ok {
+	sport := r.URL.Query().Get("sport")
+	if sport == "" {
+		sport = sportFromHost(r.Host)
+	}
+
+	ok, dailyCount, minuteCount := globalState.incrementAndCheck(sport)
+	if !ok {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("x-ratelimit-requests-remaining", "0")
 		w.WriteHeader(http.StatusTooManyRequests)
@@ -138,7 +333,7 @@ func handleAPI(w http.ResponseWriter, r *http.Request) {
 			"get":    "error",
 			"errors": map[string]string{"rate_limit": "rate limit exceeded"},
 		})
-		log.Printf("[mock-apisports] Rate limited (request #%d)", count)
+		log.Printf("[mock-apisports] Rate limited sport=%s (daily=%d, minute=%d)", sport, dailyCount, minuteCount)
 		return
 	}
 
@@ -152,18 +347,15 @@ func handleAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check query param first (for mock usage), then fall back to Host header
-	sport := r.URL.Query().Get("sport")
-	if sport == "" {
-		sport = sportFromHost(r.Host)
-	}
 	ep := endpointFromPath(r.URL.Path)
 	resp := buildResponse(sport, ep, "", scenario)
 
 	w.Header().Set("Content-Type", "application/json")
-	// Simulate rate limit headers
-	w.Header().Set("x-ratelimit-requests-remaining", "7420")
-	w.Header().Set("x-ratelimit-requests-limit", "7500")
+	// Set rate limit headers with remaining counts
+	dailyLimit := globalState.getDailyLimit(sport)
+	w.Header().Set("x-ratelimit-requests-remaining", strconv.Itoa(dailyLimit-dailyCount))
+	w.Header().Set("x-ratelimit-requests-limit", strconv.Itoa(dailyLimit))
+	w.Header().Set("x-ratelimit-requests-reset", "86400") // seconds until daily reset
 	json.NewEncoder(w).Encode(resp)
 }
 
