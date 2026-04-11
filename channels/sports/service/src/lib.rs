@@ -682,8 +682,10 @@ async fn parse_basketball_standing_item(
     };
 
     // NBA/MLB: games object has nested win/lose with {total, percentage}
+    // Also handles NBA v2 format where win/loss are at top level
     let games = item.get("games");
     let (wins, losses, games_played, pct) = if let Some(g) = games {
+        // v1 format: nested in games object
         let w = g.get("win").and_then(|w| {
             w.get("total").or_else(|| w.as_object().map(|o| o.values().next().unwrap_or(&serde_json::Value::Null)))
         }).and_then(|v| v.as_i64()).unwrap_or(0) as i32;
@@ -705,7 +707,12 @@ async fn parse_basketball_standing_item(
         
         (w, l, gp, pct_str)
     } else {
-        (0, 0, 0, None)
+        // v2 format (NBA): win/loss at top level
+        let w = item.get("win").and_then(|w| w.get("total")).and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+        let l = item.get("loss").and_then(|l| l.get("total")).and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+        let gp = w + l; // games played = wins + losses
+        let pct_str = item.get("win").and_then(|w| w.get("percentage")).and_then(|p| p.as_str()).map(|s| s.to_string());
+        (w, l, gp, pct_str)
     };
 
     // Points for/against (available in some responses)
@@ -731,8 +738,15 @@ async fn parse_basketball_standing_item(
         }
     });
 
-    // Group - can be object {name} or string
-    let group_name = if let Some(g) = item.get("group") {
+    // Group - can be object {name} or string (NBA v2 uses division object)
+    // Check top-level division.name first (NBA v2), then group (v1)
+    let group_name = if let Some(d) = item.get("division") {
+        if let Some(d_obj) = d.as_object() {
+            d_obj.get("name").and_then(|n| n.as_str()).map(|s| s.to_string())
+        } else {
+            None
+        }
+    } else if let Some(g) = item.get("group") {
         if let Some(g_str) = g.as_str() {
             Some(g_str.to_string())
         } else if let Some(g_obj) = g.as_object() {
@@ -744,22 +758,40 @@ async fn parse_basketball_standing_item(
         None
     };
 
-    // Conference - derived from division for NBA
-    let conference = group_name.as_ref().and_then(|g| {
-        if sport_api == "basketball" {
-            const EASTERN: &[&str] = &["Atlantic Division", "Central Division", "Southeast Division"];
-            const WESTERN: &[&str] = &["Northwest Division", "Pacific Division", "Southwest Division"];
-            if EASTERN.contains(&g.as_str()) {
-                Some("Eastern Conference".to_string())
-            } else if WESTERN.contains(&g.as_str()) {
-                Some("Western Conference".to_string())
+    // Conference - check top-level first (NBA v2), then derive from group_name (v1)
+    let conference = if sport_api == "basketball" {
+        // NBA v2: check for top-level conference.name (east/west)
+        if let Some(c) = item.get("conference") {
+            if let Some(c_obj) = c.as_object() {
+                c_obj.get("name").and_then(|n| n.as_str()).map(|s| {
+                    if s == "east" {
+                        "Eastern Conference".to_string()
+                    } else if s == "west" {
+                        "Western Conference".to_string()
+                    } else {
+                        s.to_string()
+                    }
+                })
             } else {
                 None
             }
         } else {
-            None
+            // v1: derive from group_name
+            group_name.as_ref().and_then(|g| {
+                const EASTERN: &[&str] = &["Atlantic Division", "Central Division", "Southeast Division"];
+                const WESTERN: &[&str] = &["Northwest Division", "Pacific Division", "Southwest Division"];
+                if EASTERN.contains(&g.as_str()) {
+                    Some("Eastern Conference".to_string())
+                } else if WESTERN.contains(&g.as_str()) {
+                    Some("Western Conference".to_string())
+                } else {
+                    None
+                }
+            })
         }
-    });
+    } else {
+        None
+    };
 
     let standing = StandingData {
         league: league_name.to_string(),
