@@ -489,28 +489,45 @@ async fn parse_v1_standing_item(
         (w, l, t, gp)
     };
 
-    // Extract points - handle AFL's unique format
-    let (points, points_for, points_against) = if sport_api == "afl" {
+    // Extract points - handle AFL's unique format and rugby
+    let (points, points_for, points_against, goals_for, goals_against) = if sport_api == "afl" {
         // AFL uses "pts" for league points (4 for win, 2 for draw)
         // AFL uses "points" object {for, against} for scoring
         let pts = item.get("pts").and_then(|p| p.as_i64()).map(|p| p as i32);
         let points_obj = item.get("points");
         let pf = points_obj.and_then(|p| p.get("for")).and_then(|v| v.as_i64()).map(|v| v as i32);
         let pa = points_obj.and_then(|p| p.get("against")).and_then(|v| v.as_i64()).map(|v| v as i32);
-        (pts, pf, pa)
+        (pts, pf, pa, None, None)
+    } else if sport_api == "rugby" {
+        // Rugby has both "points" (league points) and "goals" {for, against}
+        let pts = item.get("points").and_then(|p| p.as_i64()).map(|p| p as i32);
+        let goals_obj = item.get("goals");
+        let gf = goals_obj.and_then(|g| g.get("for")).and_then(|v| v.as_i64()).map(|v| v as i32);
+        let ga = goals_obj.and_then(|g| g.get("against")).and_then(|v| v.as_i64()).map(|v| v as i32);
+        (pts, None, None, gf, ga)
     } else if let Some(p) = item.get("points") {
         // Standard format: can be integer or object {for, against}
         if let Some(p_int) = p.as_i64() {
-            (Some(p_int as i32), None, None)
+            (Some(p_int as i32), None, None, None, None)
         } else if let Some(p_obj) = p.as_object() {
             let pf = p_obj.get("for").and_then(|v| v.as_i64()).map(|v| v as i32);
             let pa = p_obj.get("against").and_then(|v| v.as_i64()).map(|v| v as i32);
-            (None, pf, pa)
+            (None, pf, pa, None, None)
         } else {
-            (None, None, None)
+            (None, None, None, None, None)
         }
     } else {
-        (None, None, None)
+        (None, None, None, None, None)
+    };
+
+    // Calculate goal_diff for rugby
+    let goal_diff = if sport_api == "rugby" {
+        match (goals_for, goals_against) {
+            (Some(gf), Some(ga)) => Some(gf - ga),
+            _ => None,
+        }
+    } else {
+        None
     };
 
     // Extract form/last_5 - AFL uses "last_5"
@@ -614,7 +631,7 @@ async fn parse_v1_standing_item(
         draws: ties,
         points,
         games_played,
-        goal_diff: None, // Not available in v1 format
+        goal_diff, // Calculated above for rugby, None otherwise
         description: item.get("description").and_then(|d| d.as_str()).map(|s| s.to_string()),
         form: item.get("form").and_then(|f| f.as_str()).map(|s| s.to_string()),
         group_name,
@@ -623,8 +640,8 @@ async fn parse_v1_standing_item(
         pct,
         games_behind: None,
         otl: None,
-        goals_for: None,
-        goals_against: None,
+        goals_for,
+        goals_against,
         points_for,
         points_against,
         streak,

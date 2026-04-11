@@ -116,6 +116,20 @@ function getColumnsForSport(sportApi?: string, league?: string): Column[] {
         { key: "gd", label: "GD", fullName: "Goal Diff", width: "w-12", align: "center", getValue: (s) => s.goal_diff > 0 ? `+${s.goal_diff}` : (s.goal_diff ?? "-") },
         { key: "pts", label: "Pts", fullName: "Points", width: "w-12", align: "center", getValue: (s) => s.points },
       ];
+    case "rugby":
+      return [
+        { key: "rank", label: "#", fullName: "Rank", width: "w-10", align: "center", getValue: (s) => s.rank || "-" },
+        { ...teamCol, width: "w-40" },
+        { key: "gp", label: "P", fullName: "Played", width: "w-12", align: "center", getValue: (s) => s.games_played },
+        { key: "w", label: "W", fullName: "Wins", width: "w-10", align: "center", getValue: (s) => s.wins },
+        { key: "d", label: "D", fullName: "Draws", width: "w-10", align: "center", getValue: (s) => s.draws },
+        { key: "l", label: "L", fullName: "Losses", width: "w-10", align: "center", getValue: (s) => s.losses },
+        { key: "pd", label: "PD", fullName: "Point Diff", width: "w-12", align: "center", getValue: (s) => {
+          const diff = (s.goals_for ?? 0) - (s.goals_against ?? 0);
+          return diff > 0 ? `+${diff}` : (diff === 0 ? "0" : `${diff}`);
+        }},
+        { key: "pts", label: "Pts", fullName: "Points", width: "w-12", align: "center", getValue: (s) => s.points },
+      ];
     default:
       return [
         { key: "rank", label: "#", fullName: "Rank", width: "w-12", align: "center", getValue: (s) => s.rank || "-" },
@@ -137,6 +151,7 @@ function getSportType(sportApi?: string): SportType {
   if (sportApi === "baseball") return "mlb";
   if (sportApi === "afl") return "afl";
   if (sportApi === "handball") return "handball";
+  if (sportApi === "rugby") return "rugby";
   if (sportApi === "football") return "soccer";
   return "other";
 }
