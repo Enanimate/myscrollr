@@ -901,9 +901,9 @@ async fn parse_hockey_standing_item(
         None => return,
     };
 
-    // NHL: won, lost, lost_overtime at top level, points is integer
-    let wins = item.get("won").and_then(|w| w.as_i64()).unwrap_or(0) as i32;
-    let losses = item.get("lost").and_then(|l| l.as_i64()).unwrap_or(0) as i32;
+    // NHL: wins/losses in nested games object, otl at top level
+    let wins = item.get("games").and_then(|g| g.get("win")).and_then(|w| w.get("total")).and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+    let losses = item.get("games").and_then(|g| g.get("lose")).and_then(|l| l.get("total")).and_then(|v| v.as_i64()).unwrap_or(0) as i32;
     let otl = item.get("lost_overtime").and_then(|l| l.as_i64()).unwrap_or(0) as i32;
     let games_played = item.get("games").and_then(|g| g.get("played")).and_then(|p| p.as_i64()).unwrap_or(0) as i32;
     
