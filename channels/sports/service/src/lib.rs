@@ -910,9 +910,9 @@ async fn parse_hockey_standing_item(
     // Points is directly available as integer in NHL
     let points = item.get("points").and_then(|p| p.as_i64()).map(|p| p as i32);
 
-    // Goals for/against
-    let goals_for = item.get("goals_for").and_then(|g| g.as_i64()).map(|g| g as i32);
-    let goals_against = item.get("goals_against").and_then(|g| g.as_i64()).map(|g| g as i32);
+    // Goals for/against - from nested "goals" object (like handball)
+    let goals_for = item.get("goals").and_then(|g| g.get("for")).and_then(|v| v.as_i64()).map(|v| v as i32);
+    let goals_against = item.get("goals").and_then(|g| g.get("against")).and_then(|v| v.as_i64()).map(|v| v as i32);
 
     // Calculate goal diff
     let goal_diff = match (goals_for, goals_against) {
