@@ -9,7 +9,7 @@ interface StandingsTabProps {
   leagues: string[];
 }
 
-type SportType = "soccer" | "nfl" | "nba" | "nhl" | "mlb" | "afl" | "other";
+type SportType = "soccer" | "nfl" | "nba" | "nhl" | "mlb" | "afl" | "handball" | "other";
 
 interface Column {
   key: string;
@@ -104,6 +104,18 @@ function getColumnsForSport(sportApi?: string, league?: string): Column[] {
         { key: "pct", label: "%", fullName: "Percentage", width: "w-16", align: "center", getValue: (s) => s.pct || "-" },
         { key: "pts", label: "Pts", fullName: "Points", width: "w-16", align: "center", getValue: (s) => s.points },
       ];
+    case "handball":
+      return [
+        { key: "rank", label: "#", fullName: "Rank", width: "w-10", align: "center", getValue: (s) => s.rank || "-" },
+        { ...teamCol, width: "w-40" },
+        { key: "gp", label: "MP", fullName: "Matches Played", width: "w-12", align: "center", getValue: (s) => s.games_played },
+        { key: "w", label: "W", fullName: "Wins", width: "w-10", align: "center", getValue: (s) => s.wins },
+        { key: "l", label: "L", fullName: "Losses", width: "w-10", align: "center", getValue: (s) => s.losses },
+        { key: "gf", label: "GF", fullName: "Goals For", width: "w-12", align: "center", getValue: (s) => s.goals_for ?? "-" },
+        { key: "ga", label: "GA", fullName: "Goals Against", width: "w-12", align: "center", getValue: (s) => s.goals_against ?? "-" },
+        { key: "gd", label: "GD", fullName: "Goal Diff", width: "w-12", align: "center", getValue: (s) => s.goal_diff > 0 ? `+${s.goal_diff}` : (s.goal_diff ?? "-") },
+        { key: "pts", label: "Pts", fullName: "Points", width: "w-12", align: "center", getValue: (s) => s.points },
+      ];
     default:
       return [
         { key: "rank", label: "#", fullName: "Rank", width: "w-12", align: "center", getValue: (s) => s.rank || "-" },
@@ -124,6 +136,7 @@ function getSportType(sportApi?: string): SportType {
   if (sportApi === "hockey") return "nhl";
   if (sportApi === "baseball") return "mlb";
   if (sportApi === "afl") return "afl";
+  if (sportApi === "handball") return "handball";
   if (sportApi === "football") return "soccer";
   return "other";
 }

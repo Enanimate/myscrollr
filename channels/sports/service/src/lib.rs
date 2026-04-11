@@ -716,10 +716,19 @@ async fn parse_basketball_standing_item(
     };
 
     // Points for/against (available in some responses)
+    // Also checks "goals" object (handball, some other sports) as fallback
     let (points_for, points_against) = if let Some(p) = item.get("points") {
         if let Some(p_obj) = p.as_object() {
             (p_obj.get("for").and_then(|v| v.as_i64()).map(|v| v as i32),
              p_obj.get("against").and_then(|v| v.as_i64()).map(|v| v as i32))
+        } else {
+            (None, None)
+        }
+    } else if let Some(g) = item.get("goals") {
+        // Fallback: check "goals" object (used by handball, rugby, etc.)
+        if let Some(g_obj) = g.as_object() {
+            (g_obj.get("for").and_then(|v| v.as_i64()).map(|v| v as i32),
+             g_obj.get("against").and_then(|v| v.as_i64()).map(|v| v as i32))
         } else {
             (None, None)
         }
