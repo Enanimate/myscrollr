@@ -179,7 +179,18 @@ func buildResponse(sport, endpoint, query string, scenario string) map[string]an
 
 	// Check if endpoint contains "standings" - route to standings handlers
 	if strings.Contains(endpoint, "standings") {
-		return standingsResponse(sport, endpoint, scenario)
+		// Parse league from query string for handball, basketball, etc.
+		league := ""
+		if strings.Contains(endpoint, "?") {
+			params := strings.Split(endpoint, "?")[1]
+			for _, p := range strings.Split(params, "&") {
+				if strings.HasPrefix(p, "league=") {
+					league = strings.TrimPrefix(p, "league=")
+					break
+				}
+			}
+		}
+		return standingsResponse(sport, endpoint, scenario, league)
 	}
 
 	// Return sport-specific canned data (games/fixtures)
@@ -492,7 +503,7 @@ func f1Response(endpoint string) map[string]any {
 }
 
 // standingsResponse routes to sport-specific standings handlers
-func standingsResponse(sport, endpoint, scenario string) map[string]any {
+func standingsResponse(sport, endpoint, scenario, league string) map[string]any {
 	if scenario == "no-standings" {
 		return map[string]any{
 			"get":      endpoint,
@@ -507,15 +518,15 @@ func standingsResponse(sport, endpoint, scenario string) map[string]any {
 	case "hockey":
 		return hockeyStandingsResponse(endpoint)
 	case "basketball":
-		return basketballStandingsResponse(endpoint)
+		return basketballStandingsResponse(endpoint, league)
 	case "baseball":
-		return baseballStandingsResponse(endpoint)
+		return baseballStandingsResponse(endpoint, league)
 	case "american-football":
 		return americanFootballStandingsResponse(endpoint)
 	case "football":
 		return footballStandingsResponse(endpoint)
 	case "handball":
-		return handballStandingsResponse(endpoint)
+		return handballStandingsResponse(endpoint, league)
 	case "rugby":
 		return rugbyStandingsResponse(endpoint)
 	case "volleyball":
@@ -961,7 +972,7 @@ func hockeyStandingsResponse(endpoint string) map[string]any {
 	}
 }
 
-func basketballStandingsResponse(endpoint string) map[string]any {
+func basketballStandingsResponse(endpoint, league string) map[string]any {
 	// NBA v2 API uses different structure than v1 basketball
 	return map[string]any{
 		"get":        "standings/",
@@ -1339,7 +1350,7 @@ func basketballStandingsResponse(endpoint string) map[string]any {
 	}
 }
 
-func baseballStandingsResponse(endpoint string) map[string]any {
+func baseballStandingsResponse(endpoint, league string) map[string]any {
 	return map[string]any{
 		"get":        "standings",
 		"parameters": map[string]any{"league": "1", "season": "2024"},
@@ -2020,7 +2031,209 @@ func footballStandingsResponse(endpoint string) map[string]any {
 	}
 }
 
-func handballStandingsResponse(endpoint string) map[string]any {
+func handballStandingsResponse(endpoint, league string) map[string]any {
+	// Handball Bundesliga (German league - league_id 39)
+	if league == "39" {
+		return map[string]any{
+			"get":        "standings",
+			"parameters": map[string]any{"league": "39", "season": "2025"},
+			"errors":     []any{},
+			"results":    1,
+			"response": []any{
+				[]any{
+					map[string]any{
+						"position": 1, "stage": "Bundesliga - Regular Season", "group": map[string]any{"name": nil},
+						"team":        map[string]any{"id": 328, "name": "SC Magdeburg", "logo": "https://media.api-sports.io/handball/teams/328.png"},
+						"league":      map[string]any{"id": 39, "name": "Bundesliga", "type": "League", "logo": "https://media.api-sports.io/handball/leagues/39.png", "season": 2025},
+						"country":     map[string]any{"id": 13, "name": "Germany", "code": "DE", "flag": "https://media.api-sports.io/flags/de.svg"},
+						"games":       map[string]any{"played": 27, "win": map[string]any{"total": 24, "percentage": "88.89"}, "draw": map[string]any{"total": 2, "percentage": "7.41"}, "lose": map[string]any{"total": 1, "percentage": "3.70"}},
+						"goals":       map[string]any{"for": 876, "against": 724},
+						"points":      50,
+						"form":        "WWWWW",
+						"description": "Promotion - Champions League",
+					},
+					map[string]any{
+						"position": 2, "stage": "Bundesliga - Regular Season", "group": map[string]any{"name": nil},
+						"team":        map[string]any{"id": 314, "name": "Flensburg-H.", "logo": "https://media.api-sports.io/handball/teams/314.png"},
+						"league":      map[string]any{"id": 39, "name": "Bundesliga", "type": "League", "logo": "https://media.api-sports.io/handball/leagues/39.png", "season": 2025},
+						"country":     map[string]any{"id": 13, "name": "Germany", "code": "DE", "flag": "https://media.api-sports.io/flags/de.svg"},
+						"games":       map[string]any{"played": 27, "win": map[string]any{"total": 20, "percentage": "74.07"}, "draw": map[string]any{"total": 3, "percentage": "11.11"}, "lose": map[string]any{"total": 4, "percentage": "14.81"}},
+						"goals":       map[string]any{"for": 949, "against": 849},
+						"points":      43,
+						"form":        "WWLWW",
+						"description": "Promotion - Champions League",
+					},
+					map[string]any{
+						"position": 3, "stage": "Bundesliga - Regular Season", "group": map[string]any{"name": nil},
+						"team":        map[string]any{"id": 315, "name": "Fuchse Berlin", "logo": "https://media.api-sports.io/handball/teams/315.png"},
+						"league":      map[string]any{"id": 39, "name": "Bundesliga", "type": "League", "logo": "https://media.api-sports.io/handball/leagues/39.png", "season": 2025},
+						"country":     map[string]any{"id": 13, "name": "Germany", "code": "DE", "flag": "https://media.api-sports.io/flags/de.svg"},
+						"games":       map[string]any{"played": 27, "win": map[string]any{"total": 21, "percentage": "77.78"}, "draw": map[string]any{"total": 0, "percentage": "0.00"}, "lose": map[string]any{"total": 6, "percentage": "22.22"}},
+						"goals":       map[string]any{"for": 971, "against": 809},
+						"points":      42,
+						"form":        "WLWWW",
+						"description": "Promotion - European League",
+					},
+					map[string]any{
+						"position": 4, "stage": "Bundesliga - Regular Season", "group": map[string]any{"name": nil},
+						"team":        map[string]any{"id": 339, "name": "Gummersbach", "logo": "https://media.api-sports.io/handball/teams/339.png"},
+						"league":      map[string]any{"id": 39, "name": "Bundesliga", "type": "League", "logo": "https://media.api-sports.io/handball/leagues/39.png", "season": 2025},
+						"country":     map[string]any{"id": 13, "name": "Germany", "code": "DE", "flag": "https://media.api-sports.io/flags/de.svg"},
+						"games":       map[string]any{"played": 26, "win": map[string]any{"total": 18, "percentage": "69.23"}, "draw": map[string]any{"total": 3, "percentage": "11.54"}, "lose": map[string]any{"total": 5, "percentage": "19.23"}},
+						"goals":       map[string]any{"for": 822, "against": 721},
+						"points":      39,
+						"form":        "WWWWW",
+						"description": "Promotion - European League",
+					},
+					map[string]any{
+						"position": 5, "stage": "Bundesliga - Regular Season", "group": map[string]any{"name": nil},
+						"team":        map[string]any{"id": 321, "name": "Kiel", "logo": "https://media.api-sports.io/handball/teams/321.png"},
+						"league":      map[string]any{"id": 39, "name": "Bundesliga", "type": "League", "logo": "https://media.api-sports.io/handball/leagues/39.png", "season": 2025},
+						"country":     map[string]any{"id": 13, "name": "Germany", "code": "DE", "flag": "https://media.api-sports.io/flags/de.svg"},
+						"games":       map[string]any{"played": 27, "win": map[string]any{"total": 15, "percentage": "55.56"}, "draw": map[string]any{"total": 7, "percentage": "25.93"}, "lose": map[string]any{"total": 5, "percentage": "18.52"}},
+						"goals":       map[string]any{"for": 835, "against": 796},
+						"points":      37,
+						"form":        "DLWLL",
+						"description": "Promotion - European League",
+					},
+					map[string]any{
+						"position": 6, "stage": "Bundesliga - Regular Season", "group": map[string]any{"name": nil},
+						"team":    map[string]any{"id": 323, "name": "Lemgo", "logo": "https://media.api-sports.io/handball/teams/323.png"},
+						"league":  map[string]any{"id": 39, "name": "Bundesliga", "type": "League", "logo": "https://media.api-sports.io/handball/leagues/39.png", "season": 2025},
+						"country": map[string]any{"id": 13, "name": "Germany", "code": "DE", "flag": "https://media.api-sports.io/flags/de.svg"},
+						"games":   map[string]any{"played": 27, "win": map[string]any{"total": 16, "percentage": "59.26"}, "draw": map[string]any{"total": 3, "percentage": "11.11"}, "lose": map[string]any{"total": 8, "percentage": "29.63"}},
+						"goals":   map[string]any{"for": 798, "against": 750},
+						"points":  35,
+						"form":    "LDLLW",
+					},
+					map[string]any{
+						"position": 7, "stage": "Bundesliga - Regular Season", "group": map[string]any{"name": nil},
+						"team":    map[string]any{"id": 324, "name": "MT Melsungen", "logo": "https://media.api-sports.io/handball/teams/324.png"},
+						"league":  map[string]any{"id": 39, "name": "Bundesliga", "type": "League", "logo": "https://media.api-sports.io/handball/leagues/39.png", "season": 2025},
+						"country": map[string]any{"id": 13, "name": "Germany", "code": "DE", "flag": "https://media.api-sports.io/flags/de.svg"},
+						"games":   map[string]any{"played": 28, "win": map[string]any{"total": 15, "percentage": "53.57"}, "draw": map[string]any{"total": 4, "percentage": "14.29"}, "lose": map[string]any{"total": 9, "percentage": "32.14"}},
+						"goals":   map[string]any{"for": 820, "against": 798},
+						"points":  34,
+						"form":    "WWWLW",
+					},
+					map[string]any{
+						"position": 8, "stage": "Bundesliga - Regular Season", "group": map[string]any{"name": nil},
+						"team":    map[string]any{"id": 327, "name": "Rhein-Neckar", "logo": "https://media.api-sports.io/handball/teams/327.png"},
+						"league":  map[string]any{"id": 39, "name": "Bundesliga", "type": "League", "logo": "https://media.api-sports.io/handball/leagues/39.png", "season": 2025},
+						"country": map[string]any{"id": 13, "name": "Germany", "code": "DE", "flag": "https://media.api-sports.io/flags/de.svg"},
+						"games":   map[string]any{"played": 27, "win": map[string]any{"total": 14, "percentage": "51.85"}, "draw": map[string]any{"total": 3, "percentage": "11.11"}, "lose": map[string]any{"total": 10, "percentage": "37.04"}},
+						"goals":   map[string]any{"for": 813, "against": 776},
+						"points":  31,
+						"form":    "LWDWL",
+					},
+					map[string]any{
+						"position": 9, "stage": "Bundesliga - Regular Season", "group": map[string]any{"name": nil},
+						"team":    map[string]any{"id": 316, "name": "Goppingen", "logo": "https://media.api-sports.io/handball/teams/316.png"},
+						"league":  map[string]any{"id": 39, "name": "Bundesliga", "type": "League", "logo": "https://media.api-sports.io/handball/leagues/39.png", "season": 2025},
+						"country": map[string]any{"id": 13, "name": "Germany", "code": "DE", "flag": "https://media.api-sports.io/flags/de.svg"},
+						"games":   map[string]any{"played": 28, "win": map[string]any{"total": 10, "percentage": "35.71"}, "draw": map[string]any{"total": 6, "percentage": "21.43"}, "lose": map[string]any{"total": 12, "percentage": "42.86"}},
+						"goals":   map[string]any{"for": 772, "against": 816},
+						"points":  26,
+						"form":    "WLWWW",
+					},
+					map[string]any{
+						"position": 10, "stage": "Bundesliga - Regular Season", "group": map[string]any{"name": nil},
+						"team":    map[string]any{"id": 320, "name": "Hannover-Burgdorf", "logo": "https://media.api-sports.io/handball/teams/320.png"},
+						"league":  map[string]any{"id": 39, "name": "Bundesliga", "type": "League", "logo": "https://media.api-sports.io/handball/leagues/39.png", "season": 2025},
+						"country": map[string]any{"id": 13, "name": "Germany", "code": "DE", "flag": "https://media.api-sports.io/flags/de.svg"},
+						"games":   map[string]any{"played": 28, "win": map[string]any{"total": 10, "percentage": "35.71"}, "draw": map[string]any{"total": 4, "percentage": "14.29"}, "lose": map[string]any{"total": 14, "percentage": "50.00"}},
+						"goals":   map[string]any{"for": 830, "against": 843},
+						"points":  24,
+						"form":    "WLLLL",
+					},
+					map[string]any{
+						"position": 11, "stage": "Bundesliga - Regular Season", "group": map[string]any{"name": nil},
+						"team":    map[string]any{"id": 319, "name": "Hamburg", "logo": "https://media.api-sports.io/handball/teams/319.png"},
+						"league":  map[string]any{"id": 39, "name": "Bundesliga", "type": "League", "logo": "https://media.api-sports.io/handball/leagues/39.png", "season": 2025},
+						"country": map[string]any{"id": 13, "name": "Germany", "code": "DE", "flag": "https://media.api-sports.io/flags/de.svg"},
+						"games":   map[string]any{"played": 27, "win": map[string]any{"total": 11, "percentage": "40.74"}, "draw": map[string]any{"total": 1, "percentage": "3.70"}, "lose": map[string]any{"total": 15, "percentage": "55.56"}},
+						"goals":   map[string]any{"for": 847, "against": 863},
+						"points":  23,
+						"form":    "WLWLW",
+					},
+					map[string]any{
+						"position": 12, "stage": "Bundesliga - Regular Season", "group": map[string]any{"name": nil},
+						"team":    map[string]any{"id": 329, "name": "Stuttgart", "logo": "https://media.api-sports.io/handball/teams/329.png"},
+						"league":  map[string]any{"id": 39, "name": "Bundesliga", "type": "League", "logo": "https://media.api-sports.io/handball/leagues/39.png", "season": 2025},
+						"country": map[string]any{"id": 13, "name": "Germany", "code": "DE", "flag": "https://media.api-sports.io/flags/de.svg"},
+						"games":   map[string]any{"played": 27, "win": map[string]any{"total": 7, "percentage": "25.93"}, "draw": map[string]any{"total": 7, "percentage": "25.93"}, "lose": map[string]any{"total": 13, "percentage": "48.15"}},
+						"goals":   map[string]any{"for": 803, "against": 835},
+						"points":  21,
+						"form":    "DDDWD",
+					},
+					map[string]any{
+						"position": 13, "stage": "Bundesliga - Regular Season", "group": map[string]any{"name": nil},
+						"team":    map[string]any{"id": 313, "name": "Erlangen", "logo": "https://media.api-sports.io/handball/teams/313.png"},
+						"league":  map[string]any{"id": 39, "name": "Bundesliga", "type": "League", "logo": "https://media.api-sports.io/handball/leagues/39.png", "season": 2025},
+						"country": map[string]any{"id": 13, "name": "Germany", "code": "DE", "flag": "https://media.api-sports.io/flags/de.svg"},
+						"games":   map[string]any{"played": 27, "win": map[string]any{"total": 7, "percentage": "25.93"}, "draw": map[string]any{"total": 5, "percentage": "18.52"}, "lose": map[string]any{"total": 15, "percentage": "55.56"}},
+						"goals":   map[string]any{"for": 762, "against": 808},
+						"points":  19,
+						"form":    "WLLWD",
+					},
+					map[string]any{
+						"position": 14, "stage": "Bundesliga - Regular Season", "group": map[string]any{"name": nil},
+						"team":    map[string]any{"id": 335, "name": "Eisenach", "logo": "https://media.api-sports.io/handball/teams/335.png"},
+						"league":  map[string]any{"id": 39, "name": "Bundesliga", "type": "League", "logo": "https://media.api-sports.io/handball/leagues/39.png", "season": 2025},
+						"country": map[string]any{"id": 13, "name": "Germany", "code": "DE", "flag": "https://media.api-sports.io/flags/de.svg"},
+						"games":   map[string]any{"played": 28, "win": map[string]any{"total": 7, "percentage": "25.00"}, "draw": map[string]any{"total": 5, "percentage": "17.86"}, "lose": map[string]any{"total": 16, "percentage": "57.14"}},
+						"goals":   map[string]any{"for": 781, "against": 837},
+						"points":  19,
+						"form":    "LDDDL",
+					},
+					map[string]any{
+						"position": 15, "stage": "Bundesliga - Regular Season", "group": map[string]any{"name": nil},
+						"team":    map[string]any{"id": 312, "name": "Bergischer", "logo": "https://media.api-sports.io/handball/teams/312.png"},
+						"league":  map[string]any{"id": 39, "name": "Bundesliga", "type": "League", "logo": "https://media.api-sports.io/handball/leagues/39.png", "season": 2025},
+						"country": map[string]any{"id": 13, "name": "Germany", "code": "DE", "flag": "https://media.api-sports.io/flags/de.svg"},
+						"games":   map[string]any{"played": 27, "win": map[string]any{"total": 6, "percentage": "22.22"}, "draw": map[string]any{"total": 2, "percentage": "7.41"}, "lose": map[string]any{"total": 19, "percentage": "70.37"}},
+						"goals":   map[string]any{"for": 784, "against": 870},
+						"points":  14,
+						"form":    "LWLLW",
+					},
+					map[string]any{
+						"position": 16, "stage": "Bundesliga - Regular Season", "group": map[string]any{"name": nil},
+						"team":    map[string]any{"id": 325, "name": "Minden", "logo": "https://media.api-sports.io/handball/teams/325.png"},
+						"league":  map[string]any{"id": 39, "name": "Bundesliga", "type": "League", "logo": "https://media.api-sports.io/handball/leagues/39.png", "season": 2025},
+						"country": map[string]any{"id": 13, "name": "Germany", "code": "DE", "flag": "https://media.api-sports.io/flags/de.svg"},
+						"games":   map[string]any{"played": 28, "win": map[string]any{"total": 4, "percentage": "14.29"}, "draw": map[string]any{"total": 4, "percentage": "14.29"}, "lose": map[string]any{"total": 20, "percentage": "71.43"}},
+						"goals":   map[string]any{"for": 772, "against": 912},
+						"points":  12,
+						"form":    "LLLLL",
+					},
+					map[string]any{
+						"position": 17, "stage": "Bundesliga - Regular Season", "group": map[string]any{"name": nil},
+						"team":        map[string]any{"id": 318, "name": "HSG Wetzlar", "logo": "https://media.api-sports.io/handball/teams/318.png"},
+						"league":      map[string]any{"id": 39, "name": "Bundesliga", "type": "League", "logo": "https://media.api-sports.io/handball/leagues/39.png", "season": 2025},
+						"country":     map[string]any{"id": 13, "name": "Germany", "code": "DE", "flag": "https://media.api-sports.io/flags/de.svg"},
+						"games":       map[string]any{"played": 27, "win": map[string]any{"total": 4, "percentage": "14.81"}, "draw": map[string]any{"total": 3, "percentage": "11.11"}, "lose": map[string]any{"total": 20, "percentage": "74.07"}},
+						"goals":       map[string]any{"for": 758, "against": 863},
+						"points":      11,
+						"form":        "DLWLL",
+						"description": "Relegation - 2. Bundesliga",
+					},
+					map[string]any{
+						"position": 18, "stage": "Bundesliga - Regular Season", "group": map[string]any{"name": nil},
+						"team":        map[string]any{"id": 322, "name": "Leipzig", "logo": "https://media.api-sports.io/handball/teams/322.png"},
+						"league":      map[string]any{"id": 39, "name": "Bundesliga", "type": "League", "logo": "https://media.api-sports.io/handball/leagues/39.png", "season": 2025},
+						"country":     map[string]any{"id": 13, "name": "Germany", "code": "DE", "flag": "https://media.api-sports.io/flags/de.svg"},
+						"games":       map[string]any{"played": 27, "win": map[string]any{"total": 2, "percentage": "7.41"}, "draw": map[string]any{"total": 6, "percentage": "22.22"}, "lose": map[string]any{"total": 19, "percentage": "70.37"}},
+						"goals":       map[string]any{"for": 739, "against": 862},
+						"points":      10,
+						"form":        "LLDDL",
+						"description": "Relegation - 2. Bundesliga",
+					},
+				},
+			},
+		}
+	}
+
+	// Default: WHA Women (Austrian league) for other leagues
 	return map[string]any{
 		"get":        "standings",
 		"parameters": map[string]any{"league": "1", "season": "2024"},

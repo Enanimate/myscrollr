@@ -684,7 +684,7 @@ async fn parse_basketball_standing_item(
     // NBA/MLB: games object has nested win/lose with {total, percentage}
     // Also handles NBA v2 format where win/loss are at top level
     let games = item.get("games");
-    let (wins, losses, games_played, pct) = if let Some(g) = games {
+    let (wins, losses, games_played, draws, pct) = if let Some(g) = games {
         // v1 format: nested in games object
         let w = g.get("win").and_then(|w| {
             w.get("total").or_else(|| w.as_object().map(|o| o.values().next().unwrap_or(&serde_json::Value::Null)))
@@ -693,6 +693,11 @@ async fn parse_basketball_standing_item(
             l.get("total").or_else(|| l.as_object().map(|o| o.values().next().unwrap_or(&serde_json::Value::Null)))
         }).and_then(|v| v.as_i64()).unwrap_or(0) as i32;
         let gp = g.get("played").and_then(|p| p.as_i64()).unwrap_or(0) as i32;
+        
+        // Extract draws from games.draw.total (handball, rugby, etc.)
+        let draws = g.get("draw").and_then(|d| {
+            d.get("total").or_else(|| d.as_object().map(|o| o.values().next().unwrap_or(&serde_json::Value::Null)))
+        }).and_then(|v| v.as_i64()).unwrap_or(0) as i32;
         
         // Extract percentage from win.percentage
         let pct_str = g.get("win").and_then(|w| w.get("percentage")).and_then(|p| {
@@ -705,14 +710,14 @@ async fn parse_basketball_standing_item(
             }
         });
         
-        (w, l, gp, pct_str)
+        (w, l, gp, draws, pct_str)
     } else {
-        // v2 format (NBA): win/loss at top level
+        // v2 format (NBA): win/loss at top level, no draws
         let w = item.get("win").and_then(|w| w.get("total")).and_then(|v| v.as_i64()).unwrap_or(0) as i32;
         let l = item.get("loss").and_then(|l| l.get("total")).and_then(|v| v.as_i64()).unwrap_or(0) as i32;
         let gp = w + l; // games played = wins + losses
         let pct_str = item.get("win").and_then(|w| w.get("percentage")).and_then(|p| p.as_str()).map(|s| s.to_string());
-        (w, l, gp, pct_str)
+        (w, l, gp, 0, pct_str)
     };
 
     // Points for/against (available in some responses)
@@ -734,6 +739,24 @@ async fn parse_basketball_standing_item(
         }
     } else {
         (None, None)
+    };
+
+    // Goals for/against - also extract from "goals" object (handball, rugby, etc.)
+    let (goals_for, goals_against) = if let Some(g) = item.get("goals") {
+        if let Some(g_obj) = g.as_object() {
+            (g_obj.get("for").and_then(|v| v.as_i64()).map(|v| v as i32),
+             g_obj.get("against").and_then(|v| v.as_i64()).map(|v| v as i32))
+        } else {
+            (None, None)
+        }
+    } else {
+        (None, None)
+    };
+
+    // Calculate goal diff
+    let goal_diff = match (goals_for, goals_against) {
+        (Some(gf), Some(ga)) => Some(gf - ga),
+        _ => None,
     };
 
     // Games behind (for MLB)
@@ -810,10 +833,10 @@ async fn parse_basketball_standing_item(
         rank: item.get("position").or_else(|| item.get("rank")).and_then(|r| r.as_i64()).map(|r| r as i32),
         wins,
         losses,
-        draws: 0, // Basketball/Baseball don't have draws
-        points: None, // Basketball/MLB don't use points
+        draws,
+        points: item.get("points").and_then(|p| p.as_i64()).map(|p| p as i32), // Handball uses points
         games_played,
-        goal_diff: None,
+        goal_diff,
         description: item.get("description").and_then(|d| d.as_str()).map(|s| s.to_string()),
         form: item.get("form").and_then(|f| f.as_str()).map(|s| s.to_string()),
         group_name,
@@ -822,8 +845,8 @@ async fn parse_basketball_standing_item(
         pct,
         games_behind,
         otl: None,
-        goals_for: None,
-        goals_against: None,
+        goals_for,
+        goals_against,
         points_for,
         points_against,
         streak: item.get("streak").and_then(|s| s.as_str()).map(|s| s.to_string()),
