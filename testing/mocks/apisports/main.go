@@ -2233,13 +2233,268 @@ func handballStandingsResponse(endpoint, league string) map[string]any {
 		}
 	}
 
-	// Return empty for unimplemented leagues (Champions League 131, Starligue 34)
-	// These need full implementation
-	if league == "131" || league == "34" {
+	// Champions League (league_id 131) - use same structure as Bundesliga
+	if league == "131" {
 		return map[string]any{
-			"get":      "standings",
-			"results":  0,
-			"response": []any{},
+			"get":        "standings",
+			"parameters": map[string]any{"league": "131", "season": "2025"},
+			"errors":     []any{},
+			"results":    1,
+			"response": []any{
+				[]any{
+					map[string]any{
+						"position": 1,
+						"stage":    "Champions League - Regular Season",
+						"group":    map[string]any{"name": "Group A"},
+						"team":     map[string]any{"id": 315, "name": "Fuchse Berlin", "logo": "https://media.api-sports.io/handball/teams/315.png"},
+						"league":   map[string]any{"id": 131, "name": "Champions League", "type": "cup", "logo": "https://media.api-sports.io/handball/leagues/131.png", "season": 2025},
+						"country":  map[string]any{"id": 40, "name": "Europe", "code": nil},
+						"games":    map[string]any{"played": 14, "win": map[string]any{"total": 11, "percentage": "78.57"}, "draw": map[string]any{"total": 0}, "lose": map[string]any{"total": 3}},
+						"goals":    map[string]any{"for": 470, "against": 433},
+						"points":   22,
+						"form":     "LWLWL",
+					},
+					map[string]any{
+						"position": 2,
+						"stage":    "Champions League - Regular Season",
+						"group":    map[string]any{"name": "Group A"},
+						"team":     map[string]any{"id": 172, "name": "Aalborg", "logo": "https://media.api-sports.io/handball/teams/172.png"},
+						"league":   map[string]any{"id": 131, "name": "Champions League", "type": "cup"},
+						"games":    map[string]any{"played": 14, "win": map[string]any{"total": 10}, "draw": map[string]any{"total": 1}, "lose": map[string]any{"total": 3}},
+						"goals":    map[string]any{"for": 457, "against": 407},
+						"points":   21,
+					},
+					map[string]any{
+						"position": 3, "group": map[string]any{"name": "Group A"},
+						"team":   map[string]any{"id": 4252, "name": "Kielce"},
+						"games":  map[string]any{"played": 14, "win": map[string]any{"total": 8}, "draw": map[string]any{"total": 1}, "lose": map[string]any{"total": 5}},
+						"goals":  map[string]any{"for": 456, "against": 451},
+						"points": 17,
+					},
+					map[string]any{
+						"position": 4, "group": map[string]any{"name": "Group A"},
+						"team":   map[string]any{"id": 257, "name": "Nantes"},
+						"games":  map[string]any{"played": 14, "win": map[string]any{"total": 8}, "lose": map[string]any{"total": 6}},
+						"goals":  map[string]any{"for": 456, "against": 416},
+						"points": 16,
+					},
+					map[string]any{
+						"position": 5, "group": map[string]any{"name": "Group A"},
+						"team":   map[string]any{"id": 4616, "name": "Veszprem"},
+						"games":  map[string]any{"played": 14, "win": map[string]any{"total": 7}, "lose": map[string]any{"total": 7}},
+						"goals":  map[string]any{"for": 471, "against": 449},
+						"points": 14,
+					},
+					map[string]any{
+						"position": 6, "group": map[string]any{"name": "Group A"},
+						"team":   map[string]any{"id": 791, "name": "Sporting"},
+						"games":  map[string]any{"played": 14, "win": map[string]any{"total": 7}, "lose": map[string]any{"total": 7}},
+						"goals":  map[string]any{"for": 465, "against": 476},
+						"points": 14,
+					},
+					map[string]any{
+						"position": 7, "group": map[string]any{"name": "Group A"},
+						"team":   map[string]any{"id": 829, "name": "Din. Bucuresti"},
+						"games":  map[string]any{"played": 14, "win": map[string]any{"total": 2}, "lose": map[string]any{"total": 12}},
+						"goals":  map[string]any{"for": 395, "against": 430},
+						"points": 4,
+					},
+					map[string]any{
+						"position": 8, "group": map[string]any{"name": "Group A"},
+						"team":   map[string]any{"id": 639, "name": "Kolstad"},
+						"games":  map[string]any{"played": 14, "win": map[string]any{"total": 2}, "lose": map[string]any{"total": 12}},
+						"goals":  map[string]any{"for": 386, "against": 494},
+						"points": 4,
+					},
+					map[string]any{
+						"position": 1,
+						"stage":    "Champions League - Regular Season",
+						"group":    map[string]any{"name": "Group B"},
+						"team":     map[string]any{"id": 962, "name": "Barcelona"},
+						"games":    map[string]any{"played": 14, "win": map[string]any{"total": 13}, "lose": map[string]any{"total": 1}},
+						"goals":    map[string]any{"for": 492, "against": 382},
+						"points":   26,
+					},
+					map[string]any{
+						"position": 2, "group": map[string]any{"name": "Group B"},
+						"team":   map[string]any{"id": 328, "name": "SC Magdeburg"},
+						"games":  map[string]any{"played": 14, "win": map[string]any{"total": 11}, "draw": map[string]any{"total": 1}, "lose": map[string]any{"total": 2}},
+						"goals":  map[string]any{"for": 457, "against": 408},
+						"points": 23,
+					},
+					map[string]any{
+						"position": 3, "group": map[string]any{"name": "Group B"},
+						"team":   map[string]any{"id": 694, "name": "Wisla Plock"},
+						"games":  map[string]any{"played": 14, "win": map[string]any{"total": 8}, "draw": map[string]any{"total": 2}, "lose": map[string]any{"total": 4}},
+						"goals":  map[string]any{"for": 424, "against": 410},
+						"points": 18,
+					},
+					map[string]any{
+						"position": 4, "group": map[string]any{"name": "Group B"},
+						"team":   map[string]any{"id": 4484, "name": "PSG"},
+						"games":  map[string]any{"played": 14, "win": map[string]any{"total": 6}, "draw": map[string]any{"total": 1}, "lose": map[string]any{"total": 7}},
+						"goals":  map[string]any{"for": 446, "against": 436},
+						"points": 13,
+					},
+					map[string]any{
+						"position": 5, "group": map[string]any{"name": "Group B"},
+						"team":   map[string]any{"id": 178, "name": "GOG"},
+						"games":  map[string]any{"played": 14, "win": map[string]any{"total": 6}, "draw": map[string]any{"total": 1}, "lose": map[string]any{"total": 7}},
+						"goals":  map[string]any{"for": 443, "against": 468},
+						"points": 13,
+					},
+					map[string]any{
+						"position": 6, "group": map[string]any{"name": "Group B"},
+						"team":   map[string]any{"id": 417, "name": "Szeged"},
+						"games":  map[string]any{"played": 14, "win": map[string]any{"total": 5}, "draw": map[string]any{"total": 1}, "lose": map[string]any{"total": 8}},
+						"goals":  map[string]any{"for": 428, "against": 424},
+						"points": 11,
+					},
+					map[string]any{
+						"position": 7, "group": map[string]any{"name": "Group B"},
+						"team":   map[string]any{"id": 1157, "name": "Eurofarm Pelister"},
+						"games":  map[string]any{"played": 14, "win": map[string]any{"total": 2}, "draw": map[string]any{"total": 2}, "lose": map[string]any{"total": 10}},
+						"goals":  map[string]any{"for": 369, "against": 447},
+						"points": 6,
+					},
+					map[string]any{
+						"position": 8, "group": map[string]any{"name": "Group B"},
+						"team":   map[string]any{"id": 4445, "name": "RK Zagreb"},
+						"games":  map[string]any{"played": 14, "win": map[string]any{"total": 1}, "lose": map[string]any{"total": 13}},
+						"goals":  map[string]any{"for": 375, "against": 459},
+						"points": 2,
+					},
+				},
+			},
+		}
+	}
+
+	// Starligue (league_id 34)
+	if league == "34" {
+		return map[string]any{
+			"get":        "standings",
+			"parameters": map[string]any{"league": "34", "season": "2025"},
+			"errors":     []any{},
+			"results":    1,
+			"response": []any{
+				[]any{
+					map[string]any{
+						"position": 1,
+						"stage":    "Starligue - Regular Season",
+						"team":     map[string]any{"id": 4484, "name": "PSG"},
+						"league":   map[string]any{"id": 34, "name": "Starligue", "type": "League"},
+						"country":  map[string]any{"id": 11, "name": "France", "code": "FR"},
+						"games":    map[string]any{"played": 22, "win": map[string]any{"total": 21}, "draw": map[string]any{"total": 1}, "lose": map[string]any{"total": 0}},
+						"goals":    map[string]any{"for": 767, "against": 615},
+						"points":   43,
+					},
+					map[string]any{
+						"position": 2,
+						"team":     map[string]any{"id": 257, "name": "Nantes"},
+						"games":    map[string]any{"played": 22, "win": map[string]any{"total": 19}, "draw": map[string]any{"total": 3}},
+						"goals":    map[string]any{"for": 794, "against": 660},
+						"points":   41,
+					},
+					map[string]any{
+						"position": 3,
+						"team":     map[string]any{"id": 248, "name": "Montpellier"},
+						"games":    map[string]any{"played": 22, "win": map[string]any{"total": 16}, "draw": map[string]any{"total": 1}, "lose": map[string]any{"total": 5}},
+						"goals":    map[string]any{"for": 746, "against": 656},
+						"points":   33,
+					},
+					map[string]any{
+						"position": 4,
+						"team":     map[string]any{"id": 256, "name": "Limoges"},
+						"games":    map[string]any{"played": 23, "win": map[string]any{"total": 15}, "draw": map[string]any{"total": 2}, "lose": map[string]any{"total": 6}},
+						"goals":    map[string]any{"for": 758, "against": 723},
+						"points":   32,
+					},
+					map[string]any{
+						"position": 5,
+						"team":     map[string]any{"id": 251, "name": "Chambery Savoie"},
+						"games":    map[string]any{"played": 23, "win": map[string]any{"total": 12}, "draw": map[string]any{"total": 4}, "lose": map[string]any{"total": 7}},
+						"goals":    map[string]any{"for": 738, "against": 723},
+						"points":   28,
+					},
+					map[string]any{
+						"position": 6,
+						"team":     map[string]any{"id": 261, "name": "Tremblay"},
+						"games":    map[string]any{"played": 23, "win": map[string]any{"total": 11}, "draw": map[string]any{"total": 2}, "lose": map[string]any{"total": 10}},
+						"goals":    map[string]any{"for": 742, "against": 740},
+						"points":   24,
+					},
+					map[string]any{
+						"position": 7,
+						"team":     map[string]any{"id": 259, "name": "St. Raphael"},
+						"games":    map[string]any{"played": 22, "win": map[string]any{"total": 11}, "draw": map[string]any{"total": 1}, "lose": map[string]any{"total": 10}},
+						"goals":    map[string]any{"for": 688, "against": 708},
+						"points":   23,
+					},
+					map[string]any{
+						"position": 8,
+						"team":     map[string]any{"id": 4858, "name": "Provence Aix"},
+						"games":    map[string]any{"played": 23, "win": map[string]any{"total": 10}, "draw": map[string]any{"total": 3}, "lose": map[string]any{"total": 10}},
+						"goals":    map[string]any{"for": 685, "against": 671},
+						"points":   23,
+					},
+					map[string]any{
+						"position": 9,
+						"team":     map[string]any{"id": 260, "name": "Toulouse"},
+						"games":    map[string]any{"played": 22, "win": map[string]any{"total": 11}, "draw": map[string]any{"total": 1}, "lose": map[string]any{"total": 10}},
+						"goals":    map[string]any{"for": 662, "against": 659},
+						"points":   23,
+					},
+					map[string]any{
+						"position": 10,
+						"team":     map[string]any{"id": 242, "name": "Cesson Rennes-Metropole"},
+						"games":    map[string]any{"played": 22, "win": map[string]any{"total": 9}, "draw": map[string]any{"total": 1}, "lose": map[string]any{"total": 12}},
+						"goals":    map[string]any{"for": 687, "against": 696},
+						"points":   19,
+					},
+					map[string]any{
+						"position": 11,
+						"team":     map[string]any{"id": 258, "name": "Nimes"},
+						"games":    map[string]any{"played": 23, "win": map[string]any{"total": 8}, "draw": map[string]any{"total": 1}, "lose": map[string]any{"total": 14}},
+						"goals":    map[string]any{"for": 676, "against": 708},
+						"points":   17,
+					},
+					map[string]any{
+						"position": 12,
+						"team":     map[string]any{"id": 254, "name": "Dunkerque"},
+						"games":    map[string]any{"played": 22, "win": map[string]any{"total": 5}, "draw": map[string]any{"total": 2}, "lose": map[string]any{"total": 15}},
+						"goals":    map[string]any{"for": 593, "against": 674},
+						"points":   12,
+					},
+					map[string]any{
+						"position": 13,
+						"team":     map[string]any{"id": 252, "name": "Chartres"},
+						"games":    map[string]any{"played": 22, "win": map[string]any{"total": 5}, "draw": map[string]any{"total": 2}, "lose": map[string]any{"total": 15}},
+						"goals":    map[string]any{"for": 630, "against": 704},
+						"points":   12,
+					},
+					map[string]any{
+						"position": 14,
+						"team":     map[string]any{"id": 243, "name": "Istres"},
+						"games":    map[string]any{"played": 23, "win": map[string]any{"total": 5}, "draw": map[string]any{"total": 1}, "lose": map[string]any{"total": 17}},
+						"goals":    map[string]any{"for": 642, "against": 738},
+						"points":   11,
+					},
+					map[string]any{
+						"position": 15,
+						"team":     map[string]any{"id": 288, "name": "Selestat"},
+						"games":    map[string]any{"played": 23, "win": map[string]any{"total": 4}, "draw": map[string]any{"total": 2}, "lose": map[string]any{"total": 17}},
+						"goals":    map[string]any{"for": 688, "against": 747},
+						"points":   10,
+					},
+					map[string]any{
+						"position": 16,
+						"team":     map[string]any{"id": 283, "name": "Dijon"},
+						"games":    map[string]any{"played": 23, "win": map[string]any{"total": 4}, "draw": map[string]any{"total": 1}, "lose": map[string]any{"total": 18}},
+						"goals":    map[string]any{"for": 667, "against": 741},
+						"points":   9,
+					},
+				},
+			},
 		}
 	}
 
