@@ -957,11 +957,23 @@ async fn parse_hockey_standing_item(
     };
 
     // Group name (for NHL: division, e.g., "Atlantic", "Metropolitan", "Central", "Pacific")
+    // Skip entries where group contains "Conference" - only process division-level entries
     let group_name = if let Some(g) = item.get("group") {
         if let Some(g_str) = g.as_str() {
-            Some(g_str.to_string())
+            // Skip conference-level entries (e.g., "Eastern Conference", "Western Conference")
+            if g_str.contains("Conference") {
+                None
+            } else {
+                Some(g_str.to_string())
+            }
         } else if let Some(g_obj) = g.as_object() {
-            g_obj.get("name").and_then(|n| n.as_str()).map(|s| s.to_string())
+            let name = g_obj.get("name").and_then(|n| n.as_str()).map(|s| s.to_string());
+            // Skip conference-level entries
+            if name.as_ref().map(|n| n.contains("Conference")).unwrap_or(false) {
+                None
+            } else {
+                name
+            }
         } else {
             None
         }
@@ -969,8 +981,12 @@ async fn parse_hockey_standing_item(
         None
     };
 
-    // Conference (for NHL: "Eastern", "Western")
-    let conference = item.get("conference").and_then(|c| c.as_str()).map(|s| s.to_string());
+    // Derive conference from division name
+    let conference = match group_name.as_deref() {
+        Some("Atlantic Division") | Some("Metropolitan Division") => Some("Eastern Conference".to_string()),
+        Some("Central Division") | Some("Pacific Division") => Some("Western Conference".to_string()),
+        _ => None,
+    };
 
     // Calculate PCT
     let pct = if games_played > 0 {

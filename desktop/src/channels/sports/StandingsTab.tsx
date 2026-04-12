@@ -263,6 +263,19 @@ export function StandingsTab({ leagues }: StandingsTabProps) {
       });
     }
 
+    // Sort teams within each group by appropriate rank
+    groups.forEach(group => {
+      if (sportApi === "basketball") {
+        // Basketball: sort by conference_rank within groups
+        group.standings.sort((a, b) => 
+          (a.conference_rank || a.rank || 0) - (b.conference_rank || b.rank || 0)
+        );
+      } else {
+        // Other sports: sort by rank within groups
+        group.standings.sort((a, b) => (a.rank || 0) - (b.rank || 0));
+      }
+    });
+
     return { columns: cols, groupedRows: groups };
   }, [standings]);
 
