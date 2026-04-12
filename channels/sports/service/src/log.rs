@@ -2,7 +2,7 @@ use std::{fs::{self, File}, io::Write, sync::OnceLock};
 use log::{Level, Log};
 use tokio::sync::mpsc;
 
-pub use log::{info, error, warn};
+pub use log::{info, error, warn, debug};
 
 type LogMessage = String;
 
@@ -14,7 +14,7 @@ pub struct AsyncLogger {
 
 impl Log for AsyncLogger {
     fn enabled(&self, metadata: &log::Metadata) -> bool {
-        metadata.level() <= Level::Info
+        metadata.level() <= Level::Debug
     }
 
     fn log(&self, record: &log::Record) {

@@ -2,7 +2,7 @@ use std::{env, fs, sync::Arc};
 use reqwest::{Client, header};
 use tokio::sync::Mutex;
 use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, Utc};
-use crate::log::{error, info, warn};
+use crate::log::{error, info, warn, debug};
 use crate::database::{
     PgPool, truncate_games,
     get_tracked_leagues, seed_tracked_leagues, disable_stale_leagues,
@@ -907,9 +907,31 @@ async fn parse_hockey_standings(
     sport_api: &str,
     response: &[serde_json::Value],
 ) {
+    // DEBUG: Log response structure for NHL
+    debug!("[NHL] Response array count: {}", response.len());
+    for (i, entry) in response.iter().enumerate() {
+        if let Some(arr) = entry.as_array() {
+            debug!("[NHL] Array {} count: {}", i, arr.len());
+            if let Some(first) = arr.first() {
+                if let Some(team) = first.get("team").and_then(|t| t.get("name")) {
+                    debug!("[NHL] Array {} first team: {}", i, team);
+                }
+                if let Some(group) = first.get("group") {
+                    debug!("[NHL] Array {} first group: {}", i, group);
+                }
+            }
+        } else if let Some(obj) = entry.as_object() {
+            debug!("[NHL] Object {} keys: {:?}", i, obj.keys().collect::<Vec<_>>());
+        }
+    }
+
     for entry in response {
         if entry.is_array() {
             for item in entry.as_array().unwrap_or(&vec![]) {
+                // DEBUG: Log group field for each item
+                if let Some(group) = item.get("group") {
+                    debug!("[NHL] Item group field: {}", group);
+                }
                 parse_hockey_standing_item(pool, league_name, season, sport_api, item).await;
             }
         } else if entry.is_object() {
@@ -968,26 +990,35 @@ async fn parse_hockey_standing_item(
     // Group name (for NHL: division, e.g., "Atlantic", "Metropolitan", "Central", "Pacific")
     // Skip entries where group contains "Conference" - only process division-level entries
     let raw_group = item.get("group");
+    debug!("[NHL] Raw group field: {:?}", raw_group);
     let group_name = if let Some(g) = raw_group {
         if let Some(g_str) = g.as_str() {
             // Skip conference-level and league-level entries
             if g_str.contains("Conference") || g_str == "NHL" {
+                debug!("[NHL] Skipping conference/league level: {}", g_str);
                 None
             } else {
-                Some(g_str.to_string())
+                let name = format!("{} Division", g_str);
+                debug!("[NHL] Extracted group (with Division): {}", name);
+                Some(name)
             }
         } else if let Some(g_obj) = g.as_object() {
             let name = g_obj.get("name").and_then(|n| n.as_str()).map(|s| s.to_string());
             // Skip conference-level and league-level entries (e.g., "Eastern Conference", "NHL")
             if name.as_ref().map(|n| n.contains("Conference") || n == "NHL").unwrap_or(false) {
+                debug!("[NHL] Skipping conference/league level (obj): {:?}", name);
                 None
             } else {
-                name
+                let with_division = name.map(|n| format!("{} Division", n));
+                debug!("[NHL] Extracted group (obj, with Division): {:?}", with_division);
+                with_division
             }
         } else {
+            debug!("[NHL] Group field not string or object");
             None
         }
     } else {
+        debug!("[NHL] No group field found");
         None
     };
 
@@ -995,8 +1026,12 @@ async fn parse_hockey_standing_item(
     let conference = match group_name.as_deref() {
         Some("Atlantic Division") | Some("Metropolitan Division") => Some("Eastern Conference".to_string()),
         Some("Central Division") | Some("Pacific Division") => Some("Western Conference".to_string()),
-        _ => None,
+        _ => {
+            debug!("[NHL] No conference match for group: {:?}", group_name);
+            None
+        }
     };
+    debug!("[NHL] Final group_name: {:?}, conference: {:?}", group_name, conference);
 
     // Calculate PCT
     let pct = if games_played > 0 {
