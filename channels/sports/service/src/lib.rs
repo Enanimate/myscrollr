@@ -408,6 +408,8 @@ async fn parse_football_standings(
                     points_against: None,
                     streak: None,
                     conference: None,
+                    conference_wins: None,
+                    conference_losses: None,
                 };
                 if let Err(e) = upsert_standing(pool, standing).await {
                     error!("[{}] Failed to upsert standing: {}", league_name, e);
@@ -646,6 +648,8 @@ async fn parse_v1_standing_item(
         points_against,
         streak,
         conference,
+        conference_wins: None,
+        conference_losses: None,
     };
 
     if let Err(e) = upsert_standing(pool, standing).await {
@@ -868,6 +872,8 @@ async fn parse_basketball_standing_item(
         points_against,
         streak: item.get("streak").and_then(|s| s.as_str()).map(|s| s.to_string()),
         conference,
+        conference_wins: item.get("conference").and_then(|c| c.get("win")).and_then(|w| w.as_i64()).map(|w| w as i32),
+        conference_losses: item.get("conference").and_then(|c| c.get("loss")).and_then(|l| l.as_i64()).map(|l| l as i32),
     };
 
     if let Err(e) = upsert_standing(pool, standing).await {
@@ -921,7 +927,11 @@ async fn parse_hockey_standing_item(
     // NHL: wins/losses in nested games object, otl at top level
     let wins = item.get("games").and_then(|g| g.get("win")).and_then(|w| w.get("total")).and_then(|v| v.as_i64()).unwrap_or(0) as i32;
     let losses = item.get("games").and_then(|g| g.get("lose")).and_then(|l| l.get("total")).and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-    let otl = item.get("lost_overtime").and_then(|l| l.as_i64()).unwrap_or(0) as i32;
+    let otl = item.get("games")
+        .and_then(|g| g.get("lose_overtime"))
+        .and_then(|l| l.get("total"))
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0) as i32;
     let games_played = item.get("games").and_then(|g| g.get("played")).and_then(|p| p.as_i64()).unwrap_or(0) as i32;
     
     // Points is directly available as integer in NHL
@@ -985,8 +995,10 @@ async fn parse_hockey_standing_item(
         goals_against,
         points_for: None,
         points_against: None,
-        streak: item.get("streak").and_then(|s| s.as_str()).map(|s| s.to_string()),
+        streak: item.get("form").and_then(|s| s.as_str()).map(|s| s.to_string()),
         conference,
+        conference_wins: None,
+        conference_losses: None,
     };
 
     if let Err(e) = upsert_standing(pool, standing).await {

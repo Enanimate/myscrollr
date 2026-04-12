@@ -1,0 +1,2 @@
+ALTER TABLE standings ADD COLUMN IF NOT EXISTS conference_wins INTEGER;
+ALTER TABLE standings ADD COLUMN IF NOT EXISTS conference_losses INTEGER;

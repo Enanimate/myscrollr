@@ -334,13 +334,15 @@ pub struct StandingData {
     pub points_against: Option<i32>,
     pub streak: Option<String>,
     pub conference: Option<String>,
+    pub conference_wins: Option<i32>,
+    pub conference_losses: Option<i32>,
 }
 
 pub async fn upsert_standing(pool: &Arc<PgPool>, s: StandingData) -> Result<()> {
     let mut conn = pool.acquire().await?;
     query(
-        "INSERT INTO standings (league, team_name, team_code, team_logo, rank, wins, losses, draws, points, games_played, goal_diff, description, form, group_name, season, sport_api, pct, games_behind, otl, goals_for, goals_against, points_for, points_against, streak, conference)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
+        "INSERT INTO standings (league, team_name, team_code, team_logo, rank, wins, losses, draws, points, games_played, goal_diff, description, form, group_name, season, sport_api, pct, games_behind, otl, goals_for, goals_against, points_for, points_against, streak, conference, conference_wins, conference_losses)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
          ON CONFLICT (league, team_name, season) DO UPDATE SET
              team_code = EXCLUDED.team_code, team_logo = EXCLUDED.team_logo,
              rank = EXCLUDED.rank, wins = EXCLUDED.wins, losses = EXCLUDED.losses,
@@ -352,7 +354,8 @@ pub async fn upsert_standing(pool: &Arc<PgPool>, s: StandingData) -> Result<()> 
              otl = EXCLUDED.otl, goals_for = EXCLUDED.goals_for,
              goals_against = EXCLUDED.goals_against, points_for = EXCLUDED.points_for,
              points_against = EXCLUDED.points_against, streak = EXCLUDED.streak,
-             conference = EXCLUDED.conference,
+             conference = EXCLUDED.conference, conference_wins = EXCLUDED.conference_wins,
+             conference_losses = EXCLUDED.conference_losses,
              updated_at = CURRENT_TIMESTAMP"
     )
     .bind(&s.league).bind(&s.team_name).bind(&s.team_code).bind(&s.team_logo)
@@ -361,6 +364,7 @@ pub async fn upsert_standing(pool: &Arc<PgPool>, s: StandingData) -> Result<()> 
     .bind(&s.group_name).bind(&s.season).bind(&s.sport_api).bind(&s.pct)
     .bind(&s.games_behind).bind(s.otl).bind(s.goals_for).bind(s.goals_against)
     .bind(s.points_for).bind(s.points_against).bind(&s.streak).bind(&s.conference)
+    .bind(s.conference_wins).bind(s.conference_losses)
     .execute(&mut *conn)
     .await?;
     Ok(())

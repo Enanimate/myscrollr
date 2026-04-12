@@ -109,6 +109,8 @@ export interface Standing {
   streak?: string;
   conference?: string;
   conference_rank?: number;
+  conference_wins?: number;
+  conference_losses?: number;
 }
 
 export interface TeamInfo {

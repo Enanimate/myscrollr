@@ -9,7 +9,7 @@ interface StandingsTabProps {
   leagues: string[];
 }
 
-type SportType = "soccer" | "nfl" | "nba" | "nhl" | "mlb" | "afl" | "handball" | "other";
+type SportType = "soccer" | "nfl" | "nba" | "nhl" | "mlb" | "afl" | "handball" | "rugby" | "other";
 
 interface Column {
   key: string;
@@ -66,12 +66,13 @@ function getColumnsForSport(sportApi?: string, league?: string): Column[] {
     case "mlb": {
       return [
         { key: "rank", label: "#", fullName: "Rank", width: "w-12", align: "center", getValue: (s) => hasConferenceRank && s.conference_rank ? s.conference_rank : (s.rank || "-") },
-        { ...teamCol, width: "w-48" },
-        { key: "w", label: "W", fullName: "Wins", width: "w-14", align: "center", getValue: (s) => s.wins },
-        { key: "l", label: "L", fullName: "Losses", width: "w-14", align: "center", getValue: (s) => s.losses },
-        { key: "pct", label: "Pct", fullName: "Win Percentage", width: "w-16", align: "center", getValue: (s) => s.pct || "-" },
-        { key: "gb", label: "GB", fullName: "Games Behind", width: "w-16", align: "center", getValue: (s) => s.games_behind || "-" },
-        { key: "form", label: "L5", fullName: "Last 5", width: "w-16", getValue: (s) => {
+        { ...teamCol, width: "w-40" },
+        { key: "w", label: "W", fullName: "Wins", width: "w-12", align: "center", getValue: (s) => s.wins },
+        { key: "l", label: "L", fullName: "Losses", width: "w-12", align: "center", getValue: (s) => s.losses },
+        { key: "conf", label: "Conf", fullName: "Conference", width: "w-14", align: "center", getValue: (s) => (s.conference_wins !== undefined && s.conference_losses !== undefined) ? `${s.conference_wins}-${s.conference_losses}` : "-" },
+        { key: "pct", label: "Pct", fullName: "Win Percentage", width: "w-14", align: "center", getValue: (s) => s.pct || "-" },
+        { key: "gb", label: "GB", fullName: "Games Behind", width: "w-14", align: "center", getValue: (s) => s.games_behind || "-" },
+        { key: "form", label: "L5", fullName: "Last 5", width: "w-14", getValue: (s) => {
           const form = s.form;
           if (!form) return "-";
           const wins = (form.match(/W/g) || []).length;
@@ -182,17 +183,38 @@ export function StandingsTab({ leagues }: StandingsTabProps) {
     const cols = getColumnsForSport(sportApi, league);
     const useConference = sportApi === "basketball" || sportApi === "football" || sportApi === "afl" || sportApi === "hockey" || league === "NCAA Football" || league === "NFL";
 
+    // Sort standings by rank first
+    const sortedStandings = [...standings].sort((a, b) => (a.rank || 0) - (b.rank || 0));
+
+    // For NBA, sort by conference then conference_rank
+    const sortedByConference = sportApi === "basketball" 
+      ? [...sortedStandings].sort((a, b) => {
+          const confOrder = { "Eastern Conference": 0, "Western Conference": 1 };
+          const aConf = a.conference?.toLowerCase() === "east" ? "Eastern Conference" : (a.conference?.toLowerCase() === "west" ? "Western Conference" : a.conference || "");
+          const bConf = b.conference?.toLowerCase() === "east" ? "Eastern Conference" : (b.conference?.toLowerCase() === "west" ? "Western Conference" : b.conference || "");
+          const aOrder = confOrder[aConf as keyof typeof confOrder] ?? 2;
+          const bOrder = confOrder[bConf as keyof typeof confOrder] ?? 2;
+          if (aOrder !== bOrder) return aOrder - bOrder;
+          return (a.conference_rank || a.rank || 0) - (b.conference_rank || b.rank || 0);
+        })
+      : sortedStandings;
+
     const groups: { groupName: string; standings: Standing[] }[] = [];
     let currentGroup: Standing[] = [];
     let currentGroupName = "";
 
-    for (const s of standings) {
-      // NHL uses group_name (division), others use conference if available
-      // NFL uses combined conference + group_name (e.g., "AFC East", "NFC North")
-      const groupKey = sportApi === "hockey" 
-        ? (s.group_name || "")
+    for (const s of sortedByConference) {
+      // NHL: show "Eastern Conference - Atlantic Division" format
+      // NHL uses group_name for division (Atlantic, Metropolitan, etc.)
+      const groupKey = sportApi === "hockey"
+        ? (s.conference && s.group_name 
+            ? `${s.conference} Conference - ${s.group_name} Division`
+            : (s.group_name || ""))
         : (sportApi === "american-football"
-            ? `${s.conference || ""} ${s.group_name || ""}`.trim()
+            // Fix conference doubling: if conference equals group_name, use just one
+            ? (s.conference === s.group_name 
+                ? s.conference || ""
+                : `${s.conference || ""} ${s.group_name || ""}`.trim())
             : (useConference && s.conference ? s.conference : (s.group_name || "")));
       
       if (groupKey && groupKey !== currentGroupName) {
@@ -213,6 +235,17 @@ export function StandingsTab({ leagues }: StandingsTabProps) {
     }
     if (currentGroup.length > 0) {
       groups.push({ groupName: currentGroupName, standings: currentGroup });
+    }
+
+    // Sort groups for volleyball (Group A, Group B, etc.)
+    if (sportApi === "volleyball") {
+      groups.sort((a, b) => {
+        const aMatch = a.groupName.match(/Group\s+([A-Z])/i);
+        const bMatch = b.groupName.match(/Group\s+([A-Z])/i);
+        const aLetter = aMatch ? aMatch[1].charCodeAt(0) : 0;
+        const bLetter = bMatch ? bMatch[1].charCodeAt(0) : 0;
+        return aLetter - bLetter;
+      });
     }
 
     return { columns: cols, groupedRows: groups };
