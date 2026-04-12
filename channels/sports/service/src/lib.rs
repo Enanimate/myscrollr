@@ -745,8 +745,13 @@ async fn parse_basketball_standing_item(
         (w, l, gp, draws, pct_str)
     } else {
         // v2 format (NBA): win/loss at top level, no draws
-        let w = item.get("win").and_then(|w| w.get("total")).and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-        let l = item.get("loss").and_then(|l| l.get("total")).and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+        // Also handles NCAA format where win/loss are direct numbers
+        let w = item.get("win").and_then(|w| w.get("total")).and_then(|v| v.as_i64())
+            .or_else(|| item.get("win").and_then(|w| w.as_i64()))
+            .unwrap_or(0) as i32;
+        let l = item.get("loss").and_then(|l| l.get("total")).and_then(|v| v.as_i64())
+            .or_else(|| item.get("loss").and_then(|l| l.as_i64()))
+            .unwrap_or(0) as i32;
         let gp = w + l; // games played = wins + losses
         let pct_str = item.get("win").and_then(|w| w.get("percentage")).and_then(|p| p.as_str()).map(|s| s.to_string());
         (w, l, gp, 0, pct_str)
@@ -815,12 +820,6 @@ async fn parse_basketball_standing_item(
             Some(g_str.to_string())
         } else if let Some(g_obj) = g.as_object() {
             let name = g_obj.get("name").and_then(|n| n.as_str()).map(|s| s.to_string());
-            // Debug: log group extraction for all volleyball entries
-            if sport_api == "volleyball" {
-                let team_name = team.get("name").and_then(|n| n.as_str()).unwrap_or("?");
-                info!("[Volleyball] Team: {}, raw_group: {:?}, extracted_name: {:?}", 
-                    team_name, g, name);
-            }
             name
         } else {
             None
@@ -894,17 +893,6 @@ async fn parse_basketball_standing_item(
         conference_wins: item.get("conference").and_then(|c| c.get("win")).and_then(|w| w.as_i64()).map(|w| w as i32),
         conference_losses: item.get("conference").and_then(|c| c.get("loss")).and_then(|l| l.as_i64()).map(|l| l as i32),
     };
-
-    // DEBUG: Log NBA extraction
-    if sport_api == "basketball" {
-        let team_name = team.get("name").and_then(|n| n.as_str()).unwrap_or("?");
-        let raw_conf = item.get("conference");
-        let conf_rank = item.get("conference").and_then(|c| c.get("rank")).and_then(|r| r.as_i64());
-        let conf_wins = item.get("conference").and_then(|c| c.get("win")).and_then(|w| w.as_i64());
-        let conf_losses = item.get("conference").and_then(|c| c.get("loss")).and_then(|l| l.as_i64());
-        info!("[NBA] Team: {}, raw_conf: {:?}, rank: {:?}, wins: {:?}, losses: {:?}", 
-            team_name, raw_conf, conf_rank, conf_wins, conf_losses);
-    }
 
     if let Err(e) = upsert_standing(pool, standing).await {
         error!("[{}] Failed to upsert standing: {}", league_name, e);
@@ -982,16 +970,16 @@ async fn parse_hockey_standing_item(
     let raw_group = item.get("group");
     let group_name = if let Some(g) = raw_group {
         if let Some(g_str) = g.as_str() {
-            // Skip conference-level entries (e.g., "Eastern Conference", "Western Conference")
-            if g_str.contains("Conference") {
+            // Skip conference-level and league-level entries
+            if g_str.contains("Conference") || g_str == "NHL" {
                 None
             } else {
                 Some(g_str.to_string())
             }
         } else if let Some(g_obj) = g.as_object() {
             let name = g_obj.get("name").and_then(|n| n.as_str()).map(|s| s.to_string());
-            // Skip conference-level entries
-            if name.as_ref().map(|n| n.contains("Conference")).unwrap_or(false) {
+            // Skip conference-level and league-level entries (e.g., "Eastern Conference", "NHL")
+            if name.as_ref().map(|n| n.contains("Conference") || n == "NHL").unwrap_or(false) {
                 None
             } else {
                 name
@@ -1009,11 +997,6 @@ async fn parse_hockey_standing_item(
         Some("Central Division") | Some("Pacific Division") => Some("Western Conference".to_string()),
         _ => None,
     };
-
-    // DEBUG: Log NHL extraction
-    let team_name = team.get("name").and_then(|n| n.as_str()).unwrap_or("?");
-    info!("[NHL] Team: {}, raw_group: {:?}, group_name: {:?}, conference: {:?}", 
-        team_name, raw_group, group_name, conference);
 
     // Calculate PCT
     let pct = if games_played > 0 {
