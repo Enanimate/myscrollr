@@ -69,7 +69,6 @@ function getColumnsForSport(sportApi?: string, league?: string): Column[] {
         { ...teamCol, width: "w-40" },
         { key: "w", label: "W", fullName: "Wins", width: "w-12", align: "center", getValue: (s) => s.wins },
         { key: "l", label: "L", fullName: "Losses", width: "w-12", align: "center", getValue: (s) => s.losses },
-        { key: "conf", label: "Conf", fullName: "Conference", width: "w-14", align: "center", getValue: (s) => (s.conference_wins !== undefined && s.conference_losses !== undefined) ? `${s.conference_wins}-${s.conference_losses}` : "-" },
         { key: "pct", label: "Pct", fullName: "Win Percentage", width: "w-14", align: "center", getValue: (s) => s.pct || "-" },
         { key: "gb", label: "GB", fullName: "Games Behind", width: "w-14", align: "center", getValue: (s) => s.games_behind || "-" },
         { key: "form", label: "L5", fullName: "Last 5", width: "w-14", getValue: (s) => {
