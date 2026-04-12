@@ -815,9 +815,11 @@ async fn parse_basketball_standing_item(
             Some(g_str.to_string())
         } else if let Some(g_obj) = g.as_object() {
             let name = g_obj.get("name").and_then(|n| n.as_str()).map(|s| s.to_string());
-            // Debug: log group extraction for volleyball
-            if sport_api == "volleyball" && name.is_none() {
-                warn!("[{}] Volleyball: group object exists but name is None. Full group: {:?}", league_name, g);
+            // Debug: log group extraction for all volleyball entries
+            if sport_api == "volleyball" {
+                let team_name = team.get("name").and_then(|n| n.as_str()).unwrap_or("?");
+                info!("[Volleyball] Team: {}, raw_group: {:?}, extracted_name: {:?}", 
+                    team_name, g, name);
             }
             name
         } else {
@@ -893,6 +895,17 @@ async fn parse_basketball_standing_item(
         conference_losses: item.get("conference").and_then(|c| c.get("loss")).and_then(|l| l.as_i64()).map(|l| l as i32),
     };
 
+    // DEBUG: Log NBA extraction
+    if sport_api == "basketball" {
+        let team_name = team.get("name").and_then(|n| n.as_str()).unwrap_or("?");
+        let raw_conf = item.get("conference");
+        let conf_rank = item.get("conference").and_then(|c| c.get("rank")).and_then(|r| r.as_i64());
+        let conf_wins = item.get("conference").and_then(|c| c.get("win")).and_then(|w| w.as_i64());
+        let conf_losses = item.get("conference").and_then(|c| c.get("loss")).and_then(|l| l.as_i64());
+        info!("[NBA] Team: {}, raw_conf: {:?}, rank: {:?}, wins: {:?}, losses: {:?}", 
+            team_name, raw_conf, conf_rank, conf_wins, conf_losses);
+    }
+
     if let Err(e) = upsert_standing(pool, standing).await {
         error!("[{}] Failed to upsert standing: {}", league_name, e);
     }
@@ -966,7 +979,8 @@ async fn parse_hockey_standing_item(
 
     // Group name (for NHL: division, e.g., "Atlantic", "Metropolitan", "Central", "Pacific")
     // Skip entries where group contains "Conference" - only process division-level entries
-    let group_name = if let Some(g) = item.get("group") {
+    let raw_group = item.get("group");
+    let group_name = if let Some(g) = raw_group {
         if let Some(g_str) = g.as_str() {
             // Skip conference-level entries (e.g., "Eastern Conference", "Western Conference")
             if g_str.contains("Conference") {
@@ -995,6 +1009,11 @@ async fn parse_hockey_standing_item(
         Some("Central Division") | Some("Pacific Division") => Some("Western Conference".to_string()),
         _ => None,
     };
+
+    // DEBUG: Log NHL extraction
+    let team_name = team.get("name").and_then(|n| n.as_str()).unwrap_or("?");
+    info!("[NHL] Team: {}, raw_group: {:?}, group_name: {:?}, conference: {:?}", 
+        team_name, raw_group, group_name, conference);
 
     // Calculate PCT
     let pct = if games_played > 0 {
