@@ -1,0 +1,1 @@
+ALTER TABLE standings ADD COLUMN IF NOT EXISTS conference_rank INTEGER;

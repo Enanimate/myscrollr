@@ -408,6 +408,7 @@ async fn parse_football_standings(
                     points_against: None,
                     streak: None,
                     conference: None,
+                    conference_rank: None,
                     conference_wins: None,
                     conference_losses: None,
                 };
@@ -657,6 +658,7 @@ async fn parse_v1_standing_item(
         points_against,
         streak,
         conference,
+        conference_rank: None,
         conference_wins: None,
         conference_losses: None,
     };
@@ -812,7 +814,12 @@ async fn parse_basketball_standing_item(
         if let Some(g_str) = g.as_str() {
             Some(g_str.to_string())
         } else if let Some(g_obj) = g.as_object() {
-            g_obj.get("name").and_then(|n| n.as_str()).map(|s| s.to_string())
+            let name = g_obj.get("name").and_then(|n| n.as_str()).map(|s| s.to_string());
+            // Debug: log group extraction for volleyball
+            if sport_api == "volleyball" && name.is_none() {
+                warn!("[{}] Volleyball: group object exists but name is None. Full group: {:?}", league_name, g);
+            }
+            name
         } else {
             None
         }
@@ -881,6 +888,7 @@ async fn parse_basketball_standing_item(
         points_against,
         streak: item.get("streak").and_then(|s| s.as_str()).map(|s| s.to_string()),
         conference,
+        conference_rank: item.get("conference").and_then(|c| c.get("rank")).and_then(|r| r.as_i64()).map(|r| r as i32),
         conference_wins: item.get("conference").and_then(|c| c.get("win")).and_then(|w| w.as_i64()).map(|w| w as i32),
         conference_losses: item.get("conference").and_then(|c| c.get("loss")).and_then(|l| l.as_i64()).map(|l| l as i32),
     };
@@ -1022,6 +1030,7 @@ async fn parse_hockey_standing_item(
         points_against: None,
         streak: item.get("form").and_then(|s| s.as_str()).map(|s| s.to_string()),
         conference,
+        conference_rank: None,
         conference_wins: None,
         conference_losses: None,
     };
