@@ -15,7 +15,7 @@ struct AppState {
 }
 
 /// Interval for the schedule poll (upcoming games + cleanup).
-const SCHEDULE_POLL_SECS: u64 = 30 * 60; // 30 minutes
+const SCHEDULE_POLL_SECS: u64 = 2 * 60 * 60; // 2 hours (was 30 minutes)
 
 #[tokio::main]
 async fn main() {
@@ -91,12 +91,13 @@ async fn main() {
                     poll_live(&pool_live, &client_live, &leagues_live, &health_live, &rl_live).await;
 
                     // Adaptive interval: poll more frequently when there are live games
+                    // Throttled to stay under API rate limits (300/min, 7500/day)
                     let interval = {
                         let h = health_live.lock().await;
                         if h.leagues_live > 0 {
-                            30  // 30s when live games are happening
+                            60  // 60s when live games are happening (was 30s)
                         } else {
-                            60  // 1 min when no live games (was 3 min)
+                            300  // 5 min when no live games (was 60s)
                         }
                     };
 
@@ -106,7 +107,7 @@ async fn main() {
         }
     });
 
-    // ── Slow poll: schedule + cleanup (today + 7 days, every 30 min) ──
+    // ── Slow poll: schedule + cleanup (today + 7 days, every 2 hours) ──
     let pool_sched = pool.clone();
     let client_sched = client.clone();
     let leagues_sched = leagues.clone();

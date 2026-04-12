@@ -23,7 +23,7 @@ const SCHEDULE_DAYS_AHEAD: i64 = 1;
 
 /// Delay between league requests on startup burst to avoid rate limits.
 /// 200ms spacing between requests spreads ~60 requests across ~12 seconds.
-const STARTUP_REQUEST_DELAY_MS: u64 = 200;
+const STARTUP_REQUEST_DELAY_MS: u64 = 300; // delay between API requests to stay under 300/min limit
 
 // =============================================================================
 // Service initialization (runs once on startup)
