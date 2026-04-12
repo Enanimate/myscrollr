@@ -186,59 +186,74 @@ export function StandingsTab({ leagues }: StandingsTabProps) {
     // Sort standings by rank first
     const sortedStandings = [...standings].sort((a, b) => (a.rank || 0) - (b.rank || 0));
 
-    // For NBA, sort by conference then conference_rank
-    const sortedByConference = sportApi === "basketball" 
-      ? [...sortedStandings].sort((a, b) => {
-          const confOrder = { "Eastern Conference": 0, "Western Conference": 1 };
-          const aConf = a.conference?.toLowerCase() === "east" ? "Eastern Conference" : (a.conference?.toLowerCase() === "west" ? "Western Conference" : a.conference || "");
-          const bConf = b.conference?.toLowerCase() === "east" ? "Eastern Conference" : (b.conference?.toLowerCase() === "west" ? "Western Conference" : b.conference || "");
-          const aOrder = confOrder[aConf as keyof typeof confOrder] ?? 2;
-          const bOrder = confOrder[bConf as keyof typeof confOrder] ?? 2;
-          if (aOrder !== bOrder) return aOrder - bOrder;
-          return (a.conference_rank || a.rank || 0) - (b.conference_rank || b.rank || 0);
-        })
-      : sortedStandings;
-
-    const groups: { groupName: string; standings: Standing[] }[] = [];
-    let currentGroup: Standing[] = [];
-    let currentGroupName = "";
-
-    for (const s of sortedByConference) {
-      // NHL: show "Eastern Conference - Atlantic Division" format
-      // NHL uses group_name for division (Atlantic, Metropolitan, etc.)
-      const groupKey = sportApi === "hockey"
-        ? (s.conference && s.group_name 
-            ? `${s.conference} Conference - ${s.group_name} Division`
-            : (s.group_name || ""))
-        : (sportApi === "american-football"
-            // Fix conference doubling: if conference equals group_name, use just one
-            ? (s.conference === s.group_name 
-                ? s.conference || ""
-                : `${s.conference || ""} ${s.group_name || ""}`.trim())
-            : (useConference && s.conference ? s.conference : (s.group_name || "")));
-      
-      if (groupKey && groupKey !== currentGroupName) {
-        if (currentGroup.length > 0) {
-          groups.push({ groupName: currentGroupName, standings: currentGroup });
-        }
-        currentGroupName = groupKey;
-        currentGroup = [s];
-      } else if (!groupKey && currentGroupName !== "") {
-        if (currentGroup.length > 0) {
-          groups.push({ groupName: currentGroupName, standings: currentGroup });
-        }
-        currentGroupName = "";
-        currentGroup = [s];
-      } else {
-        currentGroup.push(s);
+    // Helper to compute group key for a standing
+    const getGroupKey = (s: Standing): string => {
+      if (sportApi === "hockey") {
+        // NHL: show "Eastern Conference - Atlantic Division" format
+        return s.conference && s.group_name 
+          ? `${s.conference} Conference - ${s.group_name} Division`
+          : (s.group_name || "");
       }
-    }
-    if (currentGroup.length > 0) {
-      groups.push({ groupName: currentGroupName, standings: currentGroup });
+      if (sportApi === "american-football") {
+        // NFL/NCAA: check if group_name already starts with conference (e.g., "NFC West" starts with "NFC")
+        if (s.group_name && s.conference && s.group_name.startsWith(s.conference)) {
+          return s.group_name;
+        }
+        if (s.conference === s.group_name) {
+          return s.conference || "";
+        }
+        return `${s.conference || ""} ${s.group_name || ""}`.trim();
+      }
+      if (useConference && s.conference) {
+        return s.conference;
+      }
+      return s.group_name || "";
+    };
+
+    // Use Map to group by unique group key (not sequential)
+    const groupsMap = new Map<string, Standing[]>();
+    for (const s of sortedStandings) {
+      const key = getGroupKey(s) || "__ungrouped__";
+      if (!groupsMap.has(key)) groupsMap.set(key, []);
+      groupsMap.get(key)!.push(s);
     }
 
-    // Sort groups for volleyball (Group A, Group B, etc.)
-    if (sportApi === "volleyball") {
+    // Convert to array
+    let groups: { groupName: string; standings: Standing[] }[] = 
+      Array.from(groupsMap.entries()).map(([key, standings]) => ({
+        groupName: key === "__ungrouped__" ? "" : key,
+        standings
+      }));
+
+    // Sort groups appropriately
+    if (sportApi === "basketball" || sportApi === "football" || sportApi === "hockey" || league === "NCAA Football" || league === "NFL") {
+      // Sort by conference order: Eastern/East first, then Western/West
+      const conferenceOrder: Record<string, number> = {
+        "Eastern Conference": 0, "East": 0, "east": 0,
+        "Western Conference": 1, "West": 1, "west": 1,
+        "AFC": 2, "NFC": 3,
+      };
+      
+      groups.sort((a, b) => {
+        // Extract conference prefix from group name
+        const getConfPrefix = (name: string): string => {
+          if (name.startsWith("AFC")) return "AFC";
+          if (name.startsWith("NFC")) return "NFC";
+          if (name.startsWith("Eastern")) return "Eastern";
+          if (name.startsWith("Western")) return "Western";
+          const firstWord = name.split(" ")[0];
+          return conferenceOrder[firstWord] !== undefined ? firstWord : "";
+        };
+        
+        const aOrder = conferenceOrder[getConfPrefix(a.groupName)] ?? 99;
+        const bOrder = conferenceOrder[getConfPrefix(b.groupName)] ?? 99;
+        if (aOrder !== bOrder) return aOrder - bOrder;
+        
+        // Within same conference, sort by full group name
+        return a.groupName.localeCompare(b.groupName);
+      });
+    } else if (sportApi === "volleyball") {
+      // Sort volleyball groups naturally (Group A, Group B, etc.)
       groups.sort((a, b) => {
         const aMatch = a.groupName.match(/Group\s+([A-Z])/i);
         const bMatch = b.groupName.match(/Group\s+([A-Z])/i);

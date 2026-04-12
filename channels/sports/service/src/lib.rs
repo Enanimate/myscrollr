@@ -468,20 +468,29 @@ async fn parse_v1_standing_item(
         None => return,
     };
 
-    // Extract wins/losses/ties - handle AFL's nested games format
-    let (wins, losses, ties, games_played) = if sport_api == "afl" {
-        // AFL uses nested format: games: {win, drawn, lost, played} OR {wins, losses, draws, played}
+    // Extract wins/losses/ties - handle AFL's and rugby's nested games format
+    let (wins, losses, ties, games_played) = if sport_api == "afl" || sport_api == "rugby" {
+        // AFL and rugby use nested format: games: {win, lose, draw, played}
         let games = item.get("games");
-        // Try singular first (win, lost, drawn), then plural (wins, losses, draws)
-        let w = games.and_then(|g| g.get("win").or(g.get("wins")))
-            .and_then(|w| w.as_i64()).unwrap_or(0) as i32;
-        let l = games.and_then(|g| g.get("lost").or(g.get("losses")))
-            .and_then(|l| l.as_i64()).unwrap_or(0) as i32;
-        let d = games.and_then(|g| g.get("drawn").or(g.get("draws")))
-            .and_then(|d| d.as_i64()).unwrap_or(0) as i32;
-        let gp = games.and_then(|g| g.get("played"))
-            .and_then(|p| p.as_i64()).unwrap_or(0) as i32;
-        (w, l, d, gp)
+        if sport_api == "rugby" {
+            // Rugby: games.win.total, games.lose.total, games.draw.total
+            let w = games.and_then(|g| g.get("win")).and_then(|w| w.get("total")).and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+            let l = games.and_then(|g| g.get("lose")).and_then(|l| l.get("total")).and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+            let d = games.and_then(|g| g.get("draw")).and_then(|d| d.get("total")).and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+            let gp = games.and_then(|g| g.get("played")).and_then(|p| p.as_i64()).unwrap_or(0) as i32;
+            (w, l, d, gp)
+        } else {
+            // AFL uses nested format: games: {win, drawn, lost, played} OR {wins, losses, draws, played}
+            let w = games.and_then(|g| g.get("win").or(g.get("wins")))
+                .and_then(|w| w.as_i64()).unwrap_or(0) as i32;
+            let l = games.and_then(|g| g.get("lost").or(g.get("losses")))
+                .and_then(|l| l.as_i64()).unwrap_or(0) as i32;
+            let d = games.and_then(|g| g.get("drawn").or(g.get("draws")))
+                .and_then(|d| d.as_i64()).unwrap_or(0) as i32;
+            let gp = games.and_then(|g| g.get("played"))
+                .and_then(|p| p.as_i64()).unwrap_or(0) as i32;
+            (w, l, d, gp)
+        }
     } else {
         // Standard format: top-level won, lost, ties
         let w = item.get("won").and_then(|w| w.as_i64()).unwrap_or(0) as i32;
