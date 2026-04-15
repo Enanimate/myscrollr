@@ -1,4 +1,4 @@
-use std::{env, fs, sync::Arc};
+use std::{collections::HashMap, env, fs, sync::Arc};
 use reqwest::{Client, header};
 use tokio::sync::Mutex;
 use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, Utc};
@@ -917,7 +917,9 @@ async fn parse_basketball_standing_item(
     }
 }
 
-/// Parse NHL standings (similar to v1 but with overtime losses)
+/// Parse NHL standings - two-pass approach:
+/// 1. First pass: build team -> conference map from conference-level entries
+/// 2. Second pass: process division entries and attach conference from map
 async fn parse_hockey_standings(
     pool: &Arc<PgPool>,
     league_name: &str,
@@ -925,32 +927,43 @@ async fn parse_hockey_standings(
     sport_api: &str,
     response: &[serde_json::Value],
 ) {
-    // DEBUG: Log response structure for NHL
-    debug!("[NHL] Response array count: {}", response.len());
-    for (i, entry) in response.iter().enumerate() {
+    // Pass 1: Build conference map from conference-level entries
+    let mut team_to_conference: HashMap<String, String> = HashMap::new();
+    
+    for entry in response {
         if let Some(arr) = entry.as_array() {
-            debug!("[NHL] Array {} count: {}", i, arr.len());
             if let Some(first) = arr.first() {
-                if let Some(team) = first.get("team").and_then(|t| t.get("name")) {
-                    debug!("[NHL] Array {} first team: {}", i, team);
-                }
-                if let Some(group) = first.get("group") {
-                    debug!("[NHL] Array {} first group: {}", i, group);
+                let group_name = first.get("group")
+                    .and_then(|g| g.get("name"))
+                    .and_then(|n| n.as_str());
+                
+                // Check if this is a conference-level entry (contains "Conference" but not "Division")
+                if let Some(g) = group_name {
+                    if g.contains("Conference") && !g.contains("Division") {
+                        // Extract teams from this conference array
+                        for item in arr {
+                            if let Some(team_name) = item.get("team")
+                                .and_then(|t| t.get("name"))
+                                .and_then(|n| n.as_str())
+                            {
+                                // Store conference without " Conference" suffix (e.g., "Eastern")
+                                let conference = g.replace(" Conference", "");
+                                team_to_conference.insert(team_name.to_string(), conference);
+                            }
+                        }
+                    }
                 }
             }
-        } else if let Some(obj) = entry.as_object() {
-            debug!("[NHL] Object {} keys: {:?}", i, obj.keys().collect::<Vec<_>>());
         }
     }
+    
+    debug!("[NHL] Built conference map with {} entries", team_to_conference.len());
 
+    // Pass 2: Process all entries, using conference map for division entries
     for entry in response {
         if entry.is_array() {
             for item in entry.as_array().unwrap_or(&vec![]) {
-                // DEBUG: Log group field for each item
-                if let Some(group) = item.get("group") {
-                    debug!("[NHL] Item group field: {}", group);
-                }
-                parse_hockey_standing_item(pool, league_name, season, sport_api, item).await;
+                parse_hockey_standing_item_with_conf(pool, league_name, season, sport_api, item, &team_to_conference).await;
             }
         } else if entry.is_object() {
             if let Some(nested) = entry.get("league").and_then(|l| l.get("standings")) {
@@ -958,29 +971,56 @@ async fn parse_hockey_standings(
                     for group in groups {
                         if let Some(items) = group.as_array() {
                             for item in items {
-                                parse_hockey_standing_item(pool, league_name, season, sport_api, item).await;
+                                parse_hockey_standing_item_with_conf(pool, league_name, season, sport_api, item, &team_to_conference).await;
                             }
                         }
                     }
                 }
             } else {
-                parse_hockey_standing_item(pool, league_name, season, sport_api, entry).await;
+                parse_hockey_standing_item_with_conf(pool, league_name, season, sport_api, entry, &team_to_conference).await;
             }
         }
     }
 }
 
-async fn parse_hockey_standing_item(
+/// Parse a single NHL standing entry with conference map
+/// group_name stores raw division name (e.g., "Atlantic"), conference stores raw (e.g., "Eastern")
+async fn parse_hockey_standing_item_with_conf(
     pool: &Arc<PgPool>,
     league_name: &str,
     season: &str,
     sport_api: &str,
     item: &serde_json::Value,
+    team_to_conference: &HashMap<String, String>,
 ) {
     let team = match item.get("team") {
         Some(t) => t,
         None => return,
     };
+
+    let team_name = team.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+
+    // Get the group name to determine if this is a conference/division/NHL entry
+    let raw_group = item.get("group");
+    let group_type = raw_group
+        .and_then(|g| g.get("name"))
+        .and_then(|n| n.as_str())
+        .unwrap_or("");
+
+    // Skip NHL-level (overall) entries - only process conference and division
+    if group_type == "NHL" {
+        return;
+    }
+
+    // Determine if this is a division entry (contains "Division")
+    let is_division = group_type.contains("Division");
+    // Determine if this is a conference entry (contains "Conference" but not "Division")
+    let is_conference = group_type.contains("Conference") && !is_division;
+
+    // Only process division entries (skip conference-level to avoid duplicates)
+    if is_conference {
+        return;
+    }
 
     // NHL: wins/losses in nested games object, otl at top level
     let wins = item.get("games").and_then(|g| g.get("win")).and_then(|w| w.get("total")).and_then(|v| v.as_i64()).unwrap_or(0) as i32;
@@ -995,7 +1035,7 @@ async fn parse_hockey_standing_item(
     // Points is directly available as integer in NHL
     let points = item.get("points").and_then(|p| p.as_i64()).map(|p| p as i32);
 
-    // Goals for/against - from nested "goals" object (like handball)
+    // Goals for/against - from nested "goals" object
     let goals_for = item.get("goals").and_then(|g| g.get("for")).and_then(|v| v.as_i64()).map(|v| v as i32);
     let goals_against = item.get("goals").and_then(|g| g.get("against")).and_then(|v| v.as_i64()).map(|v| v as i32);
 
@@ -1005,51 +1045,15 @@ async fn parse_hockey_standing_item(
         _ => None,
     };
 
-    // Group name (for NHL: division, e.g., "Atlantic", "Metropolitan", "Central", "Pacific")
-    // Skip entries where group contains "Conference" - only process division-level entries
-    let raw_group = item.get("group");
-    debug!("[NHL] Raw group field: {:?}", raw_group);
-    let group_name = if let Some(g) = raw_group {
-        if let Some(g_str) = g.as_str() {
-            // Skip conference-level and league-level entries
-            if g_str.contains("Conference") || g_str == "NHL" {
-                debug!("[NHL] Skipping conference/league level: {}", g_str);
-                None
-            } else {
-                let name = format!("{} Division", g_str);
-                debug!("[NHL] Extracted group (with Division): {}", name);
-                Some(name)
-            }
-        } else if let Some(g_obj) = g.as_object() {
-            let name = g_obj.get("name").and_then(|n| n.as_str()).map(|s| s.to_string());
-            // Skip conference-level and league-level entries (e.g., "Eastern Conference", "NHL")
-            if name.as_ref().map(|n| n.contains("Conference") || n == "NHL").unwrap_or(false) {
-                debug!("[NHL] Skipping conference/league level (obj): {:?}", name);
-                None
-            } else {
-                let with_division = name.map(|n| format!("{} Division", n));
-                debug!("[NHL] Extracted group (obj, with Division): {:?}", with_division);
-                with_division
-            }
-        } else {
-            debug!("[NHL] Group field not string or object");
-            None
-        }
+    // Extract group_name (division) - store without "Division" suffix
+    let group_name = if is_division {
+        Some(group_type.replace(" Division", ""))
     } else {
-        debug!("[NHL] No group field found");
         None
     };
 
-    // Derive conference from division name
-    let conference = match group_name.as_deref() {
-        Some("Atlantic Division") | Some("Metropolitan Division") => Some("Eastern Conference".to_string()),
-        Some("Central Division") | Some("Pacific Division") => Some("Western Conference".to_string()),
-        _ => {
-            debug!("[NHL] No conference match for group: {:?}", group_name);
-            None
-        }
-    };
-    debug!("[NHL] Final group_name: {:?}, conference: {:?}", group_name, conference);
+    // Get conference from the map (look up by team name)
+    let conference = team_to_conference.get(&team_name).cloned();
 
     // Calculate PCT
     let pct = if games_played > 0 {
@@ -1061,13 +1065,13 @@ async fn parse_hockey_standing_item(
 
     let standing = StandingData {
         league: league_name.to_string(),
-        team_name: team.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string(),
+        team_name,
         team_code: team.get("code").and_then(|c| c.as_str()).map(|s| s.to_string()),
         team_logo: team.get("logo").and_then(|l| l.as_str()).map(|s| s.to_string()),
         rank: item.get("position").or_else(|| item.get("rank")).and_then(|r| r.as_i64()).map(|r| r as i32),
         wins,
         losses,
-        draws: 0, // NHL doesn't have draws
+        draws: 0,
         points,
         games_played,
         goal_diff,
