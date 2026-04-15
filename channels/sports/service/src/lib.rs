@@ -1089,7 +1089,7 @@ async fn parse_hockey_standing_item_with_conf(
         points_against: None,
         streak: item.get("form").and_then(|s| s.as_str()).map(|s| s.to_string()),
         conference,
-        conference_rank: None,
+        conference_rank: item.get("position").and_then(|r| r.as_i64()).map(|r| r as i32),
         conference_wins: None,
         conference_losses: None,
     };
