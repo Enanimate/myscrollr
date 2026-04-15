@@ -345,7 +345,8 @@ async fn parse_and_upsert_standings(
         "hockey" => parse_hockey_standings(pool, league_name, season, sport_api, response).await,
         "baseball" => parse_basketball_standings(pool, league_name, season, sport_api, response).await, // Same as basketball format
         "rugby" | "afl" | "australian-football" => parse_v1_standings(pool, league_name, season, sport_api, response).await,
-        "handball" | "volleyball" => parse_basketball_standings(pool, league_name, season, sport_api, response).await,
+        "handball" => parse_basketball_standings(pool, league_name, season, sport_api, response).await,
+        "volleyball" => parse_volleyball_standings(pool, league_name, season, sport_api, response).await,
         _ => {
             // Default to football-style parser
             parse_football_standings(pool, league_name, season, sport_api, response).await;
@@ -698,6 +699,92 @@ async fn parse_basketball_standings(
                 parse_basketball_standing_item(pool, league_name, season, sport_api, entry).await;
             }
         }
+    }
+}
+
+/// Parse volleyball standings (v1 API, array-of-arrays by group/stage)
+async fn parse_volleyball_standings(
+    pool: &Arc<PgPool>,
+    league_name: &str,
+    season: &str,
+    sport_api: &str,
+    response: &[serde_json::Value],
+) {
+    for entry in response {
+        if entry.is_array() {
+            for item in entry.as_array().unwrap_or(&vec![]) {
+                parse_volleyball_standing_item(pool, league_name, season, sport_api, item).await;
+            }
+        }
+    }
+}
+
+async fn parse_volleyball_standing_item(
+    pool: &Arc<PgPool>,
+    league_name: &str,
+    season: &str,
+    sport_api: &str,
+    item: &serde_json::Value,
+) {
+    let team = match item.get("team") {
+        Some(t) => t,
+        None => return,
+    };
+
+    let group_name = item.get("group").and_then(|g| g.get("name")).and_then(|n| n.as_str()).map(|s| s.to_string());
+
+    if let Some(stage) = item.get("stage").and_then(|s| s.as_str()) {
+        info!("[{}] Stage: {}, Group: {:?}", league_name, stage, group_name);
+    }
+
+    let games = item.get("games");
+    let wins = games.and_then(|g| g.get("win")).and_then(|w| w.get("total")).and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+    let losses = games.and_then(|g| g.get("lose")).and_then(|l| l.get("total")).and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+    let games_played = games.and_then(|g| g.get("played")).and_then(|p| p.as_i64()).unwrap_or(0) as i32;
+
+    let goals_for = item.get("goals").and_then(|g| g.get("for")).and_then(|v| v.as_i64()).map(|v| v as i32);
+    let goals_against = item.get("goals").and_then(|g| g.get("against")).and_then(|v| v.as_i64()).map(|v| v as i32);
+    let goal_diff = match (goals_for, goals_against) {
+        (Some(gf), Some(ga)) => Some(gf - ga),
+        _ => None,
+    };
+
+    let points = item.get("points").and_then(|p| p.as_i64()).map(|p| p as i32);
+    let pct = games.and_then(|g| g.get("win")).and_then(|w| w.get("percentage")).and_then(|p| p.as_str()).map(|s| s.to_string());
+
+    let standing = StandingData {
+        league: league_name.to_string(),
+        team_name: team.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string(),
+        team_code: team.get("code").and_then(|c| c.as_str()).map(|s| s.to_string()),
+        team_logo: team.get("logo").and_then(|l| l.as_str()).map(|s| s.to_string()),
+        rank: item.get("position").and_then(|r| r.as_i64()).map(|r| r as i32),
+        wins,
+        losses,
+        draws: 0,
+        points,
+        games_played,
+        goal_diff,
+        description: item.get("description").and_then(|d| d.as_str()).map(|s| s.to_string()),
+        form: item.get("form").and_then(|f| f.as_str()).map(|s| s.to_string()),
+        group_name: group_name.clone(),
+        season: Some(season.to_string()),
+        sport_api: Some(sport_api.to_string()),
+        pct,
+        games_behind: None,
+        otl: None,
+        goals_for,
+        goals_against,
+        points_for: None,
+        points_against: None,
+        streak: None,
+        conference: None,
+        conference_rank: None,
+        conference_wins: None,
+        conference_losses: None,
+    };
+
+    if let Err(e) = upsert_standing(pool, standing).await {
+        error!("[{}] Failed to upsert volleyball standing: {}", league_name, e);
     }
 }
 
