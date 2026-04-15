@@ -546,7 +546,7 @@ func (a *App) getStandings(c *fiber.Ctx) error {
 
 	rows, err := a.db.Query(c.Context(), `
 		SELECT league, team_name, COALESCE(team_code, ''), COALESCE(team_logo, ''),
-			ROW_NUMBER() OVER (PARTITION BY conference ORDER BY wins DESC) AS rank, wins, losses, draws, COALESCE(points, 0),
+			COALESCE(conference_rank, ROW_NUMBER() OVER (PARTITION BY conference ORDER BY wins DESC)) AS rank, wins, losses, draws, COALESCE(points, 0),
 			games_played, COALESCE(goal_diff, 0),
 			COALESCE(description, ''), COALESCE(form, ''), COALESCE(group_name, ''),
 			COALESCE(sport_api, ''), COALESCE(pct, ''),
@@ -558,7 +558,7 @@ func (a *App) getStandings(c *fiber.Ctx) error {
 			COALESCE(otl, 0), COALESCE(goals_for, 0), COALESCE(goals_against, 0),
 			COALESCE(points_for, 0), COALESCE(points_against, 0), COALESCE(streak, ''),
 			COALESCE(conference, ''),
-			ROW_NUMBER() OVER (PARTITION BY COALESCE(group_name, conference) ORDER BY wins DESC) AS conference_rank
+			COALESCE(conference_rank, 0) AS conference_rank
 		FROM standings
 		WHERE league = $1
 		AND team_name NOT IN ('Team Stripes', 'Team Stars', 'Team World')

@@ -877,7 +877,7 @@ async fn parse_basketball_standing_item(
         goal_diff,
         description: item.get("description").and_then(|d| d.as_str()).map(|s| s.to_string()),
         form: item.get("form").and_then(|f| f.as_str()).map(|s| s.to_string()),
-        group_name,
+        group_name: group_name.clone(),
         season: Some(season.to_string()),
         sport_api: Some(sport_api.to_string()),
         pct,
@@ -889,9 +889,27 @@ async fn parse_basketball_standing_item(
         points_against,
         streak: item.get("streak").and_then(|s| s.as_str()).map(|s| s.to_string()),
         conference,
-        conference_rank: item.get("conference").and_then(|c| c.get("rank")).and_then(|r| r.as_i64()).map(|r| r as i32),
-        conference_wins: item.get("conference").and_then(|c| c.get("win")).and_then(|w| w.as_i64()).map(|w| w as i32),
-        conference_losses: item.get("conference").and_then(|c| c.get("loss")).and_then(|l| l.as_i64()).map(|l| l as i32),
+        conference_rank: group_name.as_ref().and_then(|g| {
+            if g == "Eastern Conference" || g == "Western Conference" {
+                item.get("position").and_then(|r| r.as_i64()).map(|r| r as i32)
+            } else {
+                None
+            }
+        }),
+        conference_wins: group_name.as_ref().and_then(|g| {
+            if g == "Eastern Conference" || g == "Western Conference" {
+                item.get("games").and_then(|g| g.get("win")).and_then(|w| w.get("total")).and_then(|v| v.as_i64()).map(|v| v as i32)
+            } else {
+                None
+            }
+        }),
+        conference_losses: group_name.as_ref().and_then(|g| {
+            if g == "Eastern Conference" || g == "Western Conference" {
+                item.get("games").and_then(|g| g.get("lose")).and_then(|l| l.get("total")).and_then(|v| v.as_i64()).map(|v| v as i32)
+            } else {
+                None
+            }
+        }),
     };
 
     if let Err(e) = upsert_standing(pool, standing).await {
