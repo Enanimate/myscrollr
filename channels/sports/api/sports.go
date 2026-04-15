@@ -546,13 +546,13 @@ func (a *App) getStandings(c *fiber.Ctx) error {
 
 	rows, err := a.db.Query(c.Context(), `
 		SELECT league, team_name, COALESCE(team_code, ''), COALESCE(team_logo, ''),
-			COALESCE(rank, 0), wins, losses, draws, COALESCE(points, 0),
+			ROW_NUMBER() OVER (PARTITION BY conference ORDER BY wins DESC) AS rank, wins, losses, draws, COALESCE(points, 0),
 			games_played, COALESCE(goal_diff, 0),
 			COALESCE(description, ''), COALESCE(form, ''), COALESCE(group_name, ''),
 			COALESCE(sport_api, ''), COALESCE(pct, ''),
 			CASE 
-				WHEN group_name <> '' THEN (MAX(wins) OVER (PARTITION BY group_name) - wins)::text
 				WHEN conference <> '' THEN (MAX(wins) OVER (PARTITION BY conference) - wins)::text
+				WHEN group_name <> '' THEN (MAX(wins) OVER (PARTITION BY group_name) - wins)::text
 				ELSE ''
 			END AS games_behind,
 			COALESCE(otl, 0), COALESCE(goals_for, 0), COALESCE(goals_against, 0),
