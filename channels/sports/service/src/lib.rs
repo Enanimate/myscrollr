@@ -346,7 +346,10 @@ async fn parse_and_upsert_standings(
         "baseball" => parse_basketball_standings(pool, league_name, season, sport_api, response).await, // Same as basketball format
         "rugby" | "afl" | "australian-football" => parse_v1_standings(pool, league_name, season, sport_api, response).await,
         "handball" => parse_basketball_standings(pool, league_name, season, sport_api, response).await,
-        "volleyball" => parse_volleyball_standings(pool, league_name, season, sport_api, response).await,
+        "volleyball" => {
+            info!("[{}] Calling volleyball parser with {} entries", league_name, response.len());
+            parse_volleyball_standings(pool, league_name, season, sport_api, response).await
+        }
         _ => {
             // Default to football-style parser
             parse_football_standings(pool, league_name, season, sport_api, response).await;
@@ -710,9 +713,21 @@ async fn parse_volleyball_standings(
     sport_api: &str,
     response: &[serde_json::Value],
 ) {
-    for entry in response {
-        if entry.is_array() {
-            for item in entry.as_array().unwrap_or(&vec![]) {
+    if response.is_empty() {
+        info!("[{}] Volleyball response is empty", league_name);
+        return;
+    }
+    info!("[{}] Volleyball response has {} top-level entries", league_name, response.len());
+    if let Some(first) = response.first() {
+        info!("[{}] Volleyball first entry type: {}", league_name, if first.is_array() { "array" } else if first.is_object() { "object" } else { "other" });
+    }
+    
+    for (idx, entry) in response.iter().enumerate() {
+        if let Some(arr) = entry.as_array() {
+            info!("[{}] Volleyball entry {} has {} items", league_name, idx, arr.len());
+            for (item_idx, item) in arr.iter().enumerate() {
+                let group = item.get("group").and_then(|g| g.get("name")).and_then(|n| n.as_str());
+                info!("[{}] Volleyball item {}-{} group: {:?}", league_name, idx, item_idx, group);
                 parse_volleyball_standing_item(pool, league_name, season, sport_api, item).await;
             }
         }
