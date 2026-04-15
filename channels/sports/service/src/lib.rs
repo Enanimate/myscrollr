@@ -316,6 +316,19 @@ pub async fn poll_standings(
                 match resp.json::<serde_json::Value>().await {
                     Ok(body) => {
                         let response = body.get("response").and_then(|r| r.as_array()).cloned().unwrap_or_default();
+                        if league.sport_api == "volleyball" {
+                            if let Some(first_entry) = response.first() {
+                                if let Some(first_array) = first_entry.as_array() {
+                                    if let Some(first_item) = first_array.first() {
+                                        info!("[{}] Raw volleyball response sample: {:?}", league.name, serde_json::json!({
+                                            "group": first_item.get("group"),
+                                            "stage": first_item.get("stage"),
+                                            "team": first_item.get("team").and_then(|t| t.get("name")),
+                                        }));
+                                    }
+                                }
+                            }
+                        }
                         parse_and_upsert_standings(pool, &league.name, &season, &league.sport_api, &response).await;
                     }
                     Err(e) => warn!("[{}] Failed to parse standings JSON: {}", league.name, e),
